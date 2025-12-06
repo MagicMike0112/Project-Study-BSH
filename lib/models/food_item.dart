@@ -10,16 +10,16 @@ class FoodItem {
   final double quantity;
   final String unit;
 
-  /// 购买日期（UI 上可选填，这里依然保留字段，没填可以用 today 或 null，取决于你后面怎么用）
+  /// 必填：购买日期
   final DateTime purchasedDate;
 
-  /// 开封日期（可选）
+  /// 可选：开封日期
   final DateTime? openDate;
 
-  /// 包装上的保质期（可选）
+  /// 可选：包装上的 Best-before / Use-by
   final DateTime? bestBeforeDate;
 
-  /// 预测保质期（后面可由 AI/规则推断）
+  /// 预测的“真正过期日”（可以来自规则或 AI）
   final DateTime? predictedExpiry;
 
   final FoodStatus status;
@@ -41,19 +41,18 @@ class FoodItem {
     this.source,
   });
 
-  /// 优先使用 predictedExpiry，其次用 bestBeforeDate
+  /// 距离 predictedExpiry 还有几天；如果没有，就给一个大数方便排序
   int get daysToExpiry {
-    final DateTime? base = predictedExpiry ?? bestBeforeDate;
-    if (base == null) return 999;
-
+    if (predictedExpiry == null) return 999;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final expiry = DateTime(base.year, base.month, base.day);
+    final expiry = DateTime(
+      predictedExpiry!.year,
+      predictedExpiry!.month,
+      predictedExpiry!.day,
+    );
     return expiry.difference(today).inDays;
   }
-
-  /// 方便在 UI 中显示的“预测日期”（优先 AI 预测，其次包装日）
-  DateTime? get effectiveExpiryDate => predictedExpiry ?? bestBeforeDate;
 
   FoodItem copyWith({
     String? id,

@@ -72,6 +72,10 @@ class InventoryRepository {
   /// 是否已经给过“喂宠物安全提示”
   bool hasShownPetWarning = false;
 
+  /// streak 相关
+  int _streakDays = 0;
+  DateTime? _lastConsumedDate;
+
   InventoryRepository() {
     // 模拟数据
     _items.add(
@@ -125,6 +129,11 @@ class InventoryRepository {
     final index = _items.indexWhere((i) => i.id == id);
     if (index != -1) {
       _items[index] = _items[index].copyWith(status: status);
+
+      // 只在 “成功吃掉/利用” 的时候更新 streak
+      if (status == FoodStatus.consumed) {
+        _updateStreakOnConsumed();
+      }
     }
   }
 
@@ -227,4 +236,31 @@ class InventoryRepository {
         )
         .fold(0.0, (sum, e) => sum + e.quantity);
   }
+
+  // ================== streak 相关 ==================
+
+  void _updateStreakOnConsumed() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+
+    if (_lastConsumedDate == null) {
+      _streakDays = 1;
+    } else {
+      final last =
+          DateTime(_lastConsumedDate!.year, _lastConsumedDate!.month, _lastConsumedDate!.day);
+      final diff = today.difference(last).inDays;
+
+      if (diff == 1) {
+        // 连续一天
+        _streakDays += 1;
+      } else if (diff > 1) {
+        // 断档，重新开始
+        _streakDays = 1;
+      } // diff == 0 同一天多次吃东西，不重复加
+    }
+
+    _lastConsumedDate = today;
+  }
+
+  int getCurrentStreakDays() => _streakDays;
 }

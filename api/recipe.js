@@ -11,37 +11,50 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { ingredients, extraIngredients } = req.body;
+    const body = req.body || {};
+    const ingredients = Array.isArray(body.ingredients) ? body.ingredients : [];
+    const extraIngredients = Array.isArray(body.extraIngredients)
+      ? body.extraIngredients
+      : [];
 
-    if (!ingredients || !Array.isArray(ingredients)) {
-      return res.status(400).json({ error: "ingredients must be an array" });
+    if (ingredients.length === 0 && extraIngredients.length === 0) {
+      return res.status(400).json({ error: "No ingredients provided" });
     }
 
-    const allIngredients = [
-      ...ingredients,
-      ...(extraIngredients || []),
-    ].join(", ");
+    const all = [...ingredients, ...extraIngredients].join(", ");
 
     const prompt = `
-You are a cooking assistant that helps reduce food waste.
-User has these ingredients (some are expiring soon): ${allIngredients}.
-Create 3 recipe ideas.
+You are a cooking assistant that helps people reduce food waste.
+User has these ingredients (some are expiring soon): ${all}.
 
-For each recipe, return a JSON object with:
-- id (string)
+Create 3 recipe ideas that:
+- Prioritize using the expiring ingredients first.
+- Are simple, realistic home-cooking recipes.
+
+For EACH recipe, return a JSON object with fields:
+- id (string, short unique id)
 - title (short dish name)
-- timeLabel (e.g. "15 min · 1 pan")
-- expiringCount (integer, how many expiring ingredients are used, estimate)
+- timeLabel (string, e.g. "20 min · 1 pan")
+- expiringCount (integer, rough estimate of how many expiring ingredients are used)
 - ingredients (string[] - human readable ingredient lines)
-- steps (string[] - 4-6 short steps)
-- description (1-2 sentence explanation)
+- steps (string[] - 4-6 concise steps)
+- description (string, 1-2 short sentences)
 
-Return ONLY valid JSON array, no extra text.
+Return ONLY a JSON object of this shape:
+{
+  "recipes": [ { ... }, { ... }, { ... } ]
+}
+No extra commentary.
 `;
 
     const response = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       messages: [
+        {
+          role: "system",
+          content:
+            "You are a precise JSON API. Always respond with valid JSON only.",
+        },
         {
           role: "user",
           content: prompt,
@@ -51,7 +64,6 @@ Return ONLY valid JSON array, no extra text.
     });
 
     const raw = response.choices[0].message.content;
-    // 期望 raw 类似： {"recipes":[{...},{...}]}
     let data;
     try {
       data = JSON.parse(raw);
@@ -60,7 +72,7 @@ Return ONLY valid JSON array, no extra text.
       return res.status(500).json({ error: "LLM returned invalid JSON" });
     }
 
-    const recipes = data.recipes || data || [];
+    const recipes = Array.isArray(data.recipes) ? data.recipes : [];
 
     return res.status(200).json({ recipes });
   } catch (err) {

@@ -1,5 +1,8 @@
 // lib/screens/today_page.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
@@ -29,7 +32,6 @@ class TodayPage extends StatelessWidget {
           _buildImpactSummary(context),
           const SizedBox(height: 24),
 
-          if (expiring.isNotEmpty)
             _buildAiButton(
               onTap: () => _showAiRecipeFlow(context, expiring),
             ),
@@ -61,40 +63,25 @@ class TodayPage extends StatelessWidget {
               (item) => FoodCard(
                 item: item,
                 onAction: (action) async {
-                  switch (action) {
-                    case 'eat':
-                      repo.logCooked(item);
-                      await repo.updateStatus(
-                        item.id,
-                        FoodStatus.consumed,
-                      );
-                      break;
-                    case 'pet':
-                      // 第一次喂宠物弹安全提示
-                      if (!repo.hasShownPetWarning) {
-                        repo.hasShownPetWarning = true;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              '请只喂适合宠物食用的食材，若不确定请先咨询兽医🐹',
-                            ),
-                            duration: Duration(seconds: 4),
-                          ),
-                        );
-                      }
-                      repo.logFedToPet(item);
-                      await repo.updateStatus(
-                        item.id,
-                        FoodStatus.consumed,
-                      );
-                      break;
-                    case 'trash':
-                      await repo.updateStatus(
-                        item.id,
-                        FoodStatus.discarded,
-                      );
-                      break;
+                  if (action == 'eat' || action == 'pet') {
+                    await repo.updateStatus(item.id, FoodStatus.consumed);
                   }
+                  if (action == 'trash') {
+                    await repo.updateStatus(item.id, FoodStatus.discarded);
+                  }
+
+                  if (action == 'pet' && !repo.hasShownPetWarning) {
+                    repo.hasShownPetWarning = true;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '请只喂适合宠物食用的食材，若不确定请先咨询兽医🐹',
+                        ),
+                        duration: Duration(seconds: 4),
+                      ),
+                    );
+                  }
+
                   onRefresh();
                 },
               ),
@@ -104,13 +91,12 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // ================== AI Flow ==================
+  // ================== AI Flow 入口 ==================
 
   Future<void> _showAiRecipeFlow(
     BuildContext context,
     List<FoodItem> expiringItems,
   ) async {
-    // 1. 先让用户在所有库存 + 额外输入里选择食材
     final result = await Navigator.push<AiCookingSelectionResult>(
       context,
       MaterialPageRoute(
@@ -121,9 +107,8 @@ class TodayPage extends StatelessWidget {
       ),
     );
 
-    if (result == null) return; // 用户取消
+    if (result == null) return;
 
-    // 2. 如果用户勾选“将额外食材加入库存”，这里补充入库
     if (result.addExtrasToInventory) {
       for (final extra in result.extraIngredients) {
         await repo.addItem(
@@ -142,8 +127,6 @@ class TodayPage extends StatelessWidget {
       onRefresh();
     }
 
-    // 3. 打开 AI 菜谱生成的 BottomSheet，
-    //   把选中食材 + 额外食材一起传进去
     // ignore: use_build_context_synchronously
     showModalBottomSheet(
       context: context,
@@ -156,7 +139,6 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // ✨ AI 按钮
   Widget _buildAiButton({required VoidCallback onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -199,10 +181,12 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // ================== 其余 UI 保持原逻辑 ==================
+  // ================== 顶部 Impact 卡片 ==================
 
   Widget _buildImpactSummary(BuildContext context) {
     final saved = repo.getSavedCount();
+    final streak = repo.getCurrentStreakDays(); // 你在 repo 里加的 getter
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -239,6 +223,24 @@ class TodayPage extends StatelessWidget {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.local_fire_department,
+                      size: 16,
+                      color: Colors.orangeAccent,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '$streak day streak',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -269,17 +271,17 @@ class TodayPage extends StatelessWidget {
   }
 }
 
-// ================== 智能菜谱模型 ==================
+// ================== Recipe 数据模型 ==================
 
 class RecipeSuggestion {
   final String id;
   final String title;
-  final String timeLabel; // e.g. "15 min · 1 pan"
-  final int expiringCount; // 使用了多少个 expiring items
-  final List<String> ingredients; // 展示用
-  final List<String> steps; // 详细步骤
+  final String timeLabel;
+  final int expiringCount;
+  final List<String> ingredients;
+  final List<String> steps;
   final String? description;
-  final String? imageUrl; // 未来接真实图片，这里先占位
+  final String? imageUrl;
 
   RecipeSuggestion({
     required this.id,
@@ -313,83 +315,86 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   int _state = 0; // 0 配置, 1 loading, 2 结果
   List<RecipeSuggestion> _recipes = [];
 
-  void _generate() async {
+  Future<void> _generate() async {
     setState(() => _state = 1);
 
-    // 这里未来换成真正调用 LLM API 的逻辑
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final ingredients = widget.items
+          .map((i) => '${i.name} (${i.quantity} ${i.unit})')
+          .toList();
 
-    if (!mounted) return;
+      final uri = Uri.parse(
+        'https://project-study-bsh.vercel.app/api/recipe',
+      );
 
-    // ======= DEMO 数据：用选中食材 + 额外输入生成几道假菜 =======
-    final baseNames =
-        widget.items.map((e) => e.name).toList() + widget.extraIngredients;
+      final resp = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'ingredients': ingredients,
+          'extraIngredients': widget.extraIngredients,
+        }),
+      );
 
-    final expiringCount = widget.items.length;
-    final List<RecipeSuggestion> demo = [
-      RecipeSuggestion(
-        id: 'r1',
-        title: 'Quick ${baseNames.isNotEmpty ? baseNames.first : 'Smart'} Stir-fry',
-        timeLabel: '15 min · 1 pan',
-        expiringCount: expiringCount,
-        ingredients: [
-          ...widget.items.map((e) => '${e.name} (${e.quantity} ${e.unit})'),
-          ...widget.extraIngredients,
-        ],
-        steps: const [
-          'Prepare and chop all ingredients.',
-          'Heat a pan with some oil.',
-          'Stir-fry expiring items first until slightly soft.',
-          'Add remaining ingredients, season to taste.',
-          'Serve immediately.'
-        ],
-        description: 'Uses all your expiring items in a simple one-pan meal.',
-      ),
-      RecipeSuggestion(
-        id: 'r2',
-        title: '${baseNames.isNotEmpty ? baseNames.first : 'Fridge'} Frittata',
-        timeLabel: '20 min · oven',
-        expiringCount: expiringCount,
-        ingredients: [
-          ...widget.items.map((e) => e.name),
-          'Eggs',
-          'Cheese (optional)',
-        ],
-        steps: const [
-          'Preheat oven and lightly grease a baking dish.',
-          'Whisk eggs with salt & pepper.',
-          'Add chopped expiring ingredients into the dish.',
-          'Pour egg mixture on top and bake until set.',
-          'Serve warm.'
-        ],
-        description: 'Turn your almost-expiring veggies into a baked frittata.',
-      ),
-      RecipeSuggestion(
-        id: 'r3',
-        title: 'Zero-waste ${baseNames.isNotEmpty ? baseNames.first : 'Veggie'} Soup',
-        timeLabel: '25 min · pot',
-        expiringCount: expiringCount,
-        ingredients: [
-          ...widget.items.map((e) => e.name),
-          'Stock or water',
-          'Salt, pepper, herbs',
-        ],
-        steps: const [
-          'Chop all expiring vegetables into small pieces.',
-          'Sauté them briefly with oil.',
-          'Add stock or water and bring to a boil.',
-          'Simmer until everything is soft, season to taste.',
-          'Optionally blend for a creamy soup.'
-        ],
-        description:
-            'A warm soup that uses leftover veggies and is easy to freeze.',
-      ),
-    ];
+      if (resp.statusCode != 200) {
+        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
+      }
 
-    setState(() {
-      _recipes = demo;
-      _state = 2;
-    });
+      // 调试用：看一下后端返回长什么样
+      // ignore: avoid_print
+      print('AI recipe response: ${resp.body}');
+
+      final root = jsonDecode(resp.body);
+
+      // 兼容多种结构：
+      // 1) { "recipes": [ {...}, {...} ] }
+      // 2) { "recipes": { ... } }
+      // 3) [ { ... }, { ... } ]
+      List<dynamic> rawList;
+
+      if (root is Map<String, dynamic>) {
+        final inner = root['recipes'];
+        if (inner is List) {
+          rawList = inner;
+        } else if (inner is Map) {
+          rawList = [inner];
+        } else if (inner == null) {
+          rawList = const [];
+        } else {
+          throw Exception('Unexpected "recipes" type: ${inner.runtimeType}');
+        }
+      } else if (root is List) {
+        rawList = root;
+      } else {
+        throw Exception('Unexpected JSON root type: ${root.runtimeType}');
+      }
+
+      _recipes = rawList.map((e) {
+        final m = (e as Map).cast<String, dynamic>();
+        return RecipeSuggestion(
+          id: m['id']?.toString() ?? const Uuid().v4(),
+          title: m['title'] ?? 'Untitled',
+          timeLabel: m['timeLabel'] ?? '20 min',
+          expiringCount: (m['expiringCount'] ?? 0) as int,
+          ingredients: (m['ingredients'] as List<dynamic>? ?? const [])
+              .map((x) => x.toString())
+              .toList(),
+          steps: (m['steps'] as List<dynamic>? ?? const [])
+              .map((x) => x.toString())
+              .toList(),
+          description: m['description']?.toString(),
+        );
+      }).toList();
+
+      if (!mounted) return;
+      setState(() => _state = 2);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _state = 0);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI recipe failed: $e')),
+      );
+    }
   }
 
   @override
@@ -409,7 +414,6 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
     );
   }
 
-  // Step 0: 配置页（展示选中食材 + 额外输入）
   Widget _buildConfig() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -466,11 +470,9 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
     );
   }
 
-  // Step 1: loading
   Widget _buildLoading() =>
       const Center(child: CircularProgressIndicator());
 
-  // Step 2: 结果页——两列网格 + 点击进入详情
   Widget _buildResult() {
     if (_recipes.isEmpty) {
       return const Center(
@@ -488,7 +490,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
         const SizedBox(height: 8),
         Text(
           "We created ${_recipes.length} ideas using your expiring items first.",
-          style: TextStyle(color: Colors.grey),
+          style: const TextStyle(color: Colors.grey),
         ),
         const SizedBox(height: 16),
         Expanded(
@@ -521,7 +523,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   }
 }
 
-// 网格中的菜谱卡片
+// 网格里的单个菜谱卡片
 class _RecipeCard extends StatelessWidget {
   final RecipeSuggestion recipe;
   final VoidCallback onTap;
@@ -546,7 +548,6 @@ class _RecipeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 图片占位（未来可以换成真实图片）
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(16),
@@ -611,8 +612,7 @@ class _RecipeCard extends StatelessWidget {
   }
 }
 
-// ================== 菜谱详情页 ==================
-
+// 详情页
 class RecipeDetailPage extends StatelessWidget {
   final RecipeSuggestion recipe;
 
@@ -714,7 +714,6 @@ class RecipeDetailPage extends StatelessWidget {
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: () {
-                // 这里未来可以触发：logCooked + 关闭页面
                 Navigator.pop(context);
               },
               icon: const Icon(Icons.check),
