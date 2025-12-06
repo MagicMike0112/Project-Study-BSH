@@ -72,10 +72,6 @@ class InventoryRepository {
   /// 是否已经给过“喂宠物安全提示”
   bool hasShownPetWarning = false;
 
-  /// streak 相关
-  int _streakDays = 0;
-  DateTime? _lastConsumedDate;
-
   InventoryRepository() {
     // 模拟数据
     _items.add(
@@ -109,6 +105,7 @@ class InventoryRepository {
   List<FoodItem> getActiveItems() =>
       _items.where((i) => i.status == FoodStatus.good).toList();
 
+  /// withinDays 以内到期的 item 会出现在 Expiring Soon 区域
   List<FoodItem> getExpiringItems(int withinDays) {
     return getActiveItems()
         .where((i) => i.daysToExpiry <= withinDays)
@@ -129,15 +126,11 @@ class InventoryRepository {
     final index = _items.indexWhere((i) => i.id == id);
     if (index != -1) {
       _items[index] = _items[index].copyWith(status: status);
-
-      // 只在 “成功吃掉/利用” 的时候更新 streak
-      if (status == FoodStatus.consumed) {
-        _updateStreakOnConsumed();
-      }
+      // streak 不在这里更新，而是根据 _impactEvents 统一计算
     }
   }
 
-  /// 供表单使用：根据输入信息计算预测保质期
+  /// 供表单使用：根据输入信息计算预测保质期（rule-based）
   DateTime predictExpiryForItem(FoodItem base) {
     return _expiryService.predictExpiry(
       base.category,
@@ -189,6 +182,26 @@ class InventoryRepository {
     );
   }
 
+  /// TodayPage 里统一用这个入口，根据 action key 记录 impact
+  void recordImpactForAction(
+    FoodItem item,
+    String actionKey, {
+    double? quantity,
+  }) {
+    switch (actionKey) {
+      case 'eat':
+        logCooked(item, quantity: quantity);
+        break;
+      case 'pet':
+        logFedToPet(item, quantity: quantity);
+        break;
+      case 'trash':
+      default:
+        // 丢掉不算 positive impact，这里不记事件
+        break;
+    }
+  }
+
   // --- 简单估算逻辑：后期可以换成真实 LCA/价格数据 ---
   double _estimateMoneySaved(FoodItem item, double quantity) {
     if (item.unit.toLowerCase() == 'g') {
@@ -237,30 +250,27 @@ class InventoryRepository {
         .fold(0.0, (sum, e) => sum + e.quantity);
   }
 
-  // ================== streak 相关 ==================
+  /// streak 统一基于 impactEvents 计算：最近连续多少天有“吃掉/喂掉”的行为
+  int getCurrentStreakDays() {
+    if (_impactEvents.isEmpty) return 0;
 
-  void _updateStreakOnConsumed() {
+    int streak = 0;
     final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    DateTime cur = DateTime(now.year, now.month, now.day);
 
-    if (_lastConsumedDate == null) {
-      _streakDays = 1;
-    } else {
-      final last =
-          DateTime(_lastConsumedDate!.year, _lastConsumedDate!.month, _lastConsumedDate!.day);
-      final diff = today.difference(last).inDays;
+    while (true) {
+      final hasEventThisDay = _impactEvents.any((e) {
+        final d = DateTime(e.date.year, e.date.month, e.date.day);
+        return d == cur;
+      });
 
-      if (diff == 1) {
-        // 连续一天
-        _streakDays += 1;
-      } else if (diff > 1) {
-        // 断档，重新开始
-        _streakDays = 1;
-      } // diff == 0 同一天多次吃东西，不重复加
+      if (hasEventThisDay) {
+        streak++;
+        cur = cur.subtract(const Duration(days: 1));
+      } else {
+        break;
+      }
     }
-
-    _lastConsumedDate = today;
+    return streak;
   }
-
-  int getCurrentStreakDays() => _streakDays;
 }

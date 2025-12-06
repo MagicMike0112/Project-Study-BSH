@@ -44,16 +44,17 @@ class _AddFoodPageState extends State<AddFoodPage>
   late DateTime _purchased;
   DateTime? _openDate;
   DateTime? _bestBefore;
-  DateTime? _expiry; // 预测过期（供 Expiring Soon 使用）
+  DateTime? _expiry; // AI 预测值（可为空）
 
-  // AI 预测保质期
-  DateTime? _aiSuggestedExpiry;
-  String? _aiReason;
+  // AI 保质期预测状态
+  bool _isPredictingExpiry = false;
+  DateTime? _predictedExpiryFromAi;
+  String? _predictionError;
 
   // 相机 / 语音
   final ImagePicker _picker = ImagePicker();
   final stt.SpeechToText _speech = stt.SpeechToText();
-  bool _isProcessing = false; // 所有 AI 调用共用
+  bool _isProcessing = false;
   bool _isListening = false;
   String _voiceHint = "Tap mic to start, tap again to stop.";
   final TextEditingController _voiceController = TextEditingController();
@@ -73,6 +74,24 @@ class _AddFoodPageState extends State<AddFoodPage>
     _qty = item?.quantity ?? 1.0;
     _unit = item?.unit ?? 'pcs';
     _location = item?.location ?? StorageLocation.fridge;
+
+    // 兜底 unit，防止 dropdown 崩
+    const allowedUnits = [
+      'pcs',
+      'kg',
+      'g',
+      'L',
+      'ml',
+      'pack',
+      'box',
+      'cup',
+      'cups',
+    ];
+    if (!allowedUnits.contains(_unit)) {
+      _unit = 'pcs';
+    } else if (_unit == 'cups') {
+      _unit = 'cup';
+    }
 
     _purchased = item?.purchasedDate ?? DateTime.now();
     _openDate = item?.openDate;
@@ -142,21 +161,19 @@ class _AddFoodPageState extends State<AddFoodPage>
     );
   }
 
-  bool get _canPredictExpiry {
-    return _name.trim().isNotEmpty && !_isProcessing;
-  }
-
-  void _clearAiExpiry() {
-    _aiSuggestedExpiry = null;
-    _aiReason = null;
+  void _resetPrediction() {
+    _predictedExpiryFromAi = null;
+    _predictionError = null;
   }
 
   // ========= 保存 =========
 
   void _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-
     _formKey.currentState!.save();
+
+    // ⚠️ 关键逻辑：手动填写的 bestBefore 优先级最高
+    final DateTime? effectiveExpiry = _bestBefore ?? _expiry;
 
     final newItem = FoodItem(
       id: widget.itemToEdit?.id ?? const Uuid().v4(),
@@ -167,7 +184,7 @@ class _AddFoodPageState extends State<AddFoodPage>
       purchasedDate: _purchased,
       openDate: _openDate,
       bestBeforeDate: _bestBefore,
-      predictedExpiry: _expiry,
+      predictedExpiry: effectiveExpiry,
       category: 'manual',
     );
 
@@ -180,7 +197,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     if (mounted) Navigator.pop(context);
   }
 
-  // ========= AI：解析文本食材 =========
+  // ========= /api/parse-ingredient =========
 
   Future<void> _runIngredientAi(String text, {required String source}) async {
     final trimmed = text.trim();
@@ -232,9 +249,7 @@ class _AddFoodPageState extends State<AddFoodPage>
             _location = StorageLocation.fridge;
         }
 
-        // 修改关键字段后，旧的 AI 预测就作废，避免误导
-        _clearAiExpiry();
-
+        _resetPrediction();
         _tabController.animateTo(0); // 回到 Manual 给用户确认
       });
 
@@ -262,33 +277,32 @@ class _AddFoodPageState extends State<AddFoodPage>
     await _runIngredientAi(_voiceController.text, source: 'voice');
   }
 
-  // ========= AI：预测保质期 =========
+  // ========= /api/predict-expiry =========
 
   Future<void> _predictExpiryWithAi() async {
-    if (!_canPredictExpiry) {
+    if (_name.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('请先填写食材名称（至少）再尝试预测保质期。'),
-        ),
+        const SnackBar(content: Text('请先填写食材名称')),
       );
       return;
     }
 
     setState(() {
-      _isProcessing = true;
+      _isPredictingExpiry = true;
+      _predictionError = null;
     });
 
     try {
       final uri = Uri.parse('$kBackendBaseUrl/api/predict-expiry');
 
       final body = {
-        'name': _name,
-        'location': _location.name, // fridge / freezer / pantry
-        'purchasedDate': _purchased.toIso8601String(),
-        if (_openDate != null) 'openedDate': _openDate!.toIso8601String(),
-        if (_bestBefore != null)
-          'bestBeforeDate': _bestBefore!.toIso8601String(),
-      };
+  'name': _name,
+  
+  'location': _location.name, // fridge / freezer / pantry
+  'purchasedDate': _purchased.toIso8601String(),
+  if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
+  if (_bestBefore != null) 'bestBeforeDate': _bestBefore!.toIso8601String(),
+};
 
       final resp = await http.post(
         uri,
@@ -301,45 +315,41 @@ class _AddFoodPageState extends State<AddFoodPage>
       }
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      final dateStr = (json['suggestedExpiry'] ?? '').toString();
-      final reason = json['reason']?.toString();
+      final predicted = json['predictedExpiry'];
 
-      final parsed = DateTime.tryParse(dateStr);
-      if (parsed == null) {
-        throw Exception('Invalid date from AI: $dateStr');
+      if (predicted == null || predicted.toString().isEmpty) {
+        throw Exception('No predictedExpiry in response');
+      }
+
+      // 既支持 ISO 字符串，也支持 "yyyy-MM-dd"
+      DateTime parsed;
+      try {
+        parsed = DateTime.parse(predicted as String);
+      } catch (_) {
+        final s = predicted.toString();
+        parsed = DateTime(
+          int.parse(s.substring(0, 4)),
+          int.parse(s.substring(5, 7)),
+          int.parse(s.substring(8, 10)),
+        );
       }
 
       setState(() {
-        _aiSuggestedExpiry = parsed;
-        _aiReason = reason;
+        _predictedExpiryFromAi = parsed;
+        _expiry = parsed; // 先把 AI 值写到 _expiry（用户仍可用 bestBefore 覆盖）
       });
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('保质期预测失败：$e')),
-      );
+      setState(() {
+        _predictionError = e.toString();
+        _predictedExpiryFromAi = null;
+      });
     } finally {
       if (mounted) {
         setState(() {
-          _isProcessing = false;
+          _isPredictingExpiry = false;
         });
       }
     }
-  }
-
-  void _applyAiExpiry() {
-    if (_aiSuggestedExpiry == null) return;
-
-    setState(() {
-      _bestBefore = _aiSuggestedExpiry;
-      _expiry = _aiSuggestedExpiry; // 用于 Expiring Soon 计算
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已应用 AI 推荐保质期：${_formatDate(_aiSuggestedExpiry)}'),
-      ),
-    );
   }
 
   // ========= Scan / Camera =========
@@ -495,7 +505,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               onChanged: (v) {
                 setState(() {
                   _name = v;
-                  _clearAiExpiry(); // 名字变了，旧预测作废
+                  _resetPrediction();
                 });
               },
               onSaved: (v) => _name = v ?? '',
@@ -529,12 +539,13 @@ class _AddFoodPageState extends State<AddFoodPage>
                       'pack',
                       'box',
                       'cup',
-                    ].map(
-                      (e) => DropdownMenuItem(
+                      'cups',
+                    ].toSet().map((e) {
+                      return DropdownMenuItem(
                         value: e,
                         child: Text(e),
-                      ),
-                    ).toList(),
+                      );
+                    }).toList(),
                     onChanged: (v) => setState(() => _unit = v!),
                     decoration: const InputDecoration(
                       labelText: 'Unit',
@@ -559,10 +570,12 @@ class _AddFoodPageState extends State<AddFoodPage>
                 initial: _purchased,
                 first: DateTime.now().subtract(const Duration(days: 365)),
                 last: DateTime.now().add(const Duration(days: 365)),
-                onPicked: (d) => setState(() {
-                  _purchased = d!;
-                  _clearAiExpiry();
-                }),
+                onPicked: (d) {
+                  setState(() {
+                    _purchased = d!;
+                    _resetPrediction();
+                  });
+                },
               ),
             ),
             _buildDateTile(
@@ -583,101 +596,14 @@ class _AddFoodPageState extends State<AddFoodPage>
                 initial: _bestBefore ?? DateTime.now(),
                 first: DateTime.now().subtract(const Duration(days: 365)),
                 last: DateTime.now().add(const Duration(days: 365 * 3)),
-                onPicked: (d) => setState(() {
-                  _bestBefore = d;
-                  // 用户手动输保质期时，不强制清空 AI 预测，作为对比也可以
-                }),
+                onPicked: (d) => setState(() => _bestBefore = d),
               ),
               onClear: () => setState(() => _bestBefore = null),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            // --- AI 预测保质期卡片 ---
-            const Text(
-              'Smart expiry (beta)',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF4F7FB),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE0E7F1)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.auto_awesome, size: 20),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'Predict expiry date',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  if (_aiSuggestedExpiry == null)
-                    Text(
-                      'Based on name, storage and purchase date.\n'
-                      'This is only a suggestion – always follow package labels and food safety rules.',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                    )
-                  else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Suggested: ${_formatDate(_aiSuggestedExpiry)}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        if (_aiReason != null)
-                          Text(
-                            _aiReason!,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                          ),
-                      ],
-                    ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      if (_aiSuggestedExpiry == null)
-                        FilledButton.icon(
-                          onPressed: _isProcessing ? null : _predictExpiryWithAi,
-                          icon: const Icon(Icons.schedule),
-                          label: const Text('Predict now'),
-                        )
-                      else ...[
-                        OutlinedButton.icon(
-                          onPressed:
-                              _isProcessing ? null : _predictExpiryWithAi,
-                          icon: const Icon(Icons.refresh, size: 18),
-                          label: const Text('Recalculate'),
-                        ),
-                        const SizedBox(width: 12),
-                        FilledButton(
-                          onPressed: _applyAiExpiry,
-                          child: const Text('Apply'),
-                        ),
-                      ],
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
+            // AI 保质期预测卡片
+            _buildExpiryAiCard(),
             const SizedBox(height: 20),
 
             // 存放位置
@@ -705,10 +631,12 @@ class _AddFoodPageState extends State<AddFoodPage>
                 ),
               ],
               selected: {_location},
-              onSelectionChanged: (s) => setState(() {
-                _location = s.first;
-                _clearAiExpiry(); // 存放位置变了，旧预测作废
-              }),
+              onSelectionChanged: (s) {
+                setState(() {
+                  _location = s.first;
+                  _resetPrediction();
+                });
+              },
             ),
             const SizedBox(height: 32),
 
@@ -721,6 +649,92 @@ class _AddFoodPageState extends State<AddFoodPage>
                 label: const Text('Save to Inventory'),
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpiryAiCard() {
+    final canPredict = _name.trim().isNotEmpty;
+
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: Colors.blueGrey.shade50,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'AI expiry suggestion (optional)',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Based on food type, storage and purchase date, '
+              'ask AI to suggest an expiry date. '
+              'If you manually set Best-before, that will override AI when saving.',
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 12),
+            if (_isPredictingExpiry) ...[
+              const Row(
+                children: [
+                  SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Text('Predicting expiry...'),
+                ],
+              ),
+            ] else if (_predictedExpiryFromAi != null) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'AI suggests: ${_formatDate(_predictedExpiryFromAi)}',
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      setState(() {
+                        _expiry = _predictedExpiryFromAi;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已应用 AI 推荐的保质期')),
+                      );
+                    },
+                    child: const Text('Apply'),
+                  ),
+                ],
+              ),
+              if (_bestBefore != null)
+                Text(
+                  'Note: current Best-before ${_formatDate(_bestBefore)} '
+                  'will override this when saving.',
+                  style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+                ),
+            ] else ...[
+              if (_predictionError != null) ...[
+                Text(
+                  '上次预测失败：$_predictionError',
+                  style: const TextStyle(fontSize: 11, color: Colors.red),
+                ),
+                const SizedBox(height: 8),
+              ],
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: canPredict ? _predictExpiryWithAi : null,
+                  icon: const Icon(Icons.auto_awesome),
+                  label: const Text('Let AI predict expiry'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

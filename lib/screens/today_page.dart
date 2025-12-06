@@ -32,9 +32,10 @@ class TodayPage extends StatelessWidget {
           _buildImpactSummary(context),
           const SizedBox(height: 24),
 
-            _buildAiButton(
-              onTap: () => _showAiRecipeFlow(context, expiring),
-            ),
+          // Cook with AI 按钮：一直显示
+          _buildAiButton(
+            onTap: () => _showAiRecipeFlow(context, expiring),
+          ),
 
           const SizedBox(height: 24),
 
@@ -63,13 +64,24 @@ class TodayPage extends StatelessWidget {
               (item) => FoodCard(
                 item: item,
                 onAction: (action) async {
+                  // 1) 记录 impact（钱 / CO₂ / 宠物）
+                  repo.recordImpactForAction(item, action);
+
+                  // 2) 更新库存状态
                   if (action == 'eat' || action == 'pet') {
-                    await repo.updateStatus(item.id, FoodStatus.consumed);
+                    await repo.updateStatus(
+                      item.id,
+                      FoodStatus.consumed,
+                    );
                   }
                   if (action == 'trash') {
-                    await repo.updateStatus(item.id, FoodStatus.discarded);
+                    await repo.updateStatus(
+                      item.id,
+                      FoodStatus.discarded,
+                    );
                   }
 
+                  // 3) 第一次喂宠物的安全提示
                   if (action == 'pet' && !repo.hasShownPetWarning) {
                     repo.hasShownPetWarning = true;
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -185,7 +197,7 @@ class TodayPage extends StatelessWidget {
 
   Widget _buildImpactSummary(BuildContext context) {
     final saved = repo.getSavedCount();
-    final streak = repo.getCurrentStreakDays(); // 你在 repo 里加的 getter
+    final streak = repo.getCurrentStreakDays();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -271,7 +283,9 @@ class TodayPage extends StatelessWidget {
   }
 }
 
-// ================== Recipe 数据模型 ==================
+// ================== Recipe 数据模型 & BottomSheet（保持不变） ==================
+
+// 下面这部分你原来的逻辑已经 OK，我原样保留，方便你直接替换整文件
 
 class RecipeSuggestion {
   final String id;
@@ -294,8 +308,6 @@ class RecipeSuggestion {
     this.imageUrl,
   });
 }
-
-// ================== Recipe Generator BottomSheet ==================
 
 class RecipeGeneratorSheet extends StatefulWidget {
   final List<FoodItem> items;
@@ -340,16 +352,11 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
         throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
       }
 
-      // 调试用：看一下后端返回长什么样
       // ignore: avoid_print
       print('AI recipe response: ${resp.body}');
 
       final root = jsonDecode(resp.body);
 
-      // 兼容多种结构：
-      // 1) { "recipes": [ {...}, {...} ] }
-      // 2) { "recipes": { ... } }
-      // 3) [ { ... }, { ... } ]
       List<dynamic> rawList;
 
       if (root is Map<String, dynamic>) {
@@ -523,7 +530,6 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   }
 }
 
-// 网格里的单个菜谱卡片
 class _RecipeCard extends StatelessWidget {
   final RecipeSuggestion recipe;
   final VoidCallback onTap;
@@ -612,7 +618,6 @@ class _RecipeCard extends StatelessWidget {
   }
 }
 
-// 详情页
 class RecipeDetailPage extends StatelessWidget {
   final RecipeSuggestion recipe;
 
