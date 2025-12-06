@@ -278,79 +278,65 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   // ========= /api/predict-expiry =========
+Future<void> _predictExpiryWithAi() async {
+  if (_name.trim().isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('请先填写食材名称')),
+    );
+    return;
+  }
 
-  Future<void> _predictExpiryWithAi() async {
-    if (_name.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先填写食材名称')),
-      );
-      return;
+  setState(() {
+    _isPredictingExpiry = true;
+    _predictionError = null;
+  });
+
+  try {
+    final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
+
+    final body = <String, dynamic>{
+      'name': _name.trim(),
+      // StorageLocation.fridge / freezer / pantry -> "fridge"...
+      'location': _location.name,
+      'purchasedDate': _purchased.toIso8601String(),
+      if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
+      if (_bestBefore != null)
+        'bestBeforeDate': _bestBefore!.toIso8601String(),
+    };
+
+    final resp = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+
+    final iso = data['predictedExpiry'] as String?;
+    if (iso == null) {
+      throw Exception('No predictedExpiry in response');
     }
 
     setState(() {
-      _isPredictingExpiry = true;
+      _expiry = DateTime.parse(iso);
       _predictionError = null;
     });
-
-    try {
-      final uri = Uri.parse('$kBackendBaseUrl/api/predict-expiry');
-
-      final body = {
-  'name': _name,
-  
-  'location': _location.name, // fridge / freezer / pantry
-  'purchasedDate': _purchased.toIso8601String(),
-  if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
-  if (_bestBefore != null) 'bestBeforeDate': _bestBefore!.toIso8601String(),
-};
-
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-
-      if (resp.statusCode != 200) {
-        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
-      }
-
-      final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      final predicted = json['predictedExpiry'];
-
-      if (predicted == null || predicted.toString().isEmpty) {
-        throw Exception('No predictedExpiry in response');
-      }
-
-      // 既支持 ISO 字符串，也支持 "yyyy-MM-dd"
-      DateTime parsed;
-      try {
-        parsed = DateTime.parse(predicted as String);
-      } catch (_) {
-        final s = predicted.toString();
-        parsed = DateTime(
-          int.parse(s.substring(0, 4)),
-          int.parse(s.substring(5, 7)),
-          int.parse(s.substring(8, 10)),
-        );
-      }
-
+  } catch (e) {
+    setState(() {
+      _predictionError = e.toString();
+    });
+  } finally {
+    if (mounted) {
       setState(() {
-        _predictedExpiryFromAi = parsed;
-        _expiry = parsed; // 先把 AI 值写到 _expiry（用户仍可用 bestBefore 覆盖）
+        _isPredictingExpiry = false;
       });
-    } catch (e) {
-      setState(() {
-        _predictionError = e.toString();
-        _predictedExpiryFromAi = null;
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isPredictingExpiry = false;
-        });
-      }
     }
   }
+}
 
   // ========= Scan / Camera =========
 
