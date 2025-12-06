@@ -44,11 +44,11 @@ class _AddFoodPageState extends State<AddFoodPage>
   late DateTime _purchased;
   DateTime? _openDate;
   DateTime? _bestBefore;
-  DateTime? _expiry; // AI 预测值（可为空）
+  DateTime? _expiry; // 真正保存到模型里的“effective expiry”（手动/AI）
 
   // AI 保质期预测状态
   bool _isPredictingExpiry = false;
-  DateTime? _predictedExpiryFromAi;
+  DateTime? _predictedExpiryFromAi; // 只用于 UI 显示和 Apply 按钮
   String? _predictionError;
 
   // 相机 / 语音
@@ -172,7 +172,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     if (!(_formKey.currentState?.validate() ?? false)) return;
     _formKey.currentState!.save();
 
-    // ⚠️ 关键逻辑：手动填写的 bestBefore 优先级最高
+    // 手动填写的 bestBefore 优先级最高
     final DateTime? effectiveExpiry = _bestBefore ?? _expiry;
 
     final newItem = FoodItem(
@@ -277,66 +277,66 @@ class _AddFoodPageState extends State<AddFoodPage>
     await _runIngredientAi(_voiceController.text, source: 'voice');
   }
 
-  // ========= /api/predict-expiry =========
-Future<void> _predictExpiryWithAi() async {
-  if (_name.trim().isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('请先填写食材名称')),
-    );
-    return;
-  }
-
-  setState(() {
-    _isPredictingExpiry = true;
-    _predictionError = null;
-  });
-
-  try {
-    final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
-
-    final body = <String, dynamic>{
-      'name': _name.trim(),
-      // StorageLocation.fridge / freezer / pantry -> "fridge"...
-      'location': _location.name,
-      'purchasedDate': _purchased.toIso8601String(),
-      if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
-      if (_bestBefore != null)
-        'bestBeforeDate': _bestBefore!.toIso8601String(),
-    };
-
-    final resp = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
-
-    if (resp.statusCode != 200) {
-      throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
-    }
-
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-
-    final iso = data['predictedExpiry'] as String?;
-    if (iso == null) {
-      throw Exception('No predictedExpiry in response');
+  // ========= 调用 /api/recipe 做“保质期预测” =========
+  Future<void> _predictExpiryWithAi() async {
+    if (_name.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先填写食材名称')),
+      );
+      return;
     }
 
     setState(() {
-      _expiry = DateTime.parse(iso);
+      _isPredictingExpiry = true;
       _predictionError = null;
     });
-  } catch (e) {
-    setState(() {
-      _predictionError = e.toString();
-    });
-  } finally {
-    if (mounted) {
+
+    try {
+      final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
+
+      final body = <String, dynamic>{
+        'name': _name.trim(),
+        // StorageLocation.fridge / freezer / pantry -> "fridge" ...
+        'location': _location.name,
+        'purchasedDate': _purchased.toIso8601String(),
+        if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
+        if (_bestBefore != null)
+          'bestBeforeDate': _bestBefore!.toIso8601String(),
+      };
+
+      final resp = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+
+      if (resp.statusCode != 200) {
+        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
+      }
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final iso = data['predictedExpiry'] as String?;
+      if (iso == null) {
+        throw Exception('No predictedExpiry in response');
+      }
+
       setState(() {
-        _isPredictingExpiry = false;
+        // ★ 只写到 _predictedExpiryFromAi，用于卡片展示和 Apply
+        _predictedExpiryFromAi = DateTime.parse(iso);
+        _predictionError = null;
       });
+    } catch (e) {
+      setState(() {
+        _predictionError = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPredictingExpiry = false;
+        });
+      }
     }
   }
-}
 
   // ========= Scan / Camera =========
 
@@ -420,7 +420,7 @@ Future<void> _predictExpiryWithAi() async {
         _isListening = false;
         _voiceHint = _voiceController.text.trim().isEmpty
             ? "No speech detected, please try again."
-            : "确认下面的文本，如果有错可以修改，再让 AI 填表。";
+            : "确认下面的文本，如果有错可以修改，然后再让 AI 填表。";
       });
       _speech.stop();
     }
@@ -642,7 +642,8 @@ Future<void> _predictExpiryWithAi() async {
   }
 
   Widget _buildExpiryAiCard() {
-    final canPredict = _name.trim().isNotEmpty;
+    final canPredict =
+        _name.trim().isNotEmpty && !_isPredictingExpiry;
 
     return Card(
       elevation: 0,
