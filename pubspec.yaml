@@ -1,0 +1,33 @@
+name: smart_food_home
+description: "A sustainable food management app for BSH project study."
+publish_to: 'none' # Prevent accidental publishing to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  fl_chart: ^0.69.0
+  # --- UI & 样式 ---
+  cupertino_icons: ^1.0.8    # iOS 风格图标
+  google_fonts: ^6.2.1       # 谷歌字体 (让 App 看起来更像 BSH 的高端风格)
+
+  # --- 核心逻辑工具 ---
+  uuid: ^4.4.0               # 生成唯一的 Food ID (必备)
+  intl: ^0.19.0              # 日期格式化 (yyyy-MM-dd)
+
+  # --- 硬件功能 (相机 & 语音) ---
+  image_picker: ^1.1.2       # 调用相机拍照
+  speech_to_text: ^7.0.0     # 语音转文字 (麦克风)
+  permission_handler: ^11.3.1 # 处理 Android/iOS 权限
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0      # 代码规范检查
+
+flutter:
+  uses-material-design: true # 启用 Material Design
