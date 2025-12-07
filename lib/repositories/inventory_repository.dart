@@ -147,10 +147,8 @@ class InventoryRepository {
           location: StorageLocation.fridge,
           quantity: 2,
           unit: 'cups',
-          purchasedDate:
-              DateTime.now().subtract(const Duration(days: 2)),
-          predictedExpiry:
-              DateTime.now().add(const Duration(days: 1)),
+          purchasedDate: DateTime.now().subtract(const Duration(days: 2)),
+          predictedExpiry: DateTime.now().add(const Duration(days: 1)),
           status: FoodStatus.good,
         ),
       );
@@ -162,8 +160,7 @@ class InventoryRepository {
           quantity: 500,
           unit: 'g',
           purchasedDate: DateTime.now(),
-          predictedExpiry:
-              DateTime.now().add(const Duration(days: 4)),
+          predictedExpiry: DateTime.now().add(const Duration(days: 4)),
           status: FoodStatus.good,
         ),
       );
@@ -181,8 +178,7 @@ class InventoryRepository {
       try {
         final decoded = jsonDecode(impactJson) as List<dynamic>;
         for (final e in decoded) {
-          impactEvents.add(
-              ImpactEvent.fromJson(e as Map<String, dynamic>));
+          impactEvents.add(ImpactEvent.fromJson(e as Map<String, dynamic>));
         }
       } catch (_) {}
     }
@@ -208,8 +204,7 @@ class InventoryRepository {
 
   // ---------- 内部：保存到本地 ----------
 
-  Future<SharedPreferences> _prefs() =>
-      SharedPreferences.getInstance();
+  Future<SharedPreferences> _prefs() => SharedPreferences.getInstance();
 
   Future<void> _saveItems() async {
     final prefs = await _prefs();
@@ -227,8 +222,7 @@ class InventoryRepository {
     final prefs = await _prefs();
     final meta = <String, dynamic>{
       'streakDays': _streakDays,
-      'lastConsumed':
-          _lastConsumedDate?.toIso8601String(),
+      'lastConsumed': _lastConsumedDate?.toIso8601String(),
       'petWarningShown': hasShownPetWarning,
     };
     await prefs.setString(_metaKey, jsonEncode(meta));
@@ -282,6 +276,43 @@ class InventoryRepository {
     }
   }
 
+  /// 部分/全部使用一个食材，并记录 impact
+  /// [action]: 'eat' / 'pet'
+  /// [usedQty]: 用户这次用了多少（单位 = item.unit）
+  Future<void> useItemWithImpact(
+    FoodItem item,
+    String action,
+    double usedQty,
+  ) async {
+    if (usedQty <= 0) return;
+
+    // 1. clamp 在 [0, item.quantity]
+    final double clamped = usedQty.clamp(0, item.quantity).toDouble();
+
+    // 2. 记录 impact
+    if (action == 'eat') {
+      logCooked(item, quantity: clamped);
+    } else if (action == 'pet') {
+      logFedToPet(item, quantity: clamped);
+    }
+    await _saveImpact();
+
+    // 3. 更新库存数量
+    final remaining = item.quantity - clamped;
+
+    if (remaining <= 0.0001) {
+      // 等于或几乎等于 0：整条算吃完
+      await updateStatus(item.id, FoodStatus.consumed);
+    } else {
+      // 只用掉了一部分：这条 item 继续存在，只是 quantity 变少
+      final index = _items.indexWhere((i) => i.id == item.id);
+      if (index != -1) {
+        _items[index] = item.copyWith(quantity: remaining);
+        await _saveItems();
+      }
+    }
+  }
+
   /// 提供一个安全的方式来标记“宠物提示已显示”，顺便落盘
   Future<void> markPetWarningShown() async {
     if (!hasShownPetWarning) {
@@ -304,23 +335,15 @@ class InventoryRepository {
   // ================== Impact 相关 ==================
 
   /// 只读暴露给 Impact 页面
-  List<ImpactEvent> get impactEvents =>
-      List.unmodifiable(_impactEvents);
+  List<ImpactEvent> get impactEvents => List.unmodifiable(_impactEvents);
 
-  /// 根据 TodayPage 中的 action 统一记录 impact
-  /// action: 'eat' / 'pet' / 'trash'
-  Future<void> recordImpactForAction(
-      FoodItem item, String action) async {
-    // 吃掉 = cooked
+  /// （保留一个旧接口，其他地方暂时不用）
+  Future<void> recordImpactForAction(FoodItem item, String action) async {
     if (action == 'eat') {
       logCooked(item);
-    }
-
-    // 喂宠物 = fedToPet
-    if (action == 'pet') {
+    } else if (action == 'pet') {
       logFedToPet(item);
     }
-
     await _saveImpact();
   }
 
@@ -402,9 +425,7 @@ class InventoryRepository {
   double totalFedToPetQuantitySince(DateTime from) {
     return _impactEvents
         .where(
-          (e) =>
-              e.type == ImpactType.fedToPet &&
-              e.date.isAfter(from),
+          (e) => e.type == ImpactType.fedToPet && e.date.isAfter(from),
         )
         .fold(0.0, (sum, e) => sum + e.quantity);
   }

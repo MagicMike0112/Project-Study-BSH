@@ -65,7 +65,7 @@ class TodayPage extends StatelessWidget {
                 item: item,
                 onAction: (action) async {
                   // 1) 记录 impact（钱 / CO₂ / 宠物）
-                  repo.recordImpactForAction(item, action);
+                  await repo.recordImpactForAction(item, action);
 
                   // 2) 更新库存状态
                   if (action == 'eat' || action == 'pet') {
@@ -83,7 +83,8 @@ class TodayPage extends StatelessWidget {
 
                   // 3) 第一次喂宠物的安全提示
                   if (action == 'pet' && !repo.hasShownPetWarning) {
-                    repo.hasShownPetWarning = true;
+                    await repo.markPetWarningShown();
+                    // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
@@ -145,10 +146,10 @@ class TodayPage extends StatelessWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => RecipeGeneratorSheet(
+        repo: repo, // ✅ 传 repo 进去
         items: result.selectedInventoryItems,
         extraIngredients: result.extraIngredients,
-        // 新增：把特殊要求传进来
-        specialRequest: result.specialRequest,
+        onInventoryUpdated: onRefresh, // ✅ 做完菜后更新 Today/Inventory/Impact
       ),
     );
   }
@@ -285,7 +286,7 @@ class TodayPage extends StatelessWidget {
   }
 }
 
-// ================== Recipe 数据模型 & BottomSheet ==================
+// ================== Recipe 数据模型 ==================
 
 class RecipeSuggestion {
   final String id;
@@ -309,18 +310,20 @@ class RecipeSuggestion {
   });
 }
 
+// ================== Recipe Generator BottomSheet ==================
+
 class RecipeGeneratorSheet extends StatefulWidget {
+  final InventoryRepository repo;
   final List<FoodItem> items;
   final List<String> extraIngredients;
-
-  /// 新增：从 SelectIngredientsPage 传来的特殊要求
-  final String? specialRequest;
+  final VoidCallback? onInventoryUpdated;
 
   const RecipeGeneratorSheet({
     super.key,
+    required this.repo,
     required this.items,
     required this.extraIngredients,
-    this.specialRequest,
+    this.onInventoryUpdated,
   });
 
   @override
@@ -343,26 +346,20 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
         'https://project-study-bsh.vercel.app/api/recipe',
       );
 
-      // 组装请求体，带上 specialRequest（如果有）
-      final body = <String, dynamic>{
-        'ingredients': ingredients,
-        'extraIngredients': widget.extraIngredients,
-      };
-      if (widget.specialRequest != null &&
-          widget.specialRequest!.trim().isNotEmpty) {
-        body['specialRequest'] = widget.specialRequest!.trim();
-      }
-
       final resp = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
+        body: jsonEncode({
+          'ingredients': ingredients,
+          'extraIngredients': widget.extraIngredients,
+        }),
       );
 
       if (resp.statusCode != 200) {
         throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
       }
 
+      // 调试用：看一下后端返回长什么样
       // ignore: avoid_print
       print('AI recipe response: ${resp.body}');
 
@@ -433,9 +430,6 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   }
 
   Widget _buildConfig() {
-    final hasSpecial = widget.specialRequest != null &&
-        widget.specialRequest!.trim().isNotEmpty;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -475,27 +469,6 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
             children: widget.extraIngredients
                 .map((e) => Chip(label: Text(e)))
                 .toList(),
-          ),
-          const SizedBox(height: 16),
-        ],
-        if (hasSpecial) ...[
-          const Text(
-            'Special request',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.blueGrey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.blueGrey.shade100),
-            ),
-            child: Text(
-              widget.specialRequest!.trim(),
-              style: const TextStyle(fontSize: 13),
-            ),
           ),
           const SizedBox(height: 16),
         ],
@@ -552,7 +525,12 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => RecipeDetailPage(recipe: recipe),
+                      builder: (_) => RecipeDetailPage(
+                        recipe: recipe,
+                        repo: widget.repo,
+                        usedItems: widget.items,
+                        onInventoryUpdated: widget.onInventoryUpdated,
+                      ),
                     ),
                   );
                 },
@@ -565,6 +543,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   }
 }
 
+// 网格里的单个菜谱卡片
 class _RecipeCard extends StatelessWidget {
   final RecipeSuggestion recipe;
   final VoidCallback onTap;
@@ -653,10 +632,20 @@ class _RecipeCard extends StatelessWidget {
   }
 }
 
+// 详情页
 class RecipeDetailPage extends StatelessWidget {
   final RecipeSuggestion recipe;
+  final InventoryRepository repo;
+  final List<FoodItem> usedItems;
+  final VoidCallback? onInventoryUpdated;
 
-  const RecipeDetailPage({super.key, required this.recipe});
+  const RecipeDetailPage({
+    super.key,
+    required this.recipe,
+    required this.repo,
+    required this.usedItems,
+    this.onInventoryUpdated,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -753,8 +742,49 @@ class RecipeDetailPage extends StatelessWidget {
             height: 52,
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
+              onPressed: () async {
+                // 1. 询问是否更新库存
+                final shouldUpdate = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) {
+                    return AlertDialog(
+                      title: const Text('Update inventory?'),
+                      content: const Text(
+                        'Did you use up the selected ingredients from your fridge for this recipe?\n'
+                        'If yes, we will mark them as cooked and remove them from your inventory.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Skip'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Update'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+
+                if (shouldUpdate == true) {
+                  for (final item in usedItems) {
+                    await repo.recordImpactForAction(item, 'eat');
+                    await repo.updateStatus(item.id, FoodStatus.consumed);
+                  }
+                  onInventoryUpdated?.call();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Inventory updated ✅'),
+                      ),
+                    );
+                  }
+                }
+
+                if (context.mounted) {
+                  Navigator.pop(context);
+                }
               },
               icon: const Icon(Icons.check),
               label: const Text('I cooked this'),

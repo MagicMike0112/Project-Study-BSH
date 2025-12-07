@@ -1,6 +1,5 @@
 // lib/screens/main_scaffold.dart
 import 'package:flutter/material.dart';
-
 import '../repositories/inventory_repository.dart';
 import 'today_page.dart';
 import 'inventory_page.dart';
@@ -16,86 +15,85 @@ class MainScaffold extends StatefulWidget {
 
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
-
-  // 仓库：改成“异步初始化 + 可为空”
-  InventoryRepository? _repo;
-  bool _isLoadingRepo = true;
-
   bool _showFabMenu = false;
+
+  late Future<InventoryRepository> _repoFuture;
 
   @override
   void initState() {
     super.initState();
-    _initRepo();
+    _repoFuture = InventoryRepository.create();
   }
 
-  Future<void> _initRepo() async {
-    // 使用我们带本地持久化的工厂方法
-    final repo = await InventoryRepository.create();
-
-    if (!mounted) return;
-    setState(() {
-      _repo = repo;
-      _isLoadingRepo = false;
-    });
-  }
-
-  void _refresh() {
+  void _refresh(InventoryRepository repo) {
     setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    // 仓库还没准备好 → 给个简单的 loading 页
-    if (_isLoadingRepo || _repo == null) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(),
-        ),
-      );
-    }
+    return FutureBuilder<InventoryRepository>(
+      future: _repoFuture,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          // 出错时直接把异常打到 UI 上，方便你调
+          return Scaffold(
+            body: Center(
+              child: Text(
+                'Init error:\n${snapshot.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
 
-    final repo = _repo!;
+        if (!snapshot.hasData) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-    final pages = [
-      TodayPage(repo: repo, onRefresh: _refresh),
-      InventoryPage(repo: repo, onRefresh: _refresh),
-      ImpactPage(repo: repo),
-    ];
+        final repo = snapshot.data!;
 
-    return Scaffold(
-      body: IndexedStack(index: _currentIndex, children: pages),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _currentIndex,
-        onDestinationSelected: (idx) => setState(() {
-          _currentIndex = idx;
-          _showFabMenu = false;
-        }),
-        backgroundColor: Colors.white,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard),
-            label: 'Today',
+        final pages = [
+          TodayPage(repo: repo, onRefresh: () => _refresh(repo)),
+          InventoryPage(repo: repo, onRefresh: () => _refresh(repo)),
+          ImpactPage(repo: repo),
+        ];
+
+        return Scaffold(
+          body: IndexedStack(index: _currentIndex, children: pages),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _currentIndex,
+            onDestinationSelected: (idx) => setState(() {
+              _currentIndex = idx;
+              _showFabMenu = false;
+            }),
+            backgroundColor: Colors.white,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.dashboard_outlined),
+                selectedIcon: Icon(Icons.dashboard),
+                label: 'Today',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.inventory_2_outlined),
+                selectedIcon: Icon(Icons.inventory_2),
+                label: 'Inventory',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.eco_outlined),
+                selectedIcon: Icon(Icons.eco),
+                label: 'Impact',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            selectedIcon: Icon(Icons.inventory_2),
-            label: 'Inventory',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.eco_outlined),
-            selectedIcon: Icon(Icons.eco),
-            label: 'Impact',
-          ),
-        ],
-      ),
-      floatingActionButton:
-          _currentIndex != 2 ? _buildExpandableFab(repo) : null,
+          floatingActionButton:
+              _currentIndex != 2 ? _buildExpandableFab(repo) : null,
+        );
+      },
     );
   }
 
-  // 传 repo 进来，避免再次从 null 取
   Widget _buildExpandableFab(InventoryRepository repo) {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -130,9 +128,8 @@ class _MainScaffoldState extends State<MainScaffold> {
     );
   }
 
-  void _navigateToAdd(InventoryRepository repo, int tabIndex) async {
+  Future<void> _navigateToAdd(InventoryRepository repo, int tabIndex) async {
     setState(() => _showFabMenu = false);
-
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -142,8 +139,7 @@ class _MainScaffoldState extends State<MainScaffold> {
         ),
       ),
     );
-
-    _refresh();
+    _refresh(repo);
   }
 }
 
@@ -173,10 +169,7 @@ class FabOption extends StatelessWidget {
               color: Colors.white,
               borderRadius: BorderRadius.circular(8),
               boxShadow: const [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 4,
-                ),
+                BoxShadow(color: Colors.black12, blurRadius: 4),
               ],
             ),
             child: Text(

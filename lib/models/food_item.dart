@@ -103,9 +103,11 @@ class FoodItem {
     };
   }
 
+  /// 容错 fromJson：老数据字段缺失/类型错了也尽量兜住，不让整个 app 崩
   factory FoodItem.fromJson(Map<String, dynamic> json) {
-    StorageLocation parseLocation(String? value) {
-      switch (value) {
+    StorageLocation parseLocation(dynamic value) {
+      final s = value?.toString();
+      switch (s) {
         case 'freezer':
           return StorageLocation.freezer;
         case 'pantry':
@@ -116,8 +118,9 @@ class FoodItem {
       }
     }
 
-    FoodStatus parseStatus(String? value) {
-      switch (value) {
+    FoodStatus parseStatus(dynamic value) {
+      final s = value?.toString();
+      switch (s) {
         case 'consumed':
           return FoodStatus.consumed;
         case 'discarded':
@@ -131,22 +134,64 @@ class FoodItem {
     DateTime? parseDate(dynamic v) {
       if (v == null) return null;
       if (v is String && v.isEmpty) return null;
-      return DateTime.parse(v as String);
+      if (v is String) {
+        return DateTime.tryParse(v);
+      }
+      if (v is int) {
+        // 兼容毫秒时间戳的旧数据
+        return DateTime.fromMillisecondsSinceEpoch(v);
+      }
+      return null;
     }
 
-    return FoodItem(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      location: parseLocation(json['location'] as String?),
-      quantity: (json['quantity'] as num).toDouble(),
-      unit: json['unit'] as String,
-      purchasedDate: DateTime.parse(json['purchasedDate'] as String),
-      openDate: parseDate(json['openDate']),
-      bestBeforeDate: parseDate(json['bestBeforeDate']),
-      predictedExpiry: parseDate(json['predictedExpiry']),
-      status: parseStatus(json['status'] as String?),
-      category: json['category'] as String?,
-      source: json['source'] as String?,
-    );
+    double parseQuantity(dynamic v) {
+      if (v is num) return v.toDouble();
+      if (v is String) {
+        final parsed = double.tryParse(v);
+        if (parsed != null) return parsed;
+      }
+      return 1.0; // 默认 1
+    }
+
+    // 整体再包一层 try，实在解析不出来就给一个“安全兜底” item
+    try {
+      final rawId = json['id']?.toString();
+      final rawName = json['name']?.toString();
+
+      return FoodItem(
+        id: (rawId == null || rawId.isEmpty)
+            ? 'legacy-${DateTime.now().millisecondsSinceEpoch}'
+            : rawId,
+        name: (rawName == null || rawName.isEmpty)
+            ? 'Unnamed item'
+            : rawName,
+        location: parseLocation(json['location']),
+        quantity: parseQuantity(json['quantity']),
+        unit: (json['unit']?.toString().isNotEmpty ?? false)
+            ? json['unit'].toString()
+            : 'pcs',
+        purchasedDate: parseDate(json['purchasedDate']) ??
+            DateTime.now(), // 没有就用 now，避免崩
+        openDate: parseDate(json['openDate']),
+        bestBeforeDate: parseDate(json['bestBeforeDate']),
+        predictedExpiry: parseDate(json['predictedExpiry']),
+        status: parseStatus(json['status']),
+        category: json['category']?.toString(),
+        source: json['source']?.toString(),
+      );
+    } catch (e) {
+      // 万一上面哪一步直接炸了，这里做最后兜底
+      // 只要不 throw，Flutter 就不会在启动阶段直接挂掉
+      final fallbackName = json['name']?.toString() ?? 'Unknown item';
+      return FoodItem(
+        id: 'fallback-${DateTime.now().millisecondsSinceEpoch}',
+        name: fallbackName,
+        location: StorageLocation.fridge,
+        quantity: 1.0,
+        unit: 'pcs',
+        purchasedDate: DateTime.now(),
+        status: FoodStatus.good,
+      );
+    }
   }
 }

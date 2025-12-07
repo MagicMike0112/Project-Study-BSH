@@ -16,7 +16,9 @@ class BshColors {
   static const text = Color(0xFF1A1A1A);
 }
 
-void main() {
+Future<void> main() async {
+  // ✅ 关键：先初始化绑定，插件（包括 shared_preferences）才能注册
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const SmartFoodApp());
 }
 
@@ -58,7 +60,7 @@ class SmartFoodApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: const MainScaffold(),
+      home: const MainScaffold(),  // ✅ 保持你现在的 MainScaffold 写法即可
     );
   }
 }

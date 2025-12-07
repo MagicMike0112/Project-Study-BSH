@@ -104,7 +104,8 @@ class InventoryPage extends StatelessWidget {
 
     // 数量
     subtitleLines.add(
-        '${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}');
+      '${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}',
+    );
 
     // 存放位置 + 剩余天数
     final locLabel = _locationLabel(item.location);
@@ -204,7 +205,7 @@ class InventoryPage extends StatelessWidget {
     onRefresh();
   }
 
-  // ================== 长按 bottom sheet：Edit / Delete ==================
+  // ================== 长按 bottom sheet：Edit / Cook / Feed / Delete ==================
 
   Future<void> _showItemActionsSheet(
       BuildContext context, FoodItem item) async {
@@ -227,7 +228,48 @@ class InventoryPage extends StatelessWidget {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                leading: const Icon(Icons.restaurant),
+                title: const Text('Cook with this'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final usedQty =
+                      await _askQuantityDialog(context, item, 'eat');
+                  if (usedQty == null || usedQty <= 0) return;
+                  await repo.useItemWithImpact(item, 'eat', usedQty);
+                  onRefresh();
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.pets),
+                title: const Text('Feed to pet'),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  final usedQty =
+                      await _askQuantityDialog(context, item, 'pet');
+                  if (usedQty == null || usedQty <= 0) return;
+
+                  await repo.useItemWithImpact(item, 'pet', usedQty);
+
+                  // 小屎小远彩蛋 + 安全提示（只在第一次显示）
+                  if (!repo.hasShownPetWarning) {
+                    await repo.markPetWarningShown();
+                    // ignore: use_build_context_synchronously
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          '小屎 & 陈归远：谢谢你的晚餐～ 也请确认食材对豚鼠是安全的，若不确定先问问兽医🐹',
+                        ),
+                        duration: Duration(seconds: 4),
+                      ),
+                    );
+                  }
+
+                  onRefresh();
+                },
+              ),
+              ListTile(
+                leading:
+                    const Icon(Icons.delete_outline, color: Colors.red),
                 title: const Text(
                   'Delete from inventory',
                   style: TextStyle(color: Colors.red),
@@ -248,6 +290,105 @@ class InventoryPage extends StatelessWidget {
       },
     );
   }
+
+  // ================== “这次用多少”弹窗 ==================
+
+  // 放在 InventoryPage（和 TodayPage，如果有的话）里，替换原来的 _askQuantityDialog
+
+Future<double?> _askQuantityDialog(
+  BuildContext context,
+  FoodItem item,
+  String action,
+) async {
+  final controller = TextEditingController(
+    text: item.quantity.toStringAsFixed(
+      item.quantity == item.quantity.roundToDouble() ? 0 : 1,
+    ),
+  );
+
+  final title =
+      action == 'eat' ? 'How much did you cook?' : 'How much did you feed?';
+
+  String? errorText;
+
+  return showDialog<double>(
+    context: context,
+    builder: (ctx) {
+      return StatefulBuilder(
+        builder: (ctx, setState) {
+          return AlertDialog(
+            title: Text(title),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Quantity (${item.unit})',
+                    hintText:
+                        'Available: ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}',
+                    errorText: errorText,
+                  ),
+                  onChanged: (_) {
+                    if (errorText != null) {
+                      setState(() => errorText = null);
+                    }
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, null),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final raw = double.tryParse(
+                        controller.text.replaceAll(',', '.'),
+                      ) ??
+                      double.nan;
+
+                  // 1. 必须是数字
+                  if (raw.isNaN) {
+                    setState(() {
+                      errorText = '请输入一个数字';
+                    });
+                    return;
+                  }
+
+                  // 2. 要 > 0
+                  if (raw <= 0) {
+                    setState(() {
+                      errorText = '数量需要大于 0';
+                    });
+                    return;
+                  }
+
+                  // 3. 不能超过库存
+                  if (raw > item.quantity + 1e-9) {
+                    setState(() {
+                      errorText =
+                          '最多只能使用 ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}';
+                    });
+                    return;
+                  }
+
+                  // 合法，直接返回原始数量（不再 clamp）
+                  Navigator.pop(ctx, raw);
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
 
   // ================== 删除确认弹窗 ==================
 
