@@ -147,6 +147,8 @@ class TodayPage extends StatelessWidget {
       builder: (ctx) => RecipeGeneratorSheet(
         items: result.selectedInventoryItems,
         extraIngredients: result.extraIngredients,
+        // 新增：把特殊要求传进来
+        specialRequest: result.specialRequest,
       ),
     );
   }
@@ -283,9 +285,7 @@ class TodayPage extends StatelessWidget {
   }
 }
 
-// ================== Recipe 数据模型 & BottomSheet（保持不变） ==================
-
-// 下面这部分你原来的逻辑已经 OK，我原样保留，方便你直接替换整文件
+// ================== Recipe 数据模型 & BottomSheet ==================
 
 class RecipeSuggestion {
   final String id;
@@ -313,10 +313,14 @@ class RecipeGeneratorSheet extends StatefulWidget {
   final List<FoodItem> items;
   final List<String> extraIngredients;
 
+  /// 新增：从 SelectIngredientsPage 传来的特殊要求
+  final String? specialRequest;
+
   const RecipeGeneratorSheet({
     super.key,
     required this.items,
     required this.extraIngredients,
+    this.specialRequest,
   });
 
   @override
@@ -339,13 +343,20 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
         'https://project-study-bsh.vercel.app/api/recipe',
       );
 
+      // 组装请求体，带上 specialRequest（如果有）
+      final body = <String, dynamic>{
+        'ingredients': ingredients,
+        'extraIngredients': widget.extraIngredients,
+      };
+      if (widget.specialRequest != null &&
+          widget.specialRequest!.trim().isNotEmpty) {
+        body['specialRequest'] = widget.specialRequest!.trim();
+      }
+
       final resp = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'ingredients': ingredients,
-          'extraIngredients': widget.extraIngredients,
-        }),
+        body: jsonEncode(body),
       );
 
       if (resp.statusCode != 200) {
@@ -422,6 +433,9 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   }
 
   Widget _buildConfig() {
+    final hasSpecial = widget.specialRequest != null &&
+        widget.specialRequest!.trim().isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -461,6 +475,27 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
             children: widget.extraIngredients
                 .map((e) => Chip(label: Text(e)))
                 .toList(),
+          ),
+          const SizedBox(height: 16),
+        ],
+        if (hasSpecial) ...[
+          const Text(
+            'Special request',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.blueGrey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blueGrey.shade100),
+            ),
+            child: Text(
+              widget.specialRequest!.trim(),
+              style: const TextStyle(fontSize: 13),
+            ),
           ),
           const SizedBox(height: 16),
         ],

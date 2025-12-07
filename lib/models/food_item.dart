@@ -83,4 +83,70 @@ class FoodItem {
       source: source ?? this.source,
     );
   }
+
+  // ---------------- JSON 序列化 ----------------
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'location': location.name, // fridge / freezer / pantry
+      'quantity': quantity,
+      'unit': unit,
+      'purchasedDate': purchasedDate.toIso8601String(),
+      'openDate': openDate?.toIso8601String(),
+      'bestBeforeDate': bestBeforeDate?.toIso8601String(),
+      'predictedExpiry': predictedExpiry?.toIso8601String(),
+      'status': status.name, // good / consumed / discarded
+      'category': category,
+      'source': source,
+    };
+  }
+
+  factory FoodItem.fromJson(Map<String, dynamic> json) {
+    StorageLocation parseLocation(String? value) {
+      switch (value) {
+        case 'freezer':
+          return StorageLocation.freezer;
+        case 'pantry':
+          return StorageLocation.pantry;
+        case 'fridge':
+        default:
+          return StorageLocation.fridge;
+      }
+    }
+
+    FoodStatus parseStatus(String? value) {
+      switch (value) {
+        case 'consumed':
+          return FoodStatus.consumed;
+        case 'discarded':
+          return FoodStatus.discarded;
+        case 'good':
+        default:
+          return FoodStatus.good;
+      }
+    }
+
+    DateTime? parseDate(dynamic v) {
+      if (v == null) return null;
+      if (v is String && v.isEmpty) return null;
+      return DateTime.parse(v as String);
+    }
+
+    return FoodItem(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      location: parseLocation(json['location'] as String?),
+      quantity: (json['quantity'] as num).toDouble(),
+      unit: json['unit'] as String,
+      purchasedDate: DateTime.parse(json['purchasedDate'] as String),
+      openDate: parseDate(json['openDate']),
+      bestBeforeDate: parseDate(json['bestBeforeDate']),
+      predictedExpiry: parseDate(json['predictedExpiry']),
+      status: parseStatus(json['status'] as String?),
+      category: json['category'] as String?,
+      source: json['source'] as String?,
+    );
+  }
 }

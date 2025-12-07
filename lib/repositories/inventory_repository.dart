@@ -1,5 +1,9 @@
 // lib/repositories/inventory_repository.dart
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
+
 import '../models/food_item.dart';
 
 /// 后面可以用 AI 替换这里的逻辑，只保留接口不动
@@ -59,15 +63,51 @@ class ImpactEvent {
     required this.moneySaved,
     required this.co2Saved,
   });
+
+  // ---------- JSON 序列化 ----------
+
+  Map<String, dynamic> toJson() {
+    return {
+      'date': date.toIso8601String(),
+      'type': type.name, // cooked / fedToPet
+      'quantity': quantity,
+      'unit': unit,
+      'moneySaved': moneySaved,
+      'co2Saved': co2Saved,
+    };
+  }
+
+  factory ImpactEvent.fromJson(Map<String, dynamic> json) {
+    ImpactType parseType(String? value) {
+      switch (value) {
+        case 'fedToPet':
+          return ImpactType.fedToPet;
+        case 'cooked':
+        default:
+          return ImpactType.cooked;
+      }
+    }
+
+    return ImpactEvent(
+      date: DateTime.parse(json['date'] as String),
+      type: parseType(json['type'] as String?),
+      quantity: (json['quantity'] as num).toDouble(),
+      unit: json['unit'] as String,
+      moneySaved: (json['moneySaved'] as num).toDouble(),
+      co2Saved: (json['co2Saved'] as num).toDouble(),
+    );
+  }
 }
 
 class InventoryRepository {
-  final List<FoodItem> _items = [];
+  // ---------- 本地存储 key ----------
+  static const _itemsKey = 'inv_items_v1';
+  static const _impactKey = 'inv_impact_v1';
+  static const _metaKey = 'inv_meta_v1';
 
+  final List<FoodItem> _items;
+  final List<ImpactEvent> _impactEvents;
   final ExpiryService _expiryService = ExpiryService();
-
-  /// 所有 impact 事件（做菜 / 喂宠物）
-  final List<ImpactEvent> _impactEvents = [];
 
   /// 是否已经给过“喂宠物安全提示”
   bool hasShownPetWarning = false;
@@ -76,32 +116,122 @@ class InventoryRepository {
   int _streakDays = 0;
   DateTime? _lastConsumedDate;
 
-  InventoryRepository() {
-    // 模拟数据
-    _items.add(
-      FoodItem(
-        id: const Uuid().v4(),
-        name: 'Greek Yogurt',
-        location: StorageLocation.fridge,
-        quantity: 2,
-        unit: 'cups',
-        purchasedDate: DateTime.now().subtract(const Duration(days: 2)),
-        predictedExpiry: DateTime.now().add(const Duration(days: 1)),
-        status: FoodStatus.good,
-      ),
-    );
-    _items.add(
-      FoodItem(
-        id: const Uuid().v4(),
-        name: 'Carrots',
-        location: StorageLocation.fridge,
-        quantity: 500,
-        unit: 'g',
-        purchasedDate: DateTime.now(),
-        predictedExpiry: DateTime.now().add(const Duration(days: 4)),
-        status: FoodStatus.good,
-      ),
-    );
+  // 私有构造
+  InventoryRepository._(this._items, this._impactEvents);
+
+  /// 工厂：带“落盘 & 读取”的创建方式
+  static Future<InventoryRepository> create() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // ---------- 1. 读取 items ----------
+    final itemsJson = prefs.getString(_itemsKey);
+    final List<FoodItem> items = [];
+
+    if (itemsJson != null) {
+      try {
+        final decoded = jsonDecode(itemsJson) as List<dynamic>;
+        for (final e in decoded) {
+          items.add(FoodItem.fromJson(e as Map<String, dynamic>));
+        }
+      } catch (_) {
+        // 解析失败就当没数据
+      }
+    }
+
+    // 第一次使用 / 没有任何数据：塞一点 demo 方便看 UI
+    if (items.isEmpty) {
+      items.add(
+        FoodItem(
+          id: const Uuid().v4(),
+          name: 'Greek Yogurt',
+          location: StorageLocation.fridge,
+          quantity: 2,
+          unit: 'cups',
+          purchasedDate:
+              DateTime.now().subtract(const Duration(days: 2)),
+          predictedExpiry:
+              DateTime.now().add(const Duration(days: 1)),
+          status: FoodStatus.good,
+        ),
+      );
+      items.add(
+        FoodItem(
+          id: const Uuid().v4(),
+          name: 'Carrots',
+          location: StorageLocation.fridge,
+          quantity: 500,
+          unit: 'g',
+          purchasedDate: DateTime.now(),
+          predictedExpiry:
+              DateTime.now().add(const Duration(days: 4)),
+          status: FoodStatus.good,
+        ),
+      );
+      // 把 demo 也存起来，避免刷新又消失
+      await prefs.setString(
+        _itemsKey,
+        jsonEncode(items.map((e) => e.toJson()).toList()),
+      );
+    }
+
+    // ---------- 2. 读取 impact events ----------
+    final impactJson = prefs.getString(_impactKey);
+    final List<ImpactEvent> impactEvents = [];
+    if (impactJson != null) {
+      try {
+        final decoded = jsonDecode(impactJson) as List<dynamic>;
+        for (final e in decoded) {
+          impactEvents.add(
+              ImpactEvent.fromJson(e as Map<String, dynamic>));
+        }
+      } catch (_) {}
+    }
+
+    // ---------- 3. 读取 meta（streak / lastConsumed / pet warning 等） ----------
+    final metaJson = prefs.getString(_metaKey);
+    final repo = InventoryRepository._(items, impactEvents);
+
+    if (metaJson != null) {
+      try {
+        final m = jsonDecode(metaJson) as Map<String, dynamic>;
+        repo._streakDays = (m['streakDays'] as num?)?.toInt() ?? 0;
+        final lastIso = m['lastConsumed'] as String?;
+        if (lastIso != null) {
+          repo._lastConsumedDate = DateTime.tryParse(lastIso);
+        }
+        repo.hasShownPetWarning = m['petWarningShown'] == true;
+      } catch (_) {}
+    }
+
+    return repo;
+  }
+
+  // ---------- 内部：保存到本地 ----------
+
+  Future<SharedPreferences> _prefs() =>
+      SharedPreferences.getInstance();
+
+  Future<void> _saveItems() async {
+    final prefs = await _prefs();
+    final list = _items.map((e) => e.toJson()).toList();
+    await prefs.setString(_itemsKey, jsonEncode(list));
+  }
+
+  Future<void> _saveImpact() async {
+    final prefs = await _prefs();
+    final list = _impactEvents.map((e) => e.toJson()).toList();
+    await prefs.setString(_impactKey, jsonEncode(list));
+  }
+
+  Future<void> _saveMeta() async {
+    final prefs = await _prefs();
+    final meta = <String, dynamic>{
+      'streakDays': _streakDays,
+      'lastConsumed':
+          _lastConsumedDate?.toIso8601String(),
+      'petWarningShown': hasShownPetWarning,
+    };
+    await prefs.setString(_metaKey, jsonEncode(meta));
   }
 
   // ================== Items ==================
@@ -118,27 +248,45 @@ class InventoryRepository {
   int getSavedCount() =>
       _items.where((i) => i.status == FoodStatus.consumed).length;
 
-  Future<void> addItem(FoodItem item) async => _items.add(item);
+  Future<void> addItem(FoodItem item) async {
+    _items.add(item);
+    await _saveItems();
+  }
 
   Future<void> updateItem(FoodItem item) async {
     final index = _items.indexWhere((i) => i.id == item.id);
-    if (index != -1) _items[index] = item;
+    if (index != -1) {
+      _items[index] = item;
+      await _saveItems();
+    }
   }
 
   /// 删除一个 item（给 Inventory 左滑、Edit 页面用）
   Future<void> deleteItem(String id) async {
     _items.removeWhere((i) => i.id == id);
+    await _saveItems();
   }
 
   Future<void> updateStatus(String id, FoodStatus status) async {
     final index = _items.indexWhere((i) => i.id == id);
     if (index != -1) {
-      _items[index] = _items[index].copyWith(status: status);
+      final item = _items[index];
+      _items[index] = item.copyWith(status: status);
+      await _saveItems();
 
       // 只在 “成功吃掉/利用” 的时候更新 streak
       if (status == FoodStatus.consumed) {
         _updateStreakOnConsumed();
+        await _saveMeta();
       }
+    }
+  }
+
+  /// 提供一个安全的方式来标记“宠物提示已显示”，顺便落盘
+  Future<void> markPetWarningShown() async {
+    if (!hasShownPetWarning) {
+      hasShownPetWarning = true;
+      await _saveMeta();
     }
   }
 
@@ -156,10 +304,13 @@ class InventoryRepository {
   // ================== Impact 相关 ==================
 
   /// 只读暴露给 Impact 页面
-  List<ImpactEvent> get impactEvents => List.unmodifiable(_impactEvents);
+  List<ImpactEvent> get impactEvents =>
+      List.unmodifiable(_impactEvents);
+
   /// 根据 TodayPage 中的 action 统一记录 impact
   /// action: 'eat' / 'pet' / 'trash'
-  void recordImpactForAction(FoodItem item, String action) {
+  Future<void> recordImpactForAction(
+      FoodItem item, String action) async {
     // 吃掉 = cooked
     if (action == 'eat') {
       logCooked(item);
@@ -170,8 +321,7 @@ class InventoryRepository {
       logFedToPet(item);
     }
 
-    // 丢掉目前不记入正向 impact，可以以后扩展：
-    // if (action == 'trash') { ... }
+    await _saveImpact();
   }
 
   /// 用户用快要过期食材做菜
@@ -253,7 +403,8 @@ class InventoryRepository {
     return _impactEvents
         .where(
           (e) =>
-              e.type == ImpactType.fedToPet && e.date.isAfter(from),
+              e.type == ImpactType.fedToPet &&
+              e.date.isAfter(from),
         )
         .fold(0.0, (sum, e) => sum + e.quantity);
   }
@@ -267,8 +418,11 @@ class InventoryRepository {
     if (_lastConsumedDate == null) {
       _streakDays = 1;
     } else {
-      final last =
-          DateTime(_lastConsumedDate!.year, _lastConsumedDate!.month, _lastConsumedDate!.day);
+      final last = DateTime(
+        _lastConsumedDate!.year,
+        _lastConsumedDate!.month,
+        _lastConsumedDate!.day,
+      );
       final diff = today.difference(last).inDays;
 
       if (diff == 1) {
