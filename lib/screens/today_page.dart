@@ -1,9 +1,5 @@
 // lib/screens/today_page.dart
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
@@ -64,21 +60,22 @@ class TodayPage extends StatelessWidget {
               (item) => FoodCard(
                 item: item,
                 onAction: (action) async {
+                  // 0) 备份旧状态，方便 UNDO
+                  final oldStatus = item.status;
+
                   // 1) 记录 impact（钱 / CO₂ / 宠物）
                   await repo.recordImpactForAction(item, action);
 
                   // 2) 更新库存状态
+                  FoodStatus? newStatus;
                   if (action == 'eat' || action == 'pet') {
-                    await repo.updateStatus(
-                      item.id,
-                      FoodStatus.consumed,
-                    );
+                    newStatus = FoodStatus.consumed;
+                  } else if (action == 'trash') {
+                    newStatus = FoodStatus.discarded;
                   }
-                  if (action == 'trash') {
-                    await repo.updateStatus(
-                      item.id,
-                      FoodStatus.discarded,
-                    );
+
+                  if (newStatus != null) {
+                    await repo.updateStatus(item.id, newStatus);
                   }
 
                   // 3) 第一次喂宠物的安全提示
@@ -93,6 +90,28 @@ class TodayPage extends StatelessWidget {
                         duration: Duration(seconds: 4),
                       ),
                     );
+                  }
+
+                  // 4) 提供 3 秒 UNDO
+                  if (newStatus != null) {
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        SnackBar(
+                          duration: const Duration(seconds: 3),
+                          content: Text(
+                            _undoLabelForAction(action, item.name),
+                          ),
+                          action: SnackBarAction(
+                            label: 'UNDO',
+                            onPressed: () async {
+                              // 撤回：把状态改回去
+                              await repo.updateStatus(item.id, oldStatus);
+                              onRefresh();
+                            },
+                          ),
+                        ),
+                      );
                   }
 
                   onRefresh();
@@ -110,7 +129,7 @@ class TodayPage extends StatelessWidget {
     BuildContext context,
     List<FoodItem> expiringItems,
   ) async {
-    final result = await Navigator.push<AiCookingSelectionResult>(
+    final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (_) => SelectIngredientsPage(
@@ -120,38 +139,10 @@ class TodayPage extends StatelessWidget {
       ),
     );
 
-    if (result == null) return;
-
-    if (result.addExtrasToInventory) {
-      for (final extra in result.extraIngredients) {
-        await repo.addItem(
-          FoodItem(
-            id: const Uuid().v4(),
-            name: extra,
-            location: StorageLocation.fridge,
-            quantity: 1,
-            unit: 'pcs',
-            purchasedDate: DateTime.now(),
-            predictedExpiry: null,
-            status: FoodStatus.good,
-          ),
-        );
-      }
+    // 如果在 Select/Recipe 那边有动库存，这里刷新一下
+    if (changed == true) {
       onRefresh();
     }
-
-    // ignore: use_build_context_synchronously
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => RecipeGeneratorSheet(
-        repo: repo, // ✅ 传 repo 进去
-        items: result.selectedInventoryItems,
-        extraIngredients: result.extraIngredients,
-        onInventoryUpdated: onRefresh, // ✅ 做完菜后更新 Today/Inventory/Impact
-      ),
-    );
   }
 
   Widget _buildAiButton({required VoidCallback onTap}) {
@@ -284,514 +275,17 @@ class TodayPage extends StatelessWidget {
       ),
     );
   }
-}
 
-// ================== Recipe 数据模型 ==================
-
-class RecipeSuggestion {
-  final String id;
-  final String title;
-  final String timeLabel;
-  final int expiringCount;
-  final List<String> ingredients;
-  final List<String> steps;
-  final String? description;
-  final String? imageUrl;
-
-  RecipeSuggestion({
-    required this.id,
-    required this.title,
-    required this.timeLabel,
-    required this.expiringCount,
-    required this.ingredients,
-    required this.steps,
-    this.description,
-    this.imageUrl,
-  });
-}
-
-// ================== Recipe Generator BottomSheet ==================
-
-class RecipeGeneratorSheet extends StatefulWidget {
-  final InventoryRepository repo;
-  final List<FoodItem> items;
-  final List<String> extraIngredients;
-  final VoidCallback? onInventoryUpdated;
-
-  const RecipeGeneratorSheet({
-    super.key,
-    required this.repo,
-    required this.items,
-    required this.extraIngredients,
-    this.onInventoryUpdated,
-  });
-
-  @override
-  State<RecipeGeneratorSheet> createState() => _RecipeGeneratorSheetState();
-}
-
-class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
-  int _state = 0; // 0 配置, 1 loading, 2 结果
-  List<RecipeSuggestion> _recipes = [];
-
-  Future<void> _generate() async {
-    setState(() => _state = 1);
-
-    try {
-      final ingredients = widget.items
-          .map((i) => '${i.name} (${i.quantity} ${i.unit})')
-          .toList();
-
-      final uri = Uri.parse(
-        'https://project-study-bsh.vercel.app/api/recipe',
-      );
-
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'ingredients': ingredients,
-          'extraIngredients': widget.extraIngredients,
-        }),
-      );
-
-      if (resp.statusCode != 200) {
-        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
-      }
-
-      // 调试用：看一下后端返回长什么样
-      // ignore: avoid_print
-      print('AI recipe response: ${resp.body}');
-
-      final root = jsonDecode(resp.body);
-
-      List<dynamic> rawList;
-
-      if (root is Map<String, dynamic>) {
-        final inner = root['recipes'];
-        if (inner is List) {
-          rawList = inner;
-        } else if (inner is Map) {
-          rawList = [inner];
-        } else if (inner == null) {
-          rawList = const [];
-        } else {
-          throw Exception('Unexpected "recipes" type: ${inner.runtimeType}');
-        }
-      } else if (root is List) {
-        rawList = root;
-      } else {
-        throw Exception('Unexpected JSON root type: ${root.runtimeType}');
-      }
-
-      _recipes = rawList.map((e) {
-        final m = (e as Map).cast<String, dynamic>();
-        return RecipeSuggestion(
-          id: m['id']?.toString() ?? const Uuid().v4(),
-          title: m['title'] ?? 'Untitled',
-          timeLabel: m['timeLabel'] ?? '20 min',
-          expiringCount: (m['expiringCount'] ?? 0) as int,
-          ingredients: (m['ingredients'] as List<dynamic>? ?? const [])
-              .map((x) => x.toString())
-              .toList(),
-          steps: (m['steps'] as List<dynamic>? ?? const [])
-              .map((x) => x.toString())
-              .toList(),
-          description: m['description']?.toString(),
-        );
-      }).toList();
-
-      if (!mounted) return;
-      setState(() => _state = 2);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _state = 0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('AI recipe failed: $e')),
-      );
+  String _undoLabelForAction(String action, String name) {
+    switch (action) {
+      case 'eat':
+        return 'Marked "$name" as cooked. Tap UNDO to revert.';
+      case 'pet':
+        return 'Fed "$name" to pet. Tap UNDO to revert.';
+      case 'trash':
+        return 'Discarded "$name". Tap UNDO to revert.';
+      default:
+        return 'Updated "$name". Tap UNDO to revert.';
     }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.85,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: _state == 0
-          ? _buildConfig()
-          : _state == 1
-              ? _buildLoading()
-              : _buildResult(),
-    );
-  }
-
-  Widget _buildConfig() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "AI recipe generator",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          "We will prioritize expiring items and use extra ingredients to complete the dish.",
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Selected inventory items',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          children: widget.items
-              .map(
-                (i) => Chip(label: Text(i.name)),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 16),
-        if (widget.extraIngredients.isNotEmpty) ...[
-          const Text(
-            'Extra ingredients',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: widget.extraIngredients
-                .map((e) => Chip(label: Text(e)))
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-        ],
-        const Spacer(),
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: FilledButton(
-            onPressed: _generate,
-            child: const Text("Generate recipes"),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLoading() =>
-      const Center(child: CircularProgressIndicator());
-
-  Widget _buildResult() {
-    if (_recipes.isEmpty) {
-      return const Center(
-        child: Text("No recipes generated."),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          "AI recipes for your fridge",
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          "We created ${_recipes.length} ideas using your expiring items first.",
-          style: const TextStyle(color: Colors.grey),
-        ),
-        const SizedBox(height: 16),
-        Expanded(
-          child: GridView.builder(
-            itemCount: _recipes.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.75,
-            ),
-            itemBuilder: (context, index) {
-              final recipe = _recipes[index];
-              return _RecipeCard(
-                recipe: recipe,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => RecipeDetailPage(
-                        recipe: recipe,
-                        repo: widget.repo,
-                        usedItems: widget.items,
-                        onInventoryUpdated: widget.onInventoryUpdated,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// 网格里的单个菜谱卡片
-class _RecipeCard extends StatelessWidget {
-  final RecipeSuggestion recipe;
-  final VoidCallback onTap;
-
-  const _RecipeCard({
-    required this.recipe,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(16),
-              ),
-              child: Container(
-                height: 90,
-                width: double.infinity,
-                color: scheme.primaryContainer.withOpacity(0.4),
-                child: const Icon(
-                  Icons.fastfood,
-                  size: 40,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                recipe.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
-                recipe.timeLabel,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[700],
-                ),
-              ),
-            ),
-            const Spacer(),
-            Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.recycling,
-                    size: 14,
-                    color: scheme.primary,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${recipe.expiringCount} expiring',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// 详情页
-class RecipeDetailPage extends StatelessWidget {
-  final RecipeSuggestion recipe;
-  final InventoryRepository repo;
-  final List<FoodItem> usedItems;
-  final VoidCallback? onInventoryUpdated;
-
-  const RecipeDetailPage({
-    super.key,
-    required this.recipe,
-    required this.repo,
-    required this.usedItems,
-    this.onInventoryUpdated,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      appBar: AppBar(title: Text(recipe.title)),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(16),
-            child: Container(
-              height: 180,
-              width: double.infinity,
-              color: scheme.primaryContainer.withOpacity(0.5),
-              child: const Icon(
-                Icons.fastfood,
-                size: 64,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            recipe.title,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Chip(
-                label: Text(recipe.timeLabel),
-                visualDensity: VisualDensity.compact,
-              ),
-              const SizedBox(width: 8),
-              Chip(
-                avatar: const Icon(Icons.recycling, size: 16),
-                label: Text('${recipe.expiringCount} expiring items'),
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (recipe.description != null) ...[
-            Text(
-              recipe.description!,
-              style: TextStyle(color: Colors.grey[800]),
-            ),
-            const SizedBox(height: 16),
-          ],
-          const Text(
-            'Ingredients',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...recipe.ingredients.map(
-            (ing) => Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('• '),
-                Expanded(child: Text(ing)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Steps',
-            style: TextStyle(
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...recipe.steps.asMap().entries.map(
-                (e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('${e.key + 1}. '),
-                      Expanded(child: Text(e.value)),
-                    ],
-                  ),
-                ),
-              ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 52,
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: () async {
-                // 1. 询问是否更新库存
-                final shouldUpdate = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) {
-                    return AlertDialog(
-                      title: const Text('Update inventory?'),
-                      content: const Text(
-                        'Did you use up the selected ingredients from your fridge for this recipe?\n'
-                        'If yes, we will mark them as cooked and remove them from your inventory.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Skip'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Update'),
-                        ),
-                      ],
-                    );
-                  },
-                );
-
-                if (shouldUpdate == true) {
-                  for (final item in usedItems) {
-                    await repo.recordImpactForAction(item, 'eat');
-                    await repo.updateStatus(item.id, FoodStatus.consumed);
-                  }
-                  onInventoryUpdated?.call();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Inventory updated ✅'),
-                      ),
-                    );
-                  }
-                }
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              },
-              icon: const Icon(Icons.check),
-              label: const Text('I cooked this'),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }

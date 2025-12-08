@@ -56,7 +56,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isProcessing = false;
   bool _isListening = false;
-  String _voiceHint = "Tap mic to start, tap again to stop.";
+  String _voiceHint = "Tap mic to start or stop.";
   final TextEditingController _voiceController = TextEditingController();
 
   @override
@@ -281,7 +281,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   Future<void> _predictExpiryWithAi() async {
     if (_name.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先填写食材名称')),
+        const SnackBar(content: Text('Please enter the food name first')),
       );
       return;
     }
@@ -692,7 +692,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                         _expiry = _predictedExpiryFromAi;
                       });
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已应用 AI 推荐的保质期')),
+                        const SnackBar(content: Text('Expiry date applied')),
                       );
                     },
                     child: const Text('Apply'),
@@ -737,7 +737,7 @@ class _AddFoodPageState extends State<AddFoodPage>
         children: [
           const Icon(Icons.camera_enhance, size: 80, color: Colors.grey),
           const SizedBox(height: 16),
-          const Text("Snap a product or ingredient"),
+          const Text("Snap a receipt!"),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _takePhoto,
@@ -747,7 +747,7 @@ class _AddFoodPageState extends State<AddFoodPage>
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 24),
             child: Text(
-              "MVP：拍照后用一句话描述食材，AI 会自动帮你填好表单。",
+              "Scan the receipt after shopping",
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
@@ -805,13 +805,13 @@ class _AddFoodPageState extends State<AddFoodPage>
               alignLabelWithHint: true,
               border: OutlineInputBorder(),
               hintText:
-                  '例如："半盒希腊酸奶在冰箱" / "500g chicken breast in freezer"',
+                  'For example: "500g chicken breast in freezer"',
             ),
           ),
           const SizedBox(height: 12),
           const Text(
-            '如果识别错了可以先手动修改，然后再让 AI 自动填表。',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
+            'If there are mistakes, please edit the text before sending to AI.',
+            style: TextStyle(fontSize: 10, color: Colors.grey),
           ),
           const SizedBox(height: 24),
           SizedBox(

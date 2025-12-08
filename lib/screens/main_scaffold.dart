@@ -19,10 +19,19 @@ class _MainScaffoldState extends State<MainScaffold> {
 
   late Future<InventoryRepository> _repoFuture;
 
+  late PageController _pageController;
+
   @override
   void initState() {
     super.initState();
     _repoFuture = InventoryRepository.create();
+    _pageController = PageController(initialPage: 0);
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   void _refresh(InventoryRepository repo) {
@@ -35,7 +44,6 @@ class _MainScaffoldState extends State<MainScaffold> {
       future: _repoFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          // 出错时直接把异常打到 UI 上，方便你调
           return Scaffold(
             body: Center(
               child: Text(
@@ -60,14 +68,37 @@ class _MainScaffoldState extends State<MainScaffold> {
           ImpactPage(repo: repo),
         ];
 
+        final bool fabEnabled = _currentIndex != 2;
+
         return Scaffold(
-          body: IndexedStack(index: _currentIndex, children: pages),
+
+          // =============== 改成 PageView 支持左右滑动 ===============
+          body: PageView(
+            controller: _pageController,
+            onPageChanged: (idx) {
+              setState(() {
+                _currentIndex = idx;
+                _showFabMenu = false;
+              });
+            },
+            children: pages,
+          ),
+
           bottomNavigationBar: NavigationBar(
             selectedIndex: _currentIndex,
-            onDestinationSelected: (idx) => setState(() {
-              _currentIndex = idx;
-              _showFabMenu = false;
-            }),
+            onDestinationSelected: (idx) {
+              setState(() {
+                _currentIndex = idx;
+                _showFabMenu = false;
+              });
+
+              // 底部点击时同步 PageView
+              _pageController.animateToPage(
+                idx,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+              );
+            },
             backgroundColor: Colors.white,
             destinations: const [
               NavigationDestination(
@@ -87,44 +118,62 @@ class _MainScaffoldState extends State<MainScaffold> {
               ),
             ],
           ),
-          floatingActionButton:
-              _currentIndex != 2 ? _buildExpandableFab(repo) : null,
+
+          floatingActionButton: _buildExpandableFab(repo, fabEnabled),
+          floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         );
       },
     );
   }
 
-  Widget _buildExpandableFab(InventoryRepository repo) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        if (_showFabMenu) ...[
-          FabOption(
-            icon: Icons.mic,
-            label: 'Voice',
-            onTap: () => _navigateToAdd(repo, 2),
-          ),
-          FabOption(
-            icon: Icons.camera_alt,
-            label: 'Photo',
-            onTap: () => _navigateToAdd(repo, 1),
-          ),
-          FabOption(
-            icon: Icons.edit,
-            label: 'Manual',
-            onTap: () => _navigateToAdd(repo, 0),
-          ),
-        ],
-        FloatingActionButton(
-          onPressed: () => setState(() => _showFabMenu = !_showFabMenu),
-          backgroundColor: const Color(0xFF005F87),
-          child: Icon(
-            _showFabMenu ? Icons.close : Icons.add,
-            color: Colors.white,
+  Widget _buildExpandableFab(InventoryRepository repo, bool enabled) {
+    return IgnorePointer(
+      ignoring: !enabled,
+      child: AnimatedOpacity(
+        opacity: enabled ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 150),
+        child: SizedBox(
+          width: 120,
+          height: 260,
+          child: Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              _FabActionButton(
+                index: 0,
+                icon: Icons.edit,
+                label: 'Manual',
+                visible: _showFabMenu,
+                onTap: () => _navigateToAdd(repo, 0),
+              ),
+              _FabActionButton(
+                index: 1,
+                icon: Icons.camera_alt,
+                label: 'Photo',
+                visible: _showFabMenu,
+                onTap: () => _navigateToAdd(repo, 1),
+              ),
+              _FabActionButton(
+                index: 2,
+                icon: Icons.mic,
+                label: 'Voice',
+                visible: _showFabMenu,
+                onTap: () => _navigateToAdd(repo, 2),
+              ),
+
+              FloatingActionButton(
+                onPressed: !enabled
+                    ? null
+                    : () => setState(() => _showFabMenu = !_showFabMenu),
+                backgroundColor: const Color(0xFF005F87),
+                child: Icon(
+                  _showFabMenu ? Icons.close : Icons.add,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -143,49 +192,79 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 }
 
-class FabOption extends StatelessWidget {
+class _FabActionButton extends StatelessWidget {
+  final int index;
   final IconData icon;
   final String label;
+  final bool visible;
   final VoidCallback onTap;
 
-  const FabOption({
-    super.key,
+  const _FabActionButton({
+    required this.index,
     required this.icon,
     required this.label,
+    required this.visible,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: const [
-                BoxShadow(color: Colors.black12, blurRadius: 4),
+    final double baseOffset = 56.0;
+    final duration = Duration(milliseconds: 220 + index * 40);
+    final curve = Curves.easeOutBack;
+
+    return AnimatedPositioned(
+      duration: duration,
+      curve: curve,
+      right: 0,
+      bottom: visible ? (baseOffset * (index + 1)) : 0,
+      child: AnimatedOpacity(
+        duration: duration,
+        opacity: visible ? 1 : 0,
+        child: AnimatedSlide(
+          duration: duration,
+          curve: curve,
+          offset: visible ? Offset.zero : const Offset(0, 0.3),
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: onTap,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 4),
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 3,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                FloatingActionButton.small(
+                  heroTag: '${label}_fab',
+                  onPressed: onTap,
+                  backgroundColor: Colors.white,
+                  foregroundColor: const Color(0xFF005F87),
+                  child: Icon(icon, size: 18),
+                ),
               ],
             ),
-            child: Text(
-              label,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
           ),
-          const SizedBox(width: 8),
-          FloatingActionButton.small(
-            heroTag: label,
-            onPressed: onTap,
-            backgroundColor: Colors.white,
-            foregroundColor: const Color(0xFF005F87),
-            child: Icon(icon),
-          ),
-        ],
+        ),
       ),
     );
   }

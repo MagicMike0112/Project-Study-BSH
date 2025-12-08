@@ -60,7 +60,7 @@ class SmartFoodApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: const MainScaffold(),  // ✅ 保持你现在的 MainScaffold 写法即可
+      home: const MainScaffold(),  // ✅ 保持现在的 MainScaffold 写法即可
     );
   }
 }

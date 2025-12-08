@@ -17,24 +17,129 @@ class InventoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = repo.getActiveItems();
     final theme = Theme.of(context);
+    final allItems = repo.getActiveItems();
+
+    // 按剩余天数排序
+    List<FoodItem> sortByExpiry(List<FoodItem> list) {
+      final copy = [...list];
+      copy.sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
+      return copy;
+    }
+
+    final fridgeItems = sortByExpiry(
+      allItems.where((i) => i.location == StorageLocation.fridge).toList(),
+    );
+    final freezerItems = sortByExpiry(
+      allItems.where((i) => i.location == StorageLocation.freezer).toList(),
+    );
+    final pantryItems = sortByExpiry(
+      allItems.where((i) => i.location == StorageLocation.pantry).toList(),
+    );
+
+    final hasAnyItems =
+        fridgeItems.isNotEmpty || freezerItems.isNotEmpty || pantryItems.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Inventory'),
       ),
-      body: items.isEmpty
-          ? _buildEmptyState(context)
-          : ListView.separated(
+      body: hasAnyItems
+          ? ListView(
               padding: const EdgeInsets.all(16),
-              itemCount: items.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return _buildDismissibleItem(context, item, theme);
-              },
-            ),
+              children: [
+                // Fridge
+                if (fridgeItems.isNotEmpty) ...[
+                  _buildSectionHeader(
+                    icon: Icons.kitchen,
+                    label: 'Fridge',
+                    color: const Color(0xFF005F87),
+                    count: fridgeItems.length,
+                  ),
+                  const SizedBox(height: 8),
+                  ...fridgeItems.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _buildDismissibleItem(context, item, theme),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Freezer
+                if (freezerItems.isNotEmpty) ...[
+                  _buildSectionHeader(
+                    icon: Icons.ac_unit,
+                    label: 'Freezer',
+                    color: Colors.indigo,
+                    count: freezerItems.length,
+                  ),
+                  const SizedBox(height: 8),
+                  ...freezerItems.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _buildDismissibleItem(context, item, theme),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+
+                // Pantry
+                if (pantryItems.isNotEmpty) ...[
+                  _buildSectionHeader(
+                    icon: Icons.inventory_2_outlined,
+                    label: 'Pantry',
+                    color: Colors.brown,
+                    count: pantryItems.length,
+                  ),
+                  const SizedBox(height: 8),
+                  ...pantryItems.map(
+                    (item) => Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: _buildDismissibleItem(context, item, theme),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            )
+          : _buildEmptyState(context),
+    );
+  }
+
+  // ================== Section Header ==================
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required int count,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 18, color: color),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '$count items',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
+      ],
     );
   }
 
@@ -71,7 +176,7 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
-  // ================== UI：单个 item（支持左滑删除） ==================
+  // ================== UI：单个 item（左滑删除，直接删 + UNDO） ==================
 
   Widget _buildDismissibleItem(
       BuildContext context, FoodItem item, ThemeData theme) {
@@ -87,10 +192,28 @@ class InventoryPage extends StatelessWidget {
         ),
         child: Icon(Icons.delete, color: Colors.red.shade400, size: 28),
       ),
-      confirmDismiss: (_) => _confirmDelete(context, item),
+      // ⚠️ 已去掉 confirmDismiss，左滑直接删除，靠 SnackBar UNDO 兜底
       onDismissed: (_) async {
+        final deletedItem = item;
+
         await repo.deleteItem(item.id);
         onRefresh();
+
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 3),
+              content: Text('Deleted "${deletedItem.name}".'),
+              action: SnackBarAction(
+                label: 'UNDO',
+                onPressed: () async {
+                  await repo.addItem(deletedItem);
+                  onRefresh();
+                },
+              ),
+            ),
+          );
       },
       child: _buildItemTile(context, item, theme),
     );
@@ -205,7 +328,7 @@ class InventoryPage extends StatelessWidget {
     onRefresh();
   }
 
-  // ================== 长按 bottom sheet：Edit / Cook / Feed / Delete ==================
+  // ================== 长按 bottom sheet：Edit / Cook / Feed / Delete（都带 Undo） ==================
 
   Future<void> _showItemActionsSheet(
       BuildContext context, FoodItem item) async {
@@ -232,11 +355,33 @@ class InventoryPage extends StatelessWidget {
                 title: const Text('Cook with this'),
                 onTap: () async {
                   Navigator.pop(ctx);
+
+                  final oldItem = item;
+
                   final usedQty =
                       await _askQuantityDialog(context, item, 'eat');
                   if (usedQty == null || usedQty <= 0) return;
+
                   await repo.useItemWithImpact(item, 'eat', usedQty);
                   onRefresh();
+
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: Text(
+                          'Cooked ${usedQty.toStringAsFixed(usedQty == usedQty.roundToDouble() ? 0 : 1)} ${item.unit} of "${item.name}".',
+                        ),
+                        action: SnackBarAction(
+                          label: 'UNDO',
+                          onPressed: () async {
+                            await repo.updateItem(oldItem);
+                            onRefresh();
+                          },
+                        ),
+                      ),
+                    );
                 },
               ),
               ListTile(
@@ -244,20 +389,22 @@ class InventoryPage extends StatelessWidget {
                 title: const Text('Feed to pet'),
                 onTap: () async {
                   Navigator.pop(ctx);
+
+                  final oldItem = item;
+
                   final usedQty =
                       await _askQuantityDialog(context, item, 'pet');
                   if (usedQty == null || usedQty <= 0) return;
 
                   await repo.useItemWithImpact(item, 'pet', usedQty);
 
-                  // 小屎小远彩蛋 + 安全提示（只在第一次显示）
                   if (!repo.hasShownPetWarning) {
                     await repo.markPetWarningShown();
                     // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Text(
-                          '小屎 & 陈归远：谢谢你的晚餐～ 也请确认食材对豚鼠是安全的，若不确定先问问兽医🐹',
+                          'Shi & Yuan: Thanks for dinner! Please make sure the food is safe for guinea pigs. If you’re not sure, ask a vet first 🐹',
                         ),
                         duration: Duration(seconds: 4),
                       ),
@@ -265,6 +412,24 @@ class InventoryPage extends StatelessWidget {
                   }
 
                   onRefresh();
+
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(
+                        duration: const Duration(seconds: 3),
+                        content: Text(
+                          'Fed ${usedQty.toStringAsFixed(usedQty == usedQty.roundToDouble() ? 0 : 1)} ${item.unit} of "${item.name}" to your pet.',
+                        ),
+                        action: SnackBarAction(
+                          label: 'UNDO',
+                          onPressed: () async {
+                            await repo.updateItem(oldItem);
+                            onRefresh();
+                          },
+                        ),
+                      ),
+                    );
                 },
               ),
               ListTile(
@@ -278,8 +443,25 @@ class InventoryPage extends StatelessWidget {
                   Navigator.pop(ctx);
                   final ok = await _confirmDelete(context, item);
                   if (ok) {
+                    final deletedItem = item;
                     await repo.deleteItem(item.id);
                     onRefresh();
+
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        SnackBar(
+                          duration: const Duration(seconds: 3),
+                          content: Text('Deleted "${deletedItem.name}".'),
+                          action: SnackBarAction(
+                            label: 'UNDO',
+                            onPressed: () async {
+                              await repo.addItem(deletedItem);
+                              onRefresh();
+                            },
+                          ),
+                        ),
+                      );
                   }
                 },
               ),
@@ -293,104 +475,120 @@ class InventoryPage extends StatelessWidget {
 
   // ================== “这次用多少”弹窗 ==================
 
-  // 放在 InventoryPage（和 TodayPage，如果有的话）里，替换原来的 _askQuantityDialog
+  Future<double?> _askQuantityDialog(
+    BuildContext context,
+    FoodItem item,
+    String action,
+  ) async {
+    final theme = Theme.of(context);
 
-Future<double?> _askQuantityDialog(
-  BuildContext context,
-  FoodItem item,
-  String action,
-) async {
-  final controller = TextEditingController(
-    text: item.quantity.toStringAsFixed(
-      item.quantity == item.quantity.roundToDouble() ? 0 : 1,
-    ),
-  );
+    final controller = TextEditingController(
+      text: item.quantity.toStringAsFixed(
+        item.quantity == item.quantity.roundToDouble() ? 0 : 1,
+      ),
+    );
 
-  final title =
-      action == 'eat' ? 'How much did you cook?' : 'How much did you feed?';
+    final title =
+        action == 'eat' ? 'How much did you cook?' : 'How much did you feed?';
 
-  String? errorText;
+    String? errorText;
 
-  return showDialog<double>(
-    context: context,
-    builder: (ctx) {
-      return StatefulBuilder(
-        builder: (ctx, setState) {
-          return AlertDialog(
-            title: Text(title),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: controller,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: 'Quantity (${item.unit})',
-                    hintText:
-                        'Available: ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}',
-                    errorText: errorText,
-                  ),
-                  onChanged: (_) {
-                    if (errorText != null) {
-                      setState(() => errorText = null);
-                    }
-                  },
-                ),
-              ],
+    return showDialog<double>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Text(
+            title,
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w600,
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, null),
-                child: const Text('Cancel'),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.name,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
               ),
-              TextButton(
-                onPressed: () {
-                  final raw = double.tryParse(
-                        controller.text.replaceAll(',', '.'),
-                      ) ??
-                      double.nan;
-
-                  // 1. 必须是数字
-                  if (raw.isNaN) {
-                    setState(() {
-                      errorText = '请输入一个数字';
-                    });
-                    return;
+              const SizedBox(height: 8),
+              Text(
+                'Available: ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  labelText: 'Used quantity (${item.unit})',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  errorText: errorText,
+                ),
+                onChanged: (_) {
+                  if (errorText != null) {
+                    errorText = null;
                   }
-
-                  // 2. 要 > 0
-                  if (raw <= 0) {
-                    setState(() {
-                      errorText = '数量需要大于 0';
-                    });
-                    return;
-                  }
-
-                  // 3. 不能超过库存
-                  if (raw > item.quantity + 1e-9) {
-                    setState(() {
-                      errorText =
-                          '最多只能使用 ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}';
-                    });
-                    return;
-                  }
-
-                  // 合法，直接返回原始数量（不再 clamp）
-                  Navigator.pop(ctx, raw);
                 },
-                child: const Text('OK'),
               ),
             ],
-          );
-        },
-      );
-    },
-  );
-}
+          ),
+          actionsPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final raw = double.tryParse(
+                      controller.text.replaceAll(',', '.'),
+                    ) ??
 
 
-  // ================== 删除确认弹窗 ==================
+                    double.nan;
+
+                if (raw.isNaN) {
+                  errorText = '请输入一个数字';
+                  (ctx as Element).markNeedsBuild();
+                  return;
+                }
+
+                if (raw <= 0) {
+                  errorText = '数量需要大于 0';
+                  (ctx as Element).markNeedsBuild();
+                  return;
+                }
+
+                if (raw > item.quantity + 1e-9) {
+                  errorText =
+                      '最多只能使用 ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}';
+                  (ctx as Element).markNeedsBuild();
+                  return;
+                }
+
+                Navigator.pop(ctx, raw);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ================== 删除确认弹窗（只给长按菜单用） ==================
 
   Future<bool> _confirmDelete(BuildContext context, FoodItem item) async {
     final result = await showDialog<bool>(
@@ -399,8 +597,7 @@ Future<double?> _askQuantityDialog(
         return AlertDialog(
           title: const Text('Delete item?'),
           content: Text(
-            'Remove "${item.name}" from your inventory?\n'
-            'This cannot be undone.',
+            'Remove "${item.name}" from your inventory?',
           ),
           actions: [
             TextButton(

@@ -32,11 +32,12 @@ async function readBody(req) {
   });
 }
 
-// ========= 分支 A：保质期预测（AI 版） =========
+// ========= 分支 A：保质期预测（AI 版，支持 openDate） =========
 async function handleExpiryPrediction(body, res) {
   const name = (body.name || "").toString().trim();
   const location = (body.location || "").toString().trim();
   const purchasedDate = (body.purchasedDate || "").toString().trim();
+  const openDate = (body.openDate || "").toString().trim(); // ✅ 新增：开封日期（可选）
 
   if (!name || !location || !purchasedDate) {
     return res.status(400).json({
@@ -45,27 +46,48 @@ async function handleExpiryPrediction(body, res) {
     });
   }
 
-  const baseDate = new Date(purchasedDate);
-  if (isNaN(baseDate.getTime())) {
+  const purchased = new Date(purchasedDate);
+  if (isNaN(purchased.getTime())) {
     return res.status(400).json({
       error: "Invalid purchasedDate format. Must be ISO string.",
     });
   }
 
+  // ✅ 有合法 openDate 就以 openDate 为起点，否则用 purchasedDate
+  let baseDate = purchased;
+  let baseDateLabel = "purchase date";
+
+  if (openDate) {
+    const opened = new Date(openDate);
+    if (!isNaN(opened.getTime())) {
+      baseDate = opened;
+      baseDateLabel = "open date";
+    }
+  }
+
   const prompt = `
 You are a food shelf-life safety assistant.
 Your task is to ESTIMATE a safe remaining shelf life in DAYS for a food item,
-based on its product name, storage location, and purchase date.
+based on its product name, storage location, purchase date, and optional open date.
 
 User input:
 - product name: "${name}"
 - storage location: "${location}"
 - purchase date: "${purchasedDate}"
+- open date (may be empty): "${openDate || "N/A"}"
+
+Reference date rules:
+- If an OPEN DATE is provided and valid, you MUST use the OPEN DATE as the reference date.
+- Otherwise, use the PURCHASE DATE as the reference date.
+- In this case, the reference date is the ${baseDateLabel}.
 
 Assumptions:
 - The user is an ordinary household in Europe, with a normal domestic fridge/freezer.
 - If the product is canned, jarred, pickled or fermented (e.g. kimchi, pickles, canned peaches),
-  assume it has ALREADY BEEN OPENED.
+  and an open date is provided, assume the product has been opened since that date.
+- If there is NO open date but the product is canned/jarred/pickled/fermented,
+  you may still assume it has been opened already and give a SHORT, conservative remaining time.
+- When a product is opened, remaining shelf life is usually MUCH SHORTER than before opening.
 - You must be conservative: when unsure, choose a SHORTER, safer time.
 - Consider:
   * Fresh fruit like apples, berries, bananas, grapes.
@@ -89,11 +111,13 @@ Assumptions:
 Output format (IMPORTANT):
 Return ONLY a JSON object, with NO extra text, exactly like this:
 {
-  "days": <integer, number of days from PURCHASE date>
+  "days": <integer, number of days from the REFERENCE date>
 }
 
 Constraints:
 - "days" must be a positive integer.
+- The "days" value is the remaining safe time counted FROM THE REFERENCE DATE
+  (open date if available and valid, otherwise purchase date).
 - If you are very unsure, choose a smaller number of days.
 - NEVER exceed 365 days.
 `;
@@ -133,6 +157,9 @@ Constraints:
   return res.status(200).json({
     predictedExpiry: predicted.toISOString(),
     days,
+    // 下面两行只是额外信息，前端不用也没关系
+    referenceDate: baseDate.toISOString(),
+    referenceType: baseDateLabel,
   });
 }
 
