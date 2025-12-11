@@ -58,39 +58,45 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  Future<void> _resetPassword() async {
-    final email = _emailCtrl.text.trim();
-    if (email.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your email first.')),
-      );
-      return;
-    }
-
-    setState(() => _loading = true);
-    try {
-      await _supabase.auth.resetPasswordForEmail(email);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Password reset email sent. Please check your inbox.'),
-        ),
-      );
-    } on AuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to send reset email.')),
-      );
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+Future<void> _resetPassword() async {
+  final email = _emailCtrl.text.trim();
+  if (email.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Please enter your email first.')),
+    );
+    return;
   }
+
+  setState(() => _loading = true);
+  try {
+    await _supabase.auth.resetPasswordForEmail(
+      email,
+      // 注意：要和 Supabase Auth -> URL Configuration 里允许的 redirect 一致
+      redirectTo: 'https://bshpwa.vercel.app',
+    );
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Password reset email sent. Please check your inbox.',
+        ),
+      ),
+    );
+  } on AuthException catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.message)),
+    );
+  } catch (_) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to send reset email.')),
+    );
+  } finally {
+    if (mounted) setState(() => _loading = false);
+  }
+}
 
   void _goToRegister() async {
     final result = await Navigator.push<bool>(
@@ -206,11 +212,12 @@ class _LoginPageState extends State<LoginPage> {
 
                         Align(
                           alignment: Alignment.centerRight,
-                          child: TextButton(
+                            child: TextButton(
                             onPressed: _loading ? null : _resetPassword,
                             child: const Text('Forgot password?'),
-                          ),
-                        ),
+                              ),
+                            ),
+
                         const SizedBox(height: 8),
 
                         SizedBox(

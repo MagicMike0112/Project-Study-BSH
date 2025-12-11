@@ -49,64 +49,68 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+Future<void> _register() async {
+  if (!_formKey.currentState!.validate()) return;
 
-    if (_pwdCtrl.text != _pwd2Ctrl.text) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match.')),
-      );
-      return;
-    }
-
-    setState(() => _loading = true);
-    try {
-      final email = _emailCtrl.text.trim();
-      final pwd = _pwdCtrl.text;
-
-      final authRes = await _supabase.auth.signUp(
-        email: email,
-        password: pwd,
-      );
-
-      final user = authRes.user;
-      if (user != null) {
-        await _supabase.from('user_profiles').upsert({
-          'id': user.id,
-          'display_name': null,
-          'locale': null,
-          'has_homeconnect': false,
-          'has_payback': false,
-          'gender': _gender,
-          'age_group': _ageGroup,
-          'country': _countryCtrl.text.trim(),
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content:
-              Text('Sign-up successful. Please check your email if required.'),
-        ),
-      );
-
-      Navigator.pop(context, true);
-    } on AuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unexpected error, please try again.')),
-      );
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
+  if (_pwdCtrl.text != _pwd2Ctrl.text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Passwords do not match.')),
+    );
+    return;
   }
+
+  setState(() => _loading = true);
+  try {
+    final email = _emailCtrl.text.trim();
+    final pwd = _pwdCtrl.text;
+
+    // 👇 这里加上 emailRedirectTo，和你 Supabase 里的 redirect 配置完全一致
+    final authRes = await _supabase.auth.signUp(
+      email: email,
+      password: pwd,
+      emailRedirectTo: 'https://bshpwa.vercel.app', // ★ 关键修改
+    );
+
+    final user = authRes.user;
+    if (user != null) {
+      await _supabase.from('user_profiles').upsert({
+        'id': user.id,
+        'display_name': null,
+        'locale': null,
+        'has_homeconnect': false,
+        'has_payback': false,
+        'gender': _gender,
+        'age_group': _ageGroup,
+        'country': _countryCtrl.text.trim(),
+        'created_at': DateTime.now().toIso8601String(),
+      });
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Sign-up successful. Please confirm your email via the link we sent.',
+        ),
+      ),
+    );
+
+    Navigator.pop(context, true);
+  } on AuthException catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.message)),
+    );
+  } catch (_) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Unexpected error, please try again.')),
+    );
+  } finally {
+    if (mounted) setState(() => _loading = false);
+  }
+}
+
 
   @override
   Widget build(BuildContext context) {
