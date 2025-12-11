@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/auth_root.dart';
-import 'screens/reset_password_page.dart'; // 重置密码页
+import 'screens/reset_password_page.dart';
 import 'services/notification_service.dart';
 
 class BshColors {
@@ -21,7 +21,7 @@ class BshColors {
   static const text = flutter.Color(0xFF1A1A1A);
 }
 
-// 全局 navigatorKey，用来在收到 passwordRecovery 事件时跳转页面
+// 全局 navigatorKey，用来在收到 passwordRecovery / signup 事件时跳页
 final flutter.GlobalKey<flutter.NavigatorState> rootNavigatorKey =
     flutter.GlobalKey<flutter.NavigatorState>();
 
@@ -37,46 +37,56 @@ Future<void> main() async {
 
   final supabase = Supabase.instance.client;
 
-  // 2) 启动时先自己看一眼 URL（主要针对 Web 的 reset link）
-  bool initialIsRecovery = false;
+  // 2) Web 下：处理带 code / hash 的回调 URL（PKCE / implicit）
   if (kIsWeb) {
-    // 例如：https://bshpwa.vercel.app/#access_token=...&type=recovery
     final uri = Uri.base;
-    final fragment = uri.fragment; // "#" 后面的整串
-    if (fragment.isNotEmpty) {
-      final params = Uri.splitQueryString(fragment);
-      final type = params['type'];
-      if (type == 'recovery') {
-        initialIsRecovery = true;
+
+    // --- PKCE: https://bshpwa.vercel.app/?code=...&type=recovery ---
+    final hasPkceCode = uri.queryParameters['code'] != null;
+
+    // --- 旧的 implicit 流程: https://.../#access_token=...&type=recovery ---
+    final hasImplicitHash =
+        uri.fragment.isNotEmpty && uri.fragment.contains('access_token');
+
+    if (hasPkceCode || hasImplicitHash) {
+      try {
+        // 对于 implicit，getSessionFromUrl 也能自己从 fragment 里解析
+        await supabase.auth.getSessionFromUrl(uri);
+      } catch (e) {
+        // 这里你可以打印 log，暂时忽略也行
+        // print('getSessionFromUrl error: $e');
       }
     }
   }
 
-  // 3) 监听 Auth 状态变化：如果运行时又收到了 passwordRecovery 事件，也跳转一次
+  // 3) 监听 Auth 状态变化：处理密码重置 / 验证邮件
   supabase.auth.onAuthStateChange.listen((data) {
     final event = data.event;
+
     if (event == AuthChangeEvent.passwordRecovery) {
+      // 用户通过 reset password link 回来了
       rootNavigatorKey.currentState?.push(
         flutter.MaterialPageRoute(
           builder: (_) => const ResetPasswordPage(),
         ),
       );
     }
+
+    // 如果以后要做 “邮箱验证成功提示”，可以在这里处理 signup:
+    // if (event == AuthChangeEvent.signedIn) { ... }
   });
 
-  // 4) 本地通知只在原生端初始化，Web 跳过（否则 PWA 会报错）
+  // 4) 本地通知只在原生端初始化，Web 要跳过
   if (!kIsWeb) {
     await NotificationService().init();
   }
 
-  // 5) 跑 App：如果是 reset-password 链接进来的，直接先展示 ResetPasswordPage
-  flutter.runApp(SmartFoodApp(showResetOnStart: initialIsRecovery));
+  // 5) 跑 App
+  flutter.runApp(const SmartFoodApp());
 }
 
 class SmartFoodApp extends flutter.StatelessWidget {
-  final bool showResetOnStart;
-
-  const SmartFoodApp({super.key, required this.showResetOnStart});
+  const SmartFoodApp({super.key});
 
   @override
   flutter.Widget build(flutter.BuildContext context) {
@@ -104,7 +114,7 @@ class SmartFoodApp extends flutter.StatelessWidget {
           iconTheme: flutter.IconThemeData(color: BshColors.primary),
         ),
       ),
-      home: showResetOnStart ? const ResetPasswordPage() : const AuthRoot(),
+      home: const AuthRoot(),
     );
   }
 }
