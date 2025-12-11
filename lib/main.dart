@@ -1,10 +1,11 @@
 // lib/main.dart
 import 'package:flutter/material.dart' as flutter;
+import 'package:flutter/foundation.dart' show kIsWeb;  // 👈 加这个
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/auth_root.dart';
-import 'services/notification_service.dart';  // 👈 新增
+import 'services/notification_service.dart';
 
 class BshColors {
   static const primary = flutter.Color(0xFF004A77);
@@ -29,8 +30,10 @@ Future<void> main() async {
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3l4bGdmcW5ya252dmJqeHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTk2MjcsImV4cCI6MjA4MDkzNTYyN30.M7FfDZzjYvCt0hSz0W508oSGmzw7tcZ9E5vGyQlnCKY',
   );
 
-  // 2) 本地通知初始化（时区 + 权限）
-  await NotificationService().init();
+  // 2) 本地通知只在原生端初始化，Web 直接跳过
+  if (!kIsWeb) {
+    await NotificationService().init();
+  }
 
   // 3) 跑 App
   flutter.runApp(const SmartFoodApp());

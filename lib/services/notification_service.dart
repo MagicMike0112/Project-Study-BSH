@@ -1,6 +1,7 @@
 // lib/services/notification_service.dart
-import 'dart:io';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb; // 👈 新增：判断是不是 Web
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -24,9 +25,15 @@ class NotificationService {
 
   /// 在 main() 里调用一次：
   ///   WidgetsFlutterBinding.ensureInitialized();
-  ///   await NotificationService().init();
+  ///   if (!kIsWeb) await NotificationService().init();
   Future<void> init() async {
     if (_initialized) return;
+
+    // Web 端不支持本地通知插件，直接 no-op，避免白屏 / 异常
+    if (kIsWeb) {
+      _initialized = true;
+      return;
+    }
 
     // 1) 配置时区（zonedSchedule 必须）
     await _configureLocalTimeZone();
@@ -57,6 +64,9 @@ class NotificationService {
 
   /// 配置本地时区（适配 flutter_timezone 5.x）
   Future<void> _configureLocalTimeZone() async {
+    // Web 上直接跳过
+    if (kIsWeb) return;
+
     tz.initializeTimeZones();
 
     // 真正在手机上跑的时候这里不会是 Windows，这个分支只是避免你在
@@ -72,6 +82,9 @@ class NotificationService {
   }
 
   Future<void> _requestPermissions() async {
+    // Web 上没有本地通知权限这一说
+    if (kIsWeb) return;
+
     if (Platform.isAndroid) {
       final androidImpl =
           _plugin.resolvePlatformSpecificImplementation<
