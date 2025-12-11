@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/auth_root.dart';
-import 'screens/reset_password_page.dart';      // 👈 新增：重置密码页
+import 'screens/reset_password_page.dart'; // 重置密码页
 import 'services/notification_service.dart';
 
 class BshColors {
@@ -37,11 +37,25 @@ Future<void> main() async {
 
   final supabase = Supabase.instance.client;
 
-  // 2) 监听 Auth 状态变化：处理 reset-password 链接
+  // 2) 启动时先自己看一眼 URL（主要针对 Web 的 reset link）
+  bool initialIsRecovery = false;
+  if (kIsWeb) {
+    // 例如：https://bshpwa.vercel.app/#access_token=...&type=recovery
+    final uri = Uri.base;
+    final fragment = uri.fragment; // "#" 后面的整串
+    if (fragment.isNotEmpty) {
+      final params = Uri.splitQueryString(fragment);
+      final type = params['type'];
+      if (type == 'recovery') {
+        initialIsRecovery = true;
+      }
+    }
+  }
+
+  // 3) 监听 Auth 状态变化：如果运行时又收到了 passwordRecovery 事件，也跳转一次
   supabase.auth.onAuthStateChange.listen((data) {
     final event = data.event;
     if (event == AuthChangeEvent.passwordRecovery) {
-      // 用户通过 reset link 回来了，直接推到设置新密码页面
       rootNavigatorKey.currentState?.push(
         flutter.MaterialPageRoute(
           builder: (_) => const ResetPasswordPage(),
@@ -50,22 +64,24 @@ Future<void> main() async {
     }
   });
 
-  // 3) 本地通知只在原生端初始化，Web 跳过
+  // 4) 本地通知只在原生端初始化，Web 跳过（否则 PWA 会报错）
   if (!kIsWeb) {
     await NotificationService().init();
   }
 
-  // 4) 跑 App
-  flutter.runApp(const SmartFoodApp());
+  // 5) 跑 App：如果是 reset-password 链接进来的，直接先展示 ResetPasswordPage
+  flutter.runApp(SmartFoodApp(showResetOnStart: initialIsRecovery));
 }
 
 class SmartFoodApp extends flutter.StatelessWidget {
-  const SmartFoodApp({super.key});
+  final bool showResetOnStart;
+
+  const SmartFoodApp({super.key, required this.showResetOnStart});
 
   @override
   flutter.Widget build(flutter.BuildContext context) {
     return flutter.MaterialApp(
-      navigatorKey: rootNavigatorKey,          // 👈 绑定全局 navigatorKey
+      navigatorKey: rootNavigatorKey,
       title: 'Smart Food Home',
       debugShowCheckedModeBanner: false,
       theme: flutter.ThemeData(
@@ -88,7 +104,7 @@ class SmartFoodApp extends flutter.StatelessWidget {
           iconTheme: flutter.IconThemeData(color: BshColors.primary),
         ),
       ),
-      home: const AuthRoot(), // ✅ 登录逻辑入口
+      home: showResetOnStart ? const ResetPasswordPage() : const AuthRoot(),
     );
   }
 }
