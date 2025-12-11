@@ -191,7 +191,6 @@ class TodayPage extends StatelessWidget {
 
   Widget _buildImpactSummary(BuildContext context) {
     final saved = repo.getSavedCount();
-    final streak = repo.getCurrentStreakDays();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -222,30 +221,15 @@ class TodayPage extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'You saved $saved items this week!',
+                  '$saved items are saved this week!',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
                   ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.local_fire_department,
-                      size: 16,
-                      color: Colors.orangeAccent,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      '$streak day streak',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),

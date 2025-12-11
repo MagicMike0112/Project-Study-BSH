@@ -1,13 +1,22 @@
-// lib/screens/main_scaffold.dart
 import 'package:flutter/material.dart';
 import '../repositories/inventory_repository.dart';
 import 'today_page.dart';
 import 'inventory_page.dart';
 import 'impact_page.dart';
 import 'add_food_page.dart';
+import 'account_page.dart';
 
 class MainScaffold extends StatefulWidget {
-  const MainScaffold({super.key});
+  final bool isLoggedIn;
+  final VoidCallback onLoginRequested;
+  final VoidCallback onLogoutRequested;
+
+  const MainScaffold({
+    super.key,
+    required this.isLoggedIn,
+    required this.onLoginRequested,
+    required this.onLogoutRequested,
+  });
 
   @override
   State<MainScaffold> createState() => _MainScaffoldState();
@@ -18,7 +27,6 @@ class _MainScaffoldState extends State<MainScaffold> {
   bool _showFabMenu = false;
 
   late Future<InventoryRepository> _repoFuture;
-
   late PageController _pageController;
 
   @override
@@ -66,13 +74,17 @@ class _MainScaffoldState extends State<MainScaffold> {
           TodayPage(repo: repo, onRefresh: () => _refresh(repo)),
           InventoryPage(repo: repo, onRefresh: () => _refresh(repo)),
           ImpactPage(repo: repo),
+          AccountPage(
+            isLoggedIn: widget.isLoggedIn,
+            onLogin: widget.onLoginRequested,
+            onLogout: widget.onLogoutRequested,
+          ),
         ];
 
-        final bool fabEnabled = _currentIndex != 2;
+        // 只在 Today / Inventory 显示 FAB
+        final bool fabEnabled = _currentIndex <= 1;
 
         return Scaffold(
-
-          // =============== 改成 PageView 支持左右滑动 ===============
           body: PageView(
             controller: _pageController,
             onPageChanged: (idx) {
@@ -91,8 +103,6 @@ class _MainScaffoldState extends State<MainScaffold> {
                 _currentIndex = idx;
                 _showFabMenu = false;
               });
-
-              // 底部点击时同步 PageView
               _pageController.animateToPage(
                 idx,
                 duration: const Duration(milliseconds: 200),
@@ -115,6 +125,11 @@ class _MainScaffoldState extends State<MainScaffold> {
                 icon: Icon(Icons.eco_outlined),
                 selectedIcon: Icon(Icons.eco),
                 label: 'Impact',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Settings',
               ),
             ],
           ),
@@ -159,7 +174,6 @@ class _MainScaffoldState extends State<MainScaffold> {
                 visible: _showFabMenu,
                 onTap: () => _navigateToAdd(repo, 2),
               ),
-
               FloatingActionButton(
                 onPressed: !enabled
                     ? null
@@ -232,8 +246,8 @@ class _FabActionButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   margin: const EdgeInsets.only(right: 6),
                   decoration: BoxDecoration(
                     color: Colors.white,

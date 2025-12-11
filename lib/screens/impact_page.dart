@@ -49,8 +49,8 @@ class _ImpactPageState extends State<ImpactPage> {
         .where((e) => !e.date.isBefore(start))
         .toList();
 
-    // 所有事件（用于 streak 计算）
-    final allEvents = widget.repo.impactEvents;
+    // ✅ 统一：streak 直接用 repo 的逻辑
+    final streak = widget.repo.getCurrentStreakDays();
 
     final moneyTotal =
         events.fold<double>(0, (sum, e) => sum + e.moneySaved);
@@ -64,27 +64,6 @@ class _ImpactPageState extends State<ImpactPage> {
     final totalQty =
         events.fold<double>(0, (sum, e) => sum + e.quantity);
     final petShare = totalQty == 0 ? 0.0 : petQty / totalQty;
-
-    // ---- Streak 计算：最近连续多少天有事件 ----
-    int streak = 0;
-    if (allEvents.isNotEmpty) {
-      final now = DateTime.now();
-      DateTime cur = DateTime(now.year, now.month, now.day);
-
-      while (true) {
-        final hasEventThisDay = allEvents.any((e) {
-          final d = DateTime(e.date.year, e.date.month, e.date.day);
-          return d == cur;
-        });
-
-        if (hasEventThisDay) {
-          streak++;
-          cur = cur.subtract(const Duration(days: 1));
-        } else {
-          break;
-        }
-      }
-    }
 
     // 聚合成按天的数据，用于画折线
     final dailyMoney = <DateTime, double>{};

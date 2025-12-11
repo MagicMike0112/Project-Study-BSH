@@ -1,36 +1,50 @@
 // lib/main.dart
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' as flutter;
 import 'package:google_fonts/google_fonts.dart';
-import 'screens/main_scaffold.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'screens/auth_root.dart';
+import 'services/notification_service.dart';  // 👈 新增
 
 class BshColors {
-  static const primary = Color(0xFF004A77);
-  static const secondary = Color(0xFF50738A);
+  static const primary = flutter.Color(0xFF004A77);
+  static const secondary = flutter.Color(0xFF50738A);
 
-  static const surface = Color(0xFFF6F8FA);
+  static const surface = flutter.Color(0xFFF6F8FA);
 
-  static const eco = Color(0xFF4B8F6F);
-  static const warning = Color(0xFFE0A100);
-  static const danger = Color(0xFFB93A3A);
+  static const eco = flutter.Color(0xFF4B8F6F);
+  static const warning = flutter.Color(0xFFE0A100);
+  static const danger = flutter.Color(0xFFB93A3A);
 
-  static const text = Color(0xFF1A1A1A);
+  static const text = flutter.Color(0xFF1A1A1A);
 }
 
 Future<void> main() async {
-  // ✅ 关键：先初始化绑定，插件（包括 shared_preferences）才能注册
-  WidgetsFlutterBinding.ensureInitialized();
-  runApp(const SmartFoodApp());
+  flutter.WidgetsFlutterBinding.ensureInitialized();
+
+  // 1) Supabase
+  await Supabase.initialize(
+    url: 'https://avsyxlgfqnrknvvbjxul.supabase.co',
+    anonKey:
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3l4bGdmcW5ya252dmJqeHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTk2MjcsImV4cCI6MjA4MDkzNTYyN30.M7FfDZzjYvCt0hSz0W508oSGmzw7tcZ9E5vGyQlnCKY',
+  );
+
+  // 2) 本地通知初始化（时区 + 权限）
+  await NotificationService().init();
+
+  // 3) 跑 App
+  flutter.runApp(const SmartFoodApp());
 }
 
-class SmartFoodApp extends StatelessWidget {
+class SmartFoodApp extends flutter.StatelessWidget {
   const SmartFoodApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
+  flutter.Widget build(flutter.BuildContext context) {
+    return flutter.MaterialApp(
       title: 'Smart Food Home',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
+      theme: flutter.ThemeData(
         useMaterial3: true,
         colorSchemeSeed: BshColors.primary,
         scaffoldBackgroundColor: BshColors.surface,
@@ -38,29 +52,19 @@ class SmartFoodApp extends StatelessWidget {
           bodyColor: BshColors.text,
           displayColor: BshColors.text,
         ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
+        appBarTheme: const flutter.AppBarTheme(
+          backgroundColor: flutter.Colors.white,
           elevation: 0,
           centerTitle: true,
-          titleTextStyle: TextStyle(
+          titleTextStyle: flutter.TextStyle(
             color: BshColors.primary,
             fontSize: 20,
-            fontWeight: FontWeight.bold,
+            fontWeight: flutter.FontWeight.bold,
           ),
-          iconTheme: IconThemeData(color: BshColors.primary),
-        ),
-        cardTheme: CardThemeData(
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: BshColors.primary,
-          foregroundColor: Colors.white,
+          iconTheme: flutter.IconThemeData(color: BshColors.primary),
         ),
       ),
-      home: const MainScaffold(),  // ✅ 保持现在的 MainScaffold 写法即可
+      home: const AuthRoot(), // ✅ 登录逻辑入口
     );
   }
 }
