@@ -21,7 +21,7 @@ class BshColors {
   static const text = flutter.Color(0xFF1A1A1A);
 }
 
-// 全局 navigatorKey，用来在收到 passwordRecovery / signup 事件时跳页
+// 全局 navigatorKey，用来在收到事件时导航
 final flutter.GlobalKey<flutter.NavigatorState> rootNavigatorKey =
     flutter.GlobalKey<flutter.NavigatorState>();
 
@@ -31,52 +31,50 @@ Future<void> main() async {
   // 1) Supabase 初始化
   await Supabase.initialize(
     url: 'https://avsyxlgfqnrknvvbjxul.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3l4bGdmcW5ya252dmJqeHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTk2MjcsImV4cCI6MjA4MDkzNTYyN30.M7FfDZzjYvCt0hSz0W508oSGmzw7tcZ9E5vGyQlnCKY',
+    anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3l4bGdmcW5ya252dmJqeHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTk2MjcsImV4cCI6MjA4MDkzNTYyN30.M7FfDZzjYvCt0hSz0W508oSGmzw7tcZ9E5vGyQlnCKY',
   );
 
   final supabase = Supabase.instance.client;
 
-  // 2) Web 下：处理带 code / hash 的回调 URL（PKCE / implicit）
+  // 2) 先注册监听，再处理 URL，避免错过事件
+  supabase.auth.onAuthStateChange.listen((data) {
+    final event = data.event;
+
+    if (event == AuthChangeEvent.passwordRecovery) {
+      // 收到密码重置事件 -> 进重置密码页面
+      flutter.WidgetsBinding.instance.addPostFrameCallback((_) {
+        rootNavigatorKey.currentState?.push(
+          flutter.MaterialPageRoute(
+            builder: (_) => const ResetPasswordPage(),
+          ),
+        );
+      });
+    }
+
+    // 如果以后想对邮箱验证成功做提示，可以在这里处理 signedIn 之类事件
+    // if (event == AuthChangeEvent.signedIn) {...}
+  });
+
+  // 3) Web 下处理回调 URL（不管是 #access_token 还是 ?code=）
   if (kIsWeb) {
     final uri = Uri.base;
 
-    // --- PKCE: https://bshpwa.vercel.app/?code=...&type=recovery ---
     final hasPkceCode = uri.queryParameters['code'] != null;
-
-    // --- 旧的 implicit 流程: https://.../#access_token=...&type=recovery ---
     final hasImplicitHash =
         uri.fragment.isNotEmpty && uri.fragment.contains('access_token');
 
     if (hasPkceCode || hasImplicitHash) {
       try {
-        // 对于 implicit，getSessionFromUrl 也能自己从 fragment 里解析
+        // 让 supabase 用当前 URL 兑换 session 并触发对应事件
         await supabase.auth.getSessionFromUrl(uri);
       } catch (e) {
-        // 这里你可以打印 log，暂时忽略也行
+        // 出错先无视，有问题再看 console log
         // print('getSessionFromUrl error: $e');
       }
     }
   }
 
-  // 3) 监听 Auth 状态变化：处理密码重置 / 验证邮件
-  supabase.auth.onAuthStateChange.listen((data) {
-    final event = data.event;
-
-    if (event == AuthChangeEvent.passwordRecovery) {
-      // 用户通过 reset password link 回来了
-      rootNavigatorKey.currentState?.push(
-        flutter.MaterialPageRoute(
-          builder: (_) => const ResetPasswordPage(),
-        ),
-      );
-    }
-
-    // 如果以后要做 “邮箱验证成功提示”，可以在这里处理 signup:
-    // if (event == AuthChangeEvent.signedIn) { ... }
-  });
-
-  // 4) 本地通知只在原生端初始化，Web 要跳过
+  // 4) 本地通知只在原生端初始化，Web 跳过
   if (!kIsWeb) {
     await NotificationService().init();
   }
