@@ -36,7 +36,7 @@ function safeJsonParse(str) {
   }
 }
 
-// --------- 主 handler ---------
+// --------- main handler ---------
 export default async function handler(req, res) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
@@ -151,14 +151,29 @@ Extract all clearly visible or listed food items, infer sensible units and quant
     // 按照官方结构取出文本
     const firstOutput = response.output?.[0];
     const firstContent = firstOutput?.content?.[0];
-    const textValue = firstContent?.text?.value;
 
-    if (!textValue) {
-      console.error("No text in response.output:", JSON.stringify(response));
-      return res
-        .status(500)
-        .json({ error: "No text output from model", raw: response });
+    let textValue;
+
+    // 兼容两种结构：
+    // 1) content[0].text 是 string（你现在就是这种）
+    // 2) content[0].text.value 是 string（某些示例里是这种）
+    if (typeof firstContent?.text === "string") {
+      textValue = firstContent.text;
+    } else if (
+      firstContent?.text &&
+      typeof firstContent.text.value === "string"
+    ) {
+      textValue = firstContent.text.value;
     }
+
+    if (!textValue || !textValue.trim()) {
+      console.error("No text in response.output:", JSON.stringify(response));
+      return res.status(500).json({
+        error: "No text output from model",
+        raw: response,
+      });
+    }
+
 
     const json = safeJsonParse(textValue);
     if (!json || !Array.isArray(json.items)) {
