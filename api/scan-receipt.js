@@ -1,22 +1,21 @@
-// /api/scan-receipt.js
+// api/scan-inventory.js
 import OpenAI from "openai";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 允许的前端域名
+// PWA 域名
 const ALLOWED_ORIGIN = "https://bshpwa.vercel.app";
 
-// --------- 小工具 ---------
+//  JSON body
 async function readBody(req) {
-  if (req.body) return req.body; // Vercel 可能已经 parse 好了
-
+  if (req.headers["content-type"]?.includes("application/json")) {
+    return req.body ?? {};
+  }
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => {
-      data += chunk;
-    });
+    req.on("data", (chunk) => (data += chunk));
     req.on("end", () => {
       try {
         resolve(data ? JSON.parse(data) : {});
@@ -28,168 +27,186 @@ async function readBody(req) {
   });
 }
 
-function safeJsonParse(str) {
-  try {
-    return JSON.parse(str);
-  } catch {
-    return null;
-  }
-}
-
-// --------- main handler ---------
 export default async function handler(req, res) {
-  // CORS
+  // ---- CORS ----
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
-
+  // 只允许 POST
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    // 这个错误会直接在前端看到，方便你排查
-    return res.status(500).json({ error: "OPENAI_API_KEY is missing" });
-  }
-
   try {
     const body = await readBody(req);
+    const { imageBase64, mode } = body || {};
 
-    const rawBase64 = body?.imageBase64;
-    const kind =
-      body?.kind === "receipt" || body?.kind === "fridge"
-        ? body.kind
-        : "fridge";
-
-    if (!rawBase64 || typeof rawBase64 !== "string") {
-      return res
-        .status(400)
-        .json({ error: "imageBase64 is required in request body" });
+    if (!imageBase64 || typeof imageBase64 !== "string") {
+      return res.status(400).json({ error: "imageBase64 is required" });
     }
 
-    // 兼容带 data: 前缀 / 不带前缀的情况
-    const cleanBase64 = rawBase64.replace(
-      /^data:image\/[a-zA-Z0-9+.-]+;base64,/,
-      ""
-    );
+    const scanMode = mode === "receipt" ? "receipt" : "fridge";
 
-    if (!cleanBase64.trim()) {
-      return res.status(400).json({ error: "imageBase64 is empty" });
-    }
+    // ---- 构造多模态请求 ----
+    const userContent = [
+      {
+        type: "input_text",
+        text: `
+You are a kitchen inventory assistant.
 
-    const dataUrl = `data:image/jpeg;base64,${cleanBase64}`;
+You will see a photo of either:
+- a supermarket receipt (mode = "receipt"), OR
+- items in a fridge / freezer / shelf (mode = "fridge").
 
-    const modeDescription =
-      kind === "receipt"
-        ? "a supermarket grocery receipt"
-        : "a fridge / pantry shelf with stored food";
+Mode: "${scanMode}".
 
-    const systemPrompt = `
-You are an assistant that extracts grocery inventory from images.
+Your tasks:
 
-You must ALWAYS respond with a JSON object of the following shape:
+1) **Detect individual food items** from the image.
+2) For each item, decide:
+   - name: short, normalized English name (e.g. "pork belly", "frozen fish sticks", "cola zero").
+   - quantity: numeric quantity as a float (e.g. 1, 2, 0.5).
+   - unit: short unit string, e.g. "pcs", "g", "kg", "ml", "L", "pack", "box".
+   - location: one of ONLY "fridge", "freezer", "pantry".
+     * Use "freezer" for anything clearly frozen:
+       - words like "frozen", "deep-frozen", "ice cream", "fish sticks (frozen)",
+         "tiefkühl", "TK", "冷冻", "-18°C", etc.
+       - frozen dumplings, frozen vegetables, frozen meat, ice cream, etc.
+     * Use "fridge" for chilled items: fresh meat, dairy, opened drinks, cut fruit, etc.
+     * Use "pantry" for shelf-stable items: rice, pasta, canned food (unopened), snacks, etc.
+   - purchasedDate: "YYYY-MM-DD"
+     * If mode = "receipt": read the receipt date if possible.
+     * If mode = "fridge": assume "today" as purchased date when unsure.
+   - shelfLifeDays: INTEGER, estimated remaining safe shelf life in days,
+     counted from the PURCHASE DATE.
 
+Shelf life rules (be conservative, Europe household, normal fridge/freezer):
+- In FREEZER:
+  * frozen meat/fish: 60–180 days
+  * ice cream: 30–90 days
+  * frozen dumplings / vegetables: 60–180 days
+  * never exceed 365 days
+- In FRIDGE:
+  * fresh leafy greens / salad: 2–5 days
+  * fresh berries: 2–5 days
+  * fresh meat/fish: 1–3 days
+  * cooked leftovers: 2–4 days
+  * opened canned fruit / sauces: 3–7 days
+  * yogurt, milk, fresh cheese: 3–10 days
+- In PANTRY:
+  * rice, pasta, flour: 90–365 days
+  * canned food (unopened): 180–365 days
+  * snacks (chips, biscuits): 30–180 days
+Always choose **shorter, safer** values when unsure.
+Clamp shelfLifeDays to 1..365.
+
+OUTPUT:
+Return ONLY valid JSON of this shape:
 {
   "items": [
     {
-      "name": "string - food name in English, short but clear",
-      "quantity": number,             // e.g. 1, 2, 0.5
-      "unit": "string",               // e.g. "pcs", "kg", "g", "L", "ml", "pack"
-      "location": "fridge|freezer|pantry",
-      "purchasedDate": "YYYY-MM-DD"   // best guess, never empty
-    }
+      "name": "string",
+      "quantity": 1,
+      "unit": "pcs",
+      "location": "fridge",
+      "purchasedDate": "2025-12-13",
+      "shelfLifeDays": 7
+    },
+    ...
   ]
 }
+No extra text, no markdown.
+        `.trim(),
+      },
+      {
+        type: "input_image",
+        image_url: `data:image/jpeg;base64,${imageBase64}`,
+      },
+    ];
 
-Rules:
-- If the image is a RECEIPT, infer the purchase date from the receipt (printed date).
-  If not visible, assume TODAY (in the user's local time).
-- If the image is a FRIDGE / SHELF:
-  * Assume the purchase date is TODAY for most items, unless the image clearly shows leftovers or opened packages.
-  * For cooked leftovers or clearly old items you may approximate an earlier purchase date,
-    but keep it within the last 7 days.
-- location:
-  * Items currently on a fridge shelf -> "fridge".
-  * Items obviously frozen or in freezer drawers -> "freezer".
-  * Dry goods in cupboard/shelf -> "pantry".
-- Only include food items or drinks that can be stored.
-- Do NOT add commentary, only the JSON.
-`;
-
-    const userPrompt = `
-The user uploaded ${modeDescription}.
-Extract all clearly visible or listed food items, infer sensible units and quantities, and assign a storage location and purchase date.
-`;
-
-    // 使用 Responses API + vision
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
+    const response = await client.chat.completions.create({
+      model: "gpt-4.1-mini", // 够用了，成本也低
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a strict JSON API. Always respond with exactly one JSON object.",
+        },
         {
           role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: systemPrompt + "\n\n" + userPrompt,
-            },
-            {
-              type: "input_image",
-              image_url: dataUrl,
-              detail: "low",
-            },
-          ],
+          content: userContent,
         },
       ],
-      // 只要 text 输出
+      response_format: { type: "json_object" },
       max_output_tokens: 800,
     });
 
-    // 按照官方结构取出文本
-    const firstOutput = response.output?.[0];
-    const firstContent = firstOutput?.content?.[0];
-
-    let textValue;
-
-    // 兼容两种结构：
-    // 1) content[0].text 是 string（你现在就是这种）
-    // 2) content[0].text.value 是 string（某些示例里是这种）
-    if (typeof firstContent?.text === "string") {
-      textValue = firstContent.text;
-    } else if (
-      firstContent?.text &&
-      typeof firstContent.text.value === "string"
-    ) {
-      textValue = firstContent.text.value;
+    const raw = response.choices?.[0]?.message?.content;
+    if (!raw || typeof raw !== "string") {
+      console.error("No text output from model", response);
+      return res
+        .status(500)
+        .json({ error: "No text output from model", raw: response });
     }
 
-    if (!textValue || !textValue.trim()) {
-      console.error("No text in response.output:", JSON.stringify(response));
-      return res.status(500).json({
-        error: "No text output from model",
-        raw: response,
-      });
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      console.error("JSON parse error:", e, raw);
+      return res.status(500).json({ error: "LLM returned invalid JSON" });
     }
 
+    const now = new Date();
 
-    const json = safeJsonParse(textValue);
-    if (!json || !Array.isArray(json.items)) {
-      console.error("Model output is not valid JSON:", textValue);
-      return res.status(500).json({
-        error: "Model returned invalid JSON",
-        rawText: textValue,
-      });
-    }
+    const items = Array.isArray(data.items) ? data.items : [];
 
-    return res.status(200).json(json);
-  } catch (err) {
-    console.error("scan-receipt API error:", err);
-    return res.status(500).json({
-      error: "Internal server error",
-      message: err?.message ?? String(err),
+    const normalized = items.map((item) => {
+      const name = String(item.name ?? "").trim() || "Unnamed item";
+
+      let quantity = Number(item.quantity ?? 1);
+      if (!Number.isFinite(quantity) || quantity <= 0) quantity = 1;
+
+      let unit = String(item.unit ?? "pcs").trim() || "pcs";
+
+      let locStr = String(item.location ?? "fridge").toLowerCase();
+      if (locStr !== "fridge" && locStr !== "freezer" && locStr !== "pantry") {
+        locStr = "fridge";
+      }
+
+      let purchasedDateStr = String(item.purchasedDate ?? "").trim();
+      let purchasedDate = new Date(purchasedDateStr);
+      if (isNaN(purchasedDate.getTime())) {
+        purchasedDate = now;
+      }
+
+      // 从 shelfLifeDays 计算 predictedExpiry
+      let shelfDays = parseInt(item.shelfLifeDays ?? item.days ?? 7, 10);
+      if (!Number.isFinite(shelfDays) || shelfDays <= 0) shelfDays = 7;
+      if (shelfDays > 365) shelfDays = 365;
+
+      const predicted = new Date(
+        purchasedDate.getTime() + shelfDays * 24 * 60 * 60 * 1000
+      );
+
+      return {
+        name,
+        quantity,
+        unit,
+        location: locStr, // 'fridge' | 'freezer' | 'pantry'
+        purchasedDate: purchasedDate.toISOString().slice(0, 10),
+        predictedExpiry: predicted.toISOString(),
+        shelfLifeDays: shelfDays,
+      };
     });
+
+    return res.status(200).json({ items: normalized });
+  } catch (err) {
+    console.error("scan-inventory API error:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 }
