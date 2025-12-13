@@ -13,6 +13,9 @@ import '../repositories/inventory_repository.dart';
 
 const String kBackendBaseUrl = 'https://project-study-bsh.vercel.app';
 
+/// 扫描模式：小票 or 冰箱/货架
+enum StorageScanMode { receipt, fridge }
+
 class AddFoodPage extends StatefulWidget {
   final InventoryRepository repo;
   final int initialTab;
@@ -58,6 +61,9 @@ class _AddFoodPageState extends State<AddFoodPage>
   bool _isListening = false;
   String _voiceHint = "Tap mic to start or stop.";
   final TextEditingController _voiceController = TextEditingController();
+
+  // 扫描模式（一个入口，前端选择是小票还是冰箱）
+  StorageScanMode _scanMode = StorageScanMode.receipt;
 
   @override
   void initState() {
@@ -338,7 +344,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     }
   }
 
-  // ========= Scan / Camera =========
+  // ========= Scan 统一入口：拍照 / 相册 + 调 /api/scan-receipt =========
 
   Future<void> _takePhoto() async {
     final status = await Permission.camera.request();
@@ -354,37 +360,201 @@ class _AddFoodPageState extends State<AddFoodPage>
     final xfile = await _picker.pickImage(source: ImageSource.camera);
     if (xfile == null) return;
 
-    if (!mounted) return;
-    String descText = '';
+    await _scanImageWithAi(xfile, mode: _scanMode);
+  }
 
-    final desc = await showDialog<String>(
+  Future<void> _pickFromGallery() async {
+    final xfile = await _picker.pickImage(source: ImageSource.gallery);
+    if (xfile == null) return;
+
+    await _scanImageWithAi(xfile, mode: _scanMode);
+  }
+
+  Future<void> _scanImageWithAi(
+    XFile xfile, {
+    required StorageScanMode mode,
+  }) async {
+    setState(() => _isProcessing = true);
+
+    try {
+      final bytes = await xfile.readAsBytes();
+      final base64Str = base64Encode(bytes);
+
+      final uri = Uri.parse('$kBackendBaseUrl/api/scan-receipt');
+
+      final resp = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'imageBase64': base64Str,
+          'mode': mode == StorageScanMode.receipt ? 'receipt' : 'fridge',
+        }),
+      );
+
+      if (resp.statusCode != 200) {
+        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
+      }
+
+      final root = jsonDecode(resp.body) as Map<String, dynamic>;
+
+      // purchaseDate: 如果缺失或非法，前端用今天
+      DateTime purchaseDate = DateTime.now();
+      final pRaw = root['purchaseDate'];
+      if (pRaw is String && pRaw.trim().isNotEmpty) {
+        try {
+          purchaseDate = DateTime.parse(pRaw);
+        } catch (_) {
+          // ignore, fallback to now
+        }
+      }
+
+      final itemsJson = root['items'] as List<dynamic>? ?? const [];
+      if (itemsJson.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No items detected from scan.')),
+          );
+        }
+        return;
+      }
+
+      // 解析为临时对象，给用户预览
+      final scannedItems = itemsJson.map((e) {
+        final m = (e as Map).cast<String, dynamic>();
+        final name = (m['name'] ?? '').toString().trim();
+        final qtyRaw = m['quantity'];
+        double qty = 1;
+        if (qtyRaw is num) qty = qtyRaw.toDouble();
+        final unit = (m['unit'] ?? 'pcs').toString();
+        final locStr = (m['storageLocation'] ?? 'fridge').toString();
+        final category = (m['category'] ?? 'scan').toString();
+        final conf = (m['confidence'] as num?)?.toDouble() ?? 0.0;
+
+        StorageLocation loc;
+        switch (locStr) {
+          case 'freezer':
+            loc = StorageLocation.freezer;
+            break;
+          case 'pantry':
+            loc = StorageLocation.pantry;
+            break;
+          default:
+            loc = StorageLocation.fridge;
+        }
+
+        return _ScannedItem(
+          name: name.isEmpty ? 'Unknown item' : name,
+          quantity: qty,
+          unit: unit,
+          location: loc,
+          category: category,
+          purchaseDate: purchaseDate,
+          confidence: conf,
+        );
+      }).toList();
+
+      if (!mounted) return;
+
+      await _showScannedItemsPreview(scannedItems);
+
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Scan failed: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isProcessing = false);
+    }
+  }
+
+  Future<void> _showScannedItemsPreview(List<_ScannedItem> items) async {
+    // 允许用户勾选 / 取消某些条目
+    final selected = List<bool>.filled(items.length, true);
+
+    final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          title: const Text('Describe what you scanned'),
-          content: TextField(
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'e.g. half box Greek yogurt in the fridge',
+          title: const Text('Add scanned items to inventory?'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'We detected the following items. '
+                    'You can deselect items you don\'t want to add.',
+                    style: Theme.of(ctx)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 12),
+                  ...List.generate(items.length, (index) {
+                    final item = items[index];
+                    return CheckboxListTile(
+                      value: selected[index],
+                      onChanged: (v) {
+                        selected[index] = v ?? false;
+                        (ctx as Element).markNeedsBuild();
+                      },
+                      title: Text(item.name),
+                      subtitle: Text(
+                        '${item.quantity} ${item.unit} • '
+                        '${item.location.name} • '
+                        'purchased ${_formatDate(item.purchaseDate)}'
+                        '${item.confidence > 0 ? ' • conf ${(item.confidence * 100).toStringAsFixed(0)}%' : ''}',
+                      ),
+                    );
+                  }),
+                ],
+              ),
             ),
-            onChanged: (v) => descText = v,
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () => Navigator.pop(ctx, descText),
-              child: const Text('OK'),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Add to inventory'),
             ),
           ],
         );
       },
     );
 
-    if (desc == null || desc.trim().isEmpty) return;
-    await _runIngredientAi(desc, source: 'scan');
+    if (confirmed != true) return;
+
+    // 写入 inventory
+    for (int i = 0; i < items.length; i++) {
+      if (!selected[i]) continue;
+      final s = items[i];
+      final foodItem = FoodItem(
+        id: const Uuid().v4(),
+        name: s.name,
+        location: s.location,
+        quantity: s.quantity,
+        unit: s.unit,
+        purchasedDate: s.purchaseDate,
+        openDate: null,
+        bestBeforeDate: null,
+        predictedExpiry: null,
+        category: s.category,
+      );
+      await widget.repo.addItem(foodItem);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added ${selected.where((v) => v).length} items to inventory ✅'),
+        ),
+      );
+    }
   }
 
   // ========= Voice =========
@@ -732,27 +902,64 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   Widget _buildCameraTab() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.camera_enhance, size: 80, color: Colors.grey),
-          const SizedBox(height: 16),
-          const Text("Snap a receipt!"),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _takePhoto,
-            child: const Text("Open Camera"),
-          ),
-          const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 24),
-            child: Text(
-              "Scan the receipt after shopping",
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.document_scanner_outlined,
+                size: 80, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text(
+              "Scan to auto-fill inventory",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              'Choose what you want to scan, then use camera or gallery.\n'
+              'We will extract items, suggest storage, and create an inventory list.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+            ),
+            const SizedBox(height: 24),
+            SegmentedButton<StorageScanMode>(
+              segments: const [
+                ButtonSegment(
+                  value: StorageScanMode.receipt,
+                  label: Text('Receipt'),
+                  icon: Icon(Icons.receipt_long),
+                ),
+                ButtonSegment(
+                  value: StorageScanMode.fridge,
+                  label: Text('Fridge / shelf'),
+                  icon: Icon(Icons.kitchen),
+                ),
+              ],
+              selected: {_scanMode},
+              onSelectionChanged: (s) {
+                setState(() => _scanMode = s.first);
+              },
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _takePhoto,
+                icon: const Icon(Icons.camera_alt_outlined),
+                label: const Text("Scan with camera"),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _pickFromGallery,
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text("Choose from gallery"),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -827,4 +1034,25 @@ class _AddFoodPageState extends State<AddFoodPage>
       ),
     );
   }
+}
+
+/// 扫描出来的临时结构
+class _ScannedItem {
+  final String name;
+  final double quantity;
+  final String unit;
+  final StorageLocation location;
+  final String category;
+  final DateTime purchaseDate;
+  final double confidence;
+
+  _ScannedItem({
+    required this.name,
+    required this.quantity,
+    required this.unit,
+    required this.location,
+    required this.category,
+    required this.purchaseDate,
+    required this.confidence,
+  });
 }

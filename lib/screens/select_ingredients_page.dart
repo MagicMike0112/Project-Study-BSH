@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
+import '../utils/auth_guard.dart'; // 👈 新增：登录检查
 
 // ================== 选食材页面 ==================
 
@@ -86,6 +87,10 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   }
 
   Future<void> _confirm() async {
+    // ✅ 新增：AI 菜谱前先要求登录
+    final ok = await requireLogin(context);
+    if (!ok) return;
+
     final selected = _activeItems
         .where((item) => _selectedIds.contains(item.id))
         .toList();
