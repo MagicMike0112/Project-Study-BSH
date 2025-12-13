@@ -172,6 +172,18 @@ class _AddFoodPageState extends State<AddFoodPage>
     _predictionError = null;
   }
 
+  IconData _locationIcon(StorageLocation loc) {
+    switch (loc) {
+      case StorageLocation.freezer:
+        return Icons.ac_unit;
+      case StorageLocation.pantry:
+        return Icons.inventory_2_outlined;
+      case StorageLocation.fridge:
+      default:
+        return Icons.kitchen;
+    }
+  }
+
   // ========= 保存 =========
 
   void _save() async {
@@ -302,7 +314,6 @@ class _AddFoodPageState extends State<AddFoodPage>
 
       final body = <String, dynamic>{
         'name': _name.trim(),
-        // StorageLocation.fridge / freezer / pantry -> "fridge" ...
         'location': _location.name,
         'purchasedDate': _purchased.toIso8601String(),
         if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
@@ -327,7 +338,6 @@ class _AddFoodPageState extends State<AddFoodPage>
       }
 
       setState(() {
-        // ★ 只写到 _predictedExpiryFromAi，用于卡片展示和 Apply
         _predictedExpiryFromAi = DateTime.parse(iso);
         _predictionError = null;
       });
@@ -380,7 +390,6 @@ class _AddFoodPageState extends State<AddFoodPage>
       final bytes = await xfile.readAsBytes();
       final base64Str = base64Encode(bytes);
 
-      // 使用新的 scan-inventory 后端
       final uri = Uri.parse('$kBackendBaseUrl/api/scan-inventory');
 
       final resp = await http.post(
@@ -397,9 +406,20 @@ class _AddFoodPageState extends State<AddFoodPage>
       }
 
       final root = jsonDecode(resp.body) as Map<String, dynamic>;
-      final list = root['items'] as List<dynamic>? ?? const [];
 
-      if (list.isEmpty) {
+      // purchaseDate: 如果缺失或非法，前端用今天
+      DateTime purchaseDate = DateTime.now();
+      final pRaw = root['purchaseDate'];
+      if (pRaw is String && pRaw.trim().isNotEmpty) {
+        try {
+          purchaseDate = DateTime.parse('${pRaw.trim()}T00:00:00.000Z');
+        } catch (_) {
+          // ignore, fallback to now
+        }
+      }
+
+      final itemsJson = root['items'] as List<dynamic>? ?? const [];
+      if (itemsJson.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('No items detected from scan.')),
@@ -408,17 +428,21 @@ class _AddFoodPageState extends State<AddFoodPage>
         return;
       }
 
-      final drafts = list.map<_ScannedDraftItem>((raw) {
-        final m = (raw as Map).cast<String, dynamic>();
+      final now = DateTime.now();
+      final max = now.add(const Duration(days: 365));
 
+      // 解析为临时对象，给用户预览
+      final scannedItems = itemsJson.map((e) {
+        final m = (e as Map).cast<String, dynamic>();
         final name = (m['name'] ?? '').toString().trim();
         final qtyRaw = m['quantity'];
-        double qty = 1.0;
+        double qty = 1;
         if (qtyRaw is num) qty = qtyRaw.toDouble();
-
         final unit = (m['unit'] ?? 'pcs').toString();
+        final locStr = (m['storageLocation'] ?? 'fridge').toString();
+        final category = (m['category'] ?? 'scan').toString();
+        final conf = (m['confidence'] as num?)?.toDouble() ?? 0.0;
 
-        final locStr = (m['location'] ?? 'fridge').toString();
         StorageLocation loc;
         switch (locStr) {
           case 'freezer':
@@ -431,28 +455,38 @@ class _AddFoodPageState extends State<AddFoodPage>
             loc = StorageLocation.fridge;
         }
 
-        final purchasedStr = (m['purchasedDate'] ?? '').toString();
-        DateTime purchased =
-            DateTime.tryParse(purchasedStr) ?? DateTime.now();
+        DateTime? predictedExpiry;
+        final expRaw = m['predictedExpiry'];
+        if (expRaw is String && expRaw.trim().isNotEmpty) {
+          try {
+            predictedExpiry = DateTime.parse(expRaw);
+          } catch (_) {}
+        }
 
-        final predictedStr = (m['predictedExpiry'] ?? '').toString();
-        DateTime? predicted =
-            predictedStr.isNotEmpty ? DateTime.tryParse(predictedStr) : null;
+        // 前端再兜底一次：不能早于今天，也不要超过 365 天
+        if (predictedExpiry != null) {
+          if (predictedExpiry.isBefore(now)) {
+            predictedExpiry = now.add(const Duration(days: 3));
+          } else if (predictedExpiry.isAfter(max)) {
+            predictedExpiry = max;
+          }
+        }
 
-        return _ScannedDraftItem(
-          name: name.isEmpty ? 'Unnamed item' : name,
+        return _ScannedItem(
+          name: name.isEmpty ? 'Unknown item' : name,
           quantity: qty,
           unit: unit,
           location: loc,
-          purchasedDate: purchased,
-          predictedExpiry: predicted,
-          category: 'scan',
+          category: category,
+          purchaseDate: purchaseDate,
+          confidence: conf,
+          predictedExpiry: predictedExpiry,
         );
       }).toList();
 
       if (!mounted) return;
 
-      await _showScannedItemsDialog(drafts);
+      await _showScannedItemsPreview(scannedItems);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -464,137 +498,83 @@ class _AddFoodPageState extends State<AddFoodPage>
     }
   }
 
-  Future<void> _showScannedItemsDialog(
-      List<_ScannedDraftItem> drafts) async {
-    if (!mounted) return;
+  Future<void> _showScannedItemsPreview(List<_ScannedItem> items) async {
+    // 允许用户勾选 / 取消某些条目
+    final selected = List<bool>.filled(items.length, true);
 
-    await showDialog<void>(
+    final bool? confirmed = await showDialog<bool>(
       context: context,
-      barrierDismissible: false,
       builder: (ctx) {
         return StatefulBuilder(
-          builder: (ctx, setState) {
+          builder: (ctx, setStateDialog) {
             return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(24),
-              ),
               title: const Text('Add scanned items to inventory?'),
               content: SizedBox(
-                width: double.maxFinite,
-                height: 420,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'We detected the following items. '
-                      'You can edit or deselect any item before adding.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey),
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: ListView.separated(
-                        itemCount: drafts.length,
-                        separatorBuilder: (_, __) =>
-                            const Divider(height: 1),
-                        itemBuilder: (_, index) {
-                          final item = drafts[index];
-                          final locLabel = () {
-                            switch (item.location) {
-                              case StorageLocation.freezer:
-                                return 'freezer';
-                              case StorageLocation.pantry:
-                                return 'pantry';
-                              case StorageLocation.fridge:
-                              default:
-                                return 'fridge';
-                            }
-                          }();
-
-                          final expiryLabel = item.predictedExpiry != null
-                              ? _formatDate(item.predictedExpiry)
-                              : 'no expiry';
-
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Checkbox(
-                                value: item.selected,
-                                onChanged: (v) {
-                                  setState(() {
-                                    item.selected = v ?? false;
-                                  });
-                                },
-                              ),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            item.name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(
-                                            Icons.edit_outlined,
-                                            size: 18,
-                                          ),
-                                          onPressed: () async {
-                                            await _editScannedItem(
-                                              item,
-                                              ctx,
-                                              setState,
-                                            );
-                                          },
-                                        ),
-                                      ],
-                                    ),
-                                    Text(
-                                      '${item.quantity} ${item.unit} • $locLabel',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                    Text(
-                                      'purchased ${_formatDate(item.purchasedDate)}'
-                                      ' • expiry $expiryLabel',
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          );
-                        },
+                width: 400,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'We detected the following items. '
+                        'You can edit or deselect items you don\'t want to add.',
+                        style: Theme.of(ctx)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: Colors.grey[700]),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 12),
+                      ...List.generate(items.length, (index) {
+                        final item = items[index];
+                        return CheckboxListTile(
+                          value: selected[index],
+                          onChanged: (v) {
+                            setStateDialog(() {
+                              selected[index] = v ?? false;
+                            });
+                          },
+                          title: Row(
+                            children: [
+                              Icon(
+                                _locationIcon(item.location),
+                                size: 16,
+                                color: Theme.of(ctx).colorScheme.primary,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(item.name)),
+                            ],
+                          ),
+                          subtitle: Text(
+                            '${item.quantity} ${item.unit} • '
+                            '${item.location.name} • '
+                            'purchased ${_formatDate(item.purchaseDate)}'
+                            '${item.predictedExpiry != null ? ' • expiry ${_formatDate(item.predictedExpiry)}' : ''}',
+                          ),
+                          secondary: IconButton(
+                            icon: const Icon(Icons.edit),
+                            onPressed: () async {
+                              final updated =
+                                  await _showEditScannedItemDialog(item);
+                              if (updated != null) {
+                                setStateDialog(() {
+                                  items[index] = updated;
+                                });
+                              }
+                            },
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
+                  onPressed: () => Navigator.of(ctx).pop(false),
                   child: const Text('Cancel'),
                 ),
                 FilledButton(
-                  onPressed: drafts.any((d) => d.selected)
-                      ? () async {
-                          await _addDraftsToInventory(drafts
-                              .where((d) => d.selected)
-                              .toList());
-                          if (ctx.mounted) Navigator.of(ctx).pop();
-                        }
-                      : null,
+                  onPressed: () => Navigator.of(ctx).pop(true),
                   child: const Text('Add to inventory'),
                 ),
               ],
@@ -603,35 +583,84 @@ class _AddFoodPageState extends State<AddFoodPage>
         );
       },
     );
+
+    if (confirmed != true) return;
+
+    // 写入 inventory
+    for (int i = 0; i < items.length; i++) {
+      if (!selected[i]) continue;
+      final s = items[i];
+
+      // 如果 predictedExpiry 仍然为空，给个简单 fallback（例如 fridge 7 天）
+      DateTime? expiry = s.predictedExpiry;
+      expiry ??= () {
+        switch (s.location) {
+          case StorageLocation.freezer:
+            return s.purchaseDate.add(const Duration(days: 90));
+          case StorageLocation.pantry:
+            return s.purchaseDate.add(const Duration(days: 30));
+          case StorageLocation.fridge:
+          default:
+            return s.purchaseDate.add(const Duration(days: 7));
+        }
+      }();
+
+      final foodItem = FoodItem(
+        id: const Uuid().v4(),
+        name: s.name,
+        location: s.location,
+        quantity: s.quantity,
+        unit: s.unit,
+        purchasedDate: s.purchaseDate,
+        openDate: null,
+        bestBeforeDate: null,
+        predictedExpiry: expiry,
+        category: s.category,
+      );
+      await widget.repo.addItem(foodItem);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content:
+              Text('Added ${selected.where((v) => v).length} items to inventory ✅'),
+        ),
+      );
+    }
   }
 
-  Future<void> _editScannedItem(
-    _ScannedDraftItem item,
-    BuildContext dialogContext,
-    void Function(void Function()) parentSetState,
-  ) async {
+  Future<_ScannedItem?> _showEditScannedItemDialog(_ScannedItem item) async {
     final nameCtrl = TextEditingController(text: item.name);
     final qtyCtrl = TextEditingController(text: item.quantity.toString());
     final unitCtrl = TextEditingController(text: item.unit);
-
-    StorageLocation loc = item.location;
-    DateTime purchased = item.purchasedDate;
+    DateTime purchase = item.purchaseDate;
     DateTime? expiry = item.predictedExpiry;
+    StorageLocation loc = item.location;
 
-    await showDialog<void>(
-      context: dialogContext,
+    final result = await showDialog<_ScannedItem>(
+      context: context,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              title: const Text('Edit item'),
-              content: SingleChildScrollView(
+        return StatefulBuilder(builder: (ctx, setStateDialog) {
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              child: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Text(
+                      'Edit item',
+                      style: Theme.of(ctx)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
                     TextField(
                       controller: nameCtrl,
                       decoration: const InputDecoration(
@@ -639,7 +668,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                         border: OutlineInputBorder(),
                       ),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 12),
                     Row(
                       children: [
                         Expanded(
@@ -647,14 +676,15 @@ class _AddFoodPageState extends State<AddFoodPage>
                             controller: qtyCtrl,
                             keyboardType:
                                 const TextInputType.numberWithOptions(
-                                    decimal: true),
+                              decimal: true,
+                            ),
                             decoration: const InputDecoration(
                               labelText: 'Quantity',
                               border: OutlineInputBorder(),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: TextField(
                             controller: unitCtrl,
@@ -666,165 +696,149 @@ class _AddFoodPageState extends State<AddFoodPage>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Storage location',
-                        style: Theme.of(ctx)
-                            .textTheme
-                            .bodyMedium
-                            ?.copyWith(fontWeight: FontWeight.w600),
-                      ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Storage location',
+                      style: TextStyle(fontWeight: FontWeight.w600),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     SegmentedButton<StorageLocation>(
                       segments: const [
                         ButtonSegment(
                           value: StorageLocation.fridge,
-                          label: Text('Fridge'),
-                          icon: Icon(Icons.kitchen),
+                          icon: Icon(Icons.kitchen_outlined),
+                          label: SizedBox.shrink(), // 纯图标
                         ),
                         ButtonSegment(
                           value: StorageLocation.freezer,
-                          label: Text('Freezer'),
                           icon: Icon(Icons.ac_unit),
+                          label: SizedBox.shrink(),
                         ),
                         ButtonSegment(
                           value: StorageLocation.pantry,
-                          label: Text('Pantry'),
-                          icon: Icon(Icons.weekend),
+                          icon: Icon(Icons.inventory_2_outlined),
+                          label: SizedBox.shrink(),
                         ),
                       ],
                       selected: {loc},
-                      onSelectionChanged: (s) =>
-                          setState(() => loc = s.first),
+                      showSelectedIcon: false,
+                      onSelectionChanged: (s) {
+                        setStateDialog(() => loc = s.first);
+                      },
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tip: 🔵 fridge   ❄ freezer   📦 pantry',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Purchased date',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
                     ListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Purchased date'),
-                      subtitle: Text(_formatDate(purchased)),
-                      trailing: const Icon(
-                        Icons.calendar_today_outlined,
-                        size: 18,
-                      ),
+                      title: Text(_formatDate(purchase)),
+                      trailing: const Icon(Icons.calendar_today_outlined),
                       onTap: () async {
                         final picked = await showDatePicker(
                           context: ctx,
-                          initialDate: purchased,
+                          initialDate: purchase,
                           firstDate: DateTime.now()
                               .subtract(const Duration(days: 365)),
                           lastDate: DateTime.now()
                               .add(const Duration(days: 365)),
                         );
                         if (picked != null) {
-                          setState(() => purchased = picked);
+                          setStateDialog(() => purchase = picked);
                         }
                       },
                     ),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Predicted expiry'),
-                      subtitle: Text(_formatDate(expiry)),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (expiry != null)
-                            IconButton(
-                              icon: const Icon(Icons.close, size: 18),
-                              onPressed: () =>
-                                  setState(() => expiry = null),
-                            ),
-                          IconButton(
-                            icon: const Icon(
-                                Icons.calendar_today_outlined,
-                                size: 18),
-                            onPressed: () async {
-                              final initial = expiry ??
-                                  purchased.add(const Duration(days: 7));
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Predicted expiry',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(_formatDate(expiry)),
+                            trailing:
+                                const Icon(Icons.calendar_today_outlined),
+                            onTap: () async {
+                              final base = expiry ?? purchase;
                               final picked = await showDatePicker(
                                 context: ctx,
-                                initialDate: initial,
-                                firstDate: purchased,
-                                lastDate: purchased
+                                initialDate: base,
+                                firstDate: purchase,
+                                lastDate: purchase
                                     .add(const Duration(days: 365)),
                               );
                               if (picked != null) {
-                                setState(() => expiry = picked);
+                                setStateDialog(() => expiry = picked);
                               }
                             },
                           ),
-                        ],
-                      ),
+                        ),
+                        IconButton(
+                          onPressed: () =>
+                              setStateDialog(() => expiry = null),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () {
+                            final qty =
+                                double.tryParse(qtyCtrl.text.trim()) ?? 1;
+                            Navigator.pop(
+                              ctx,
+                              _ScannedItem(
+                                name: nameCtrl.text.trim().isEmpty
+                                    ? item.name
+                                    : nameCtrl.text.trim(),
+                                quantity: qty,
+                                unit: unitCtrl.text.trim().isEmpty
+                                    ? item.unit
+                                    : unitCtrl.text.trim(),
+                                location: loc,
+                                category: item.category,
+                                purchaseDate: purchase,
+                                confidence: item.confidence,
+                                predictedExpiry: expiry,
+                              ),
+                            );
+                          },
+                          child: const Text('Save'),
+                        ),
+                      ],
                     ),
                   ],
                 ),
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    parentSetState(() {
-                      item.name = nameCtrl.text.trim().isEmpty
-                          ? item.name
-                          : nameCtrl.text.trim();
-                      item.quantity =
-                          double.tryParse(qtyCtrl.text.trim()) ??
-                              item.quantity;
-                      item.unit = unitCtrl.text.trim().isEmpty
-                          ? item.unit
-                          : unitCtrl.text.trim();
-                      item.location = loc;
-                      item.purchasedDate = purchased;
-                      item.predictedExpiry = expiry;
-                    });
-                    Navigator.of(ctx).pop();
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
+            ),
+          );
+        });
       },
     );
 
-    nameCtrl.dispose();
-    qtyCtrl.dispose();
-    unitCtrl.dispose();
-  }
-
-  Future<void> _addDraftsToInventory(
-      List<_ScannedDraftItem> drafts) async {
-    for (final d in drafts) {
-      final item = FoodItem(
-        id: const Uuid().v4(),
-        name: d.name,
-        location: d.location,
-        quantity: d.quantity,
-        unit: d.unit,
-        purchasedDate: d.purchasedDate,
-        openDate: null,
-        bestBeforeDate: null,
-        predictedExpiry: d.predictedExpiry,
-        category: d.category,
-      );
-      await widget.repo.addItem(item);
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '${drafts.length} items added to inventory ✅',
-          ),
-        ),
-      );
-    }
+    return result;
   }
 
   // ========= Voice =========
@@ -915,7 +929,6 @@ class _AddFoodPageState extends State<AddFoodPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 基础信息
             const Text(
               'Basic info',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -983,7 +996,6 @@ class _AddFoodPageState extends State<AddFoodPage>
             ),
             const SizedBox(height: 20),
 
-            // 日期区域
             const Text(
               'Dates (optional)',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -1028,11 +1040,9 @@ class _AddFoodPageState extends State<AddFoodPage>
             ),
             const SizedBox(height: 12),
 
-            // AI 保质期预测卡片
             _buildExpiryAiCard(),
             const SizedBox(height: 20),
 
-            // 存放位置
             const Text(
               'Storage location',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -1082,8 +1092,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   Widget _buildExpiryAiCard() {
-    final canPredict =
-        _name.trim().isNotEmpty && !_isPredictingExpiry;
+    final canPredict = _name.trim().isNotEmpty && !_isPredictingExpiry;
 
     return Card(
       elevation: 0,
@@ -1143,7 +1152,8 @@ class _AddFoodPageState extends State<AddFoodPage>
                 Text(
                   'Note: current Best-before ${_formatDate(_bestBefore)} '
                   'will override this when saving.',
-                  style: const TextStyle(fontSize: 11, color: Colors.redAccent),
+                  style:
+                      const TextStyle(fontSize: 11, color: Colors.redAccent),
                 ),
             ] else ...[
               if (_predictionError != null) ...[
@@ -1306,25 +1316,25 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 }
 
-/// 扫描出来、用于弹窗编辑的临时结构
-class _ScannedDraftItem {
-  String name;
-  double quantity;
-  String unit;
-  StorageLocation location;
-  DateTime purchasedDate;
-  DateTime? predictedExpiry;
-  String category;
-  bool selected;
+/// 扫描出来的临时结构
+class _ScannedItem {
+  final String name;
+  final double quantity;
+  final String unit;
+  final StorageLocation location;
+  final String category;
+  final DateTime purchaseDate;
+  final double confidence;
+  final DateTime? predictedExpiry;
 
-  _ScannedDraftItem({
+  _ScannedItem({
     required this.name,
     required this.quantity,
     required this.unit,
     required this.location,
-    required this.purchasedDate,
-    required this.predictedExpiry,
     required this.category,
-    this.selected = true,
+    required this.purchaseDate,
+    required this.confidence,
+    required this.predictedExpiry,
   });
 }

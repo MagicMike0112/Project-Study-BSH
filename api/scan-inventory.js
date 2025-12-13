@@ -5,20 +5,15 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// 允许的前端域名（你的 PWA）
 const ALLOWED_ORIGIN = "https://bshpwa.vercel.app";
 
-// --------- 工具：读取 JSON body（兼容本地 / Vercel） ----------
+// ---------- 通用：读取 JSON body ----------
 async function readBody(req) {
-  if (req.body && typeof req.body === "object") {
-    return req.body;
-  }
+  if (req.body && typeof req.body === "object") return req.body;
 
   return new Promise((resolve, reject) => {
     let data = "";
-    req.on("data", (chunk) => {
-      data += chunk;
-    });
+    req.on("data", (chunk) => (data += chunk));
     req.on("end", () => {
       try {
         resolve(data ? JSON.parse(data) : {});
@@ -30,17 +25,13 @@ async function readBody(req) {
   });
 }
 
-// --------- 主 handler ----------
 export default async function handler(req, res) {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
-
+  if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -55,8 +46,6 @@ export default async function handler(req, res) {
     }
 
     const scanMode = modeRaw === "fridge" ? "fridge" : "receipt";
-
-    // data URL 传给模型
     const imageUrl = `data:image/jpeg;base64,${imageBase64}`;
 
     const modeExplanation =
@@ -82,11 +71,9 @@ You should:
     const prompt = `
 You are a food-inventory JSON API.
 
-Task:
-- Look at the provided image (${scanMode} mode).
-- Extract a list of food items.
+${modeExplanation}
 
-For each item, you MUST provide:
+For each detected item, you MUST provide:
 - name: short English name, e.g. "glass noodles", "chicken thigh", "Greek yogurt"
 - quantity: number
 - unit: string (examples: "pcs", "pack", "box", "g", "kg", "ml", "L")
@@ -95,20 +82,21 @@ For each item, you MUST provide:
 - category: always "scan"
 - confidence: a number between 0 and 1
 
-Expiry rules:
-- Be conservative but realistic.
+Expiry rules (very important):
+- predictedExpiry MUST be **on or after today**, never in the past.
+- If a purchase date is available, predictedExpiry MUST be **on or after the purchase date**.
 - Fridge: usually days to a few weeks (leafy veg very short, sauces longer).
-- Freezer: weeks to months, but NEVER exceed 365 days.
-- Pantry: days to months depending on food, NEVER exceed 365 days.
-- If purchaseDate is unknown, assume items were bought recently but still keep expiry realistic.
+- Freezer: weeks to months, but NEVER exceed 365 days from today.
+- Pantry: days to months depending on food, NEVER exceed 365 days from today.
+- Be conservative but realistic, do not output dates many years in the future.
 
 purchaseDate:
-- If you can infer a common purchase date from the image (receipt header or printed date),
+- If you can infer a common purchase date from the image (e.g. a printed date on the receipt),
   set top-level "purchaseDate" to that date in "YYYY-MM-DD" format.
 - Otherwise, set "purchaseDate" to empty string "".
 
-Output format (VERY IMPORTANT):
-Return ONLY a single JSON object:
+Output format (STRICT):
+Return ONLY this JSON shape:
 
 {
   "purchaseDate": "YYYY-MM-DD or empty string",
@@ -126,13 +114,9 @@ Return ONLY a single JSON object:
   ]
 }
 
-Constraints:
-- "items" must be an array (possibly empty).
-- If you are unsure about quantity, set quantity = 1 and a generic unit such as "pcs" or "pack".
-- If you really cannot detect anything useful, return "items": [].
+No extra text, no markdown.
 `;
 
-    // 使用 gpt-4.1-mini + chat.completions（支持图片 + JSON）
     const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
       response_format: { type: "json_object" },
@@ -146,12 +130,7 @@ Constraints:
           role: "user",
           content: [
             { type: "text", text: prompt },
-            {
-              type: "image_url",
-              image_url: {
-                url: imageUrl,
-              },
-            },
+            { type: "image_url", image_url: { url: imageUrl } },
           ],
         },
       ],
@@ -172,32 +151,81 @@ Constraints:
       return res.status(500).json({ error: "Model returned invalid structure" });
     }
 
-    if (!Array.isArray(data.items)) {
-      data.items = [];
+    if (!Array.isArray(data.items)) data.items = [];
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let purchaseDate = null;
+    if (typeof data.purchaseDate === "string" && data.purchaseDate.trim()) {
+      const d = new Date(data.purchaseDate.trim());
+      if (!isNaN(d.getTime())) {
+        d.setHours(0, 0, 0, 0);
+        purchaseDate = d;
+      }
     }
 
-    // 兜底清洗一下，防止前端崩
-    data.items = data.items.map((item) => ({
-      name: item.name ?? "",
-      quantity:
-        typeof item.quantity === "number" && isFinite(item.quantity)
-          ? item.quantity
-          : 1,
-      unit: item.unit || "pcs",
-      storageLocation: ["fridge", "freezer", "pantry"].includes(
+    const msPerDay = 24 * 60 * 60 * 1000;
+    const defaultDaysByLoc = {
+      fridge: 5,
+      freezer: 90,
+      pantry: 30,
+    };
+
+    data.items = data.items.map((item) => {
+      const loc = ["fridge", "freezer", "pantry"].includes(
         item.storageLocation
       )
         ? item.storageLocation
-        : "fridge",
-      predictedExpiry: item.predictedExpiry || "",
-      category: "scan",
-      confidence:
-        typeof item.confidence === "number" && isFinite(item.confidence)
-          ? Math.max(0, Math.min(1, item.confidence))
-          : 0.0,
-    }));
+        : "fridge";
 
-    return res.status(200).json(data);
+      // 解析模型给的 predictedExpiry
+      let predicted = null;
+      if (typeof item.predictedExpiry === "string" && item.predictedExpiry) {
+        const d = new Date(item.predictedExpiry);
+        if (!isNaN(d.getTime())) predicted = d;
+      }
+
+      // base = purchaseDate(如果有) 否则 today
+      const base = purchaseDate || today;
+      const max = new Date(today.getTime() + 365 * msPerDay);
+      const defaultDays = defaultDaysByLoc[loc] ?? 7;
+
+      // 如果模型给的日期无效 / 早于 purchase / 早于 today / 超过 365 天，就重算
+      if (
+        !predicted ||
+        predicted.getTime() < base.getTime() ||
+        predicted.getTime() < today.getTime() ||
+        predicted.getTime() > max.getTime()
+      ) {
+        predicted = new Date(base.getTime() + defaultDays * msPerDay);
+      }
+
+      predicted.setHours(0, 0, 0, 0);
+
+      return {
+        name: item.name ?? "",
+        quantity:
+          typeof item.quantity === "number" && isFinite(item.quantity)
+            ? item.quantity
+            : 1,
+        unit: item.unit || "pcs",
+        storageLocation: loc,
+        predictedExpiry: predicted.toISOString(),
+        category: "scan",
+        confidence:
+          typeof item.confidence === "number" && isFinite(item.confidence)
+            ? Math.max(0, Math.min(1, item.confidence))
+            : 0.0,
+      };
+    });
+
+    return res.status(200).json({
+      purchaseDate: purchaseDate
+        ? purchaseDate.toISOString().slice(0, 10)
+        : "",
+      items: data.items,
+    });
   } catch (err) {
     console.error("scan-inventory API error:", err);
     return res.status(500).json({
