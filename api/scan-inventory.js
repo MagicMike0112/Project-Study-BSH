@@ -5,12 +5,14 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-
+// 允许的前端域名（你的 PWA）
 const ALLOWED_ORIGIN = "https://bshpwa.vercel.app";
 
-// 小工具：解析 JSON body（兼容 Vercel/Node 环境）
+// --------- 工具：读取 JSON body（兼容本地 / Vercel） ----------
 async function readBody(req) {
-  if (req.body) return req.body; // 已经被解析过
+  if (req.body && typeof req.body === "object") {
+    return req.body;
+  }
 
   return new Promise((resolve, reject) => {
     let data = "";
@@ -28,22 +30,16 @@ async function readBody(req) {
   });
 }
 
+// --------- 主 handler ----------
 export default async function handler(req, res) {
-  // ---- CORS ----
+  // CORS
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,POST,OPTIONS"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     return res.status(204).end();
   }
-  // ----------------
 
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -51,133 +47,161 @@ export default async function handler(req, res) {
 
   try {
     const body = await readBody(req);
-    const { imageBase64, mode } = body || {};
+    const imageBase64 = (body.imageBase64 || "").toString().trim();
+    const modeRaw = (body.mode || "receipt").toString().trim();
 
-    if (!imageBase64 || typeof imageBase64 !== "string") {
+    if (!imageBase64) {
       return res.status(400).json({ error: "imageBase64 is required" });
     }
 
-    const scanMode =
-      mode === "fridge" || mode === "shelf" ? "fridge" : "receipt";
+    const scanMode = modeRaw === "fridge" ? "fridge" : "receipt";
+
+    // data URL 传给模型
+    const imageUrl = `data:image/jpeg;base64,${imageBase64}`;
+
+    const modeExplanation =
+      scanMode === "receipt"
+        ? `The image is a supermarket receipt.
+You should:
+- Read all relevant food / grocery items.
+- Infer a common purchase date if possible (from the receipt).
+  If you really cannot, set purchaseDate to empty string "" (frontend will use today).
+- For each item, suggest a storageLocation: "fridge", "freezer", or "pantry".
+- Infer a reasonable quantity and unit if visible (e.g. "500 g", "2 packs", "1 bottle").`
+        : `The image shows items inside a fridge/freezer or on a shelf.
+You should:
+- Detect each distinct food item you can clearly see.
+- Decide a realistic storageLocation:
+    * Frozen-looking items / in freezer drawers -> "freezer"
+    * Drinks, dairy, fresh veg, leftovers -> "fridge"
+    * Dry goods on shelf (rice, pasta, cans, snacks) -> "pantry"
+- In fridge mode, purchase date is usually unknown:
+    * In that case, set purchaseDate to empty string "" so frontend can fall back to today.
+- Infer rough quantity + unit (1 pack, 250 g, 1 bottle, etc.).`;
 
     const prompt = `
-You are a grocery inventory helper.
+You are a food-inventory JSON API.
 
-The user took a photo (mode = "${scanMode}").
+Task:
+- Look at the provided image (${scanMode} mode).
+- Extract a list of food items.
 
-If mode = "receipt":
-- The image is a supermarket receipt.
-- Extract each distinct product line that represents something the user took home.
-- Ignore coupons, discounts, payment info, loyalty points, etc.
+For each item, you MUST provide:
+- name: short English name, e.g. "glass noodles", "chicken thigh", "Greek yogurt"
+- quantity: number
+- unit: string (examples: "pcs", "pack", "box", "g", "kg", "ml", "L")
+- storageLocation: "fridge" | "freezer" | "pantry"
+- predictedExpiry: ISO 8601 datetime string, e.g. "2025-06-25T00:00:00.000Z"
+- category: always "scan"
+- confidence: a number between 0 and 1
 
-If mode = "fridge":
-- The image is the inside of a fridge or shelf.
-- Identify individual food items or packages that are reasonably visible.
+Expiry rules:
+- Be conservative but realistic.
+- Fridge: usually days to a few weeks (leafy veg very short, sauces longer).
+- Freezer: weeks to months, but NEVER exceed 365 days.
+- Pantry: days to months depending on food, NEVER exceed 365 days.
+- If purchaseDate is unknown, assume items were bought recently but still keep expiry realistic.
 
-For ALL cases, output a JSON object with this exact shape:
+purchaseDate:
+- If you can infer a common purchase date from the image (receipt header or printed date),
+  set top-level "purchaseDate" to that date in "YYYY-MM-DD" format.
+- Otherwise, set "purchaseDate" to empty string "".
+
+Output format (VERY IMPORTANT):
+Return ONLY a single JSON object:
 
 {
+  "purchaseDate": "YYYY-MM-DD or empty string",
   "items": [
     {
-      "name": "clear product name in English",
-      "quantity": 1,
-      "unit": "pcs | pack | kg | g | L | ml | box | tray | bottle | can",
-      "location": "fridge | freezer | pantry",
-      "purchasedDate": "YYYY-MM-DD",
-      "predictedExpiry": "YYYY-MM-DD"
+      "name": "string",
+      "quantity": number,
+      "unit": "string",
+      "storageLocation": "fridge" | "freezer" | "pantry",
+      "predictedExpiry": "ISO-8601 datetime string",
+      "category": "scan",
+      "confidence": 0.0-1.0
     },
     ...
   ]
 }
 
-Rules:
-- location: 
-  * Obvious frozen food (ice cream, frozen dumplings, frozen vegetables, etc.) -> "freezer".
-  * Shelf-stable packaged goods (dry noodles, canned food, snacks) -> "pantry".
-  * Others -> "fridge".
-- purchasedDate:
-  * For receipts: use the purchase date printed on the receipt.
-    If absent/unclear, assume today's date in the user's timezone and still return ISO string.
-  * For fridge photos: estimate a reasonable recent purchase date (e.g., within last 1–7 days)
-    based on how "fresh" it likely is, but keep it realistic.
-- predictedExpiry:
-  * Give a conservative safe date (not more than 365 days after purchasedDate).
-  * Fresh meat/fish, leafy greens, fresh fruit -> short times.
-  * Frozen food can be much longer, but still <= 365 days.
-  * Always format as "YYYY-MM-DD".
-
-Return ONLY valid JSON. No extra commentary, no markdown.
+Constraints:
+- "items" must be an array (possibly empty).
+- If you are unsure about quantity, set quantity = 1 and a generic unit such as "pcs" or "pack".
+- If you really cannot detect anything useful, return "items": [].
 `;
 
-    const response = await client.responses.create({
+    // 使用 gpt-4.1-mini + chat.completions（支持图片 + JSON）
+    const completion = await client.chat.completions.create({
       model: "gpt-4.1-mini",
-      input: [
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a precise JSON API. Always respond with valid JSON only, no explanations.",
+        },
         {
           role: "user",
           content: [
+            { type: "text", text: prompt },
             {
-              type: "input_text",
-              text: prompt,
-            },
-            {
-              type: "input_image",
-              image_url: `data:image/jpeg;base64,${imageBase64}`,
+              type: "image_url",
+              image_url: {
+                url: imageUrl,
+              },
             },
           ],
         },
       ],
-      response_format: { type: "json_object" },
     });
 
-    // 兼容新的 Responses 结构，安全地拿到文本
-    let raw = "";
-    const firstOutput = response.output?.[0];
-    const firstContent = firstOutput?.content?.[0];
-    if (firstContent?.type === "output_text") {
-      const t = firstContent.text;
-      if (typeof t === "string") {
-        raw = t;
-      } else if (t && typeof t.value === "string") {
-        raw = t.value;
-      }
-    }
-
-    if (!raw) {
-      console.error("No text output from model:", JSON.stringify(response));
-      return res.status(500).json({ error: "LLM returned empty output" });
-    }
-
+    const raw = completion.choices?.[0]?.message?.content ?? "";
     let data;
     try {
       data = JSON.parse(raw);
     } catch (e) {
-      console.error("JSON parse error:", e, raw);
-      return res.status(500).json({ error: "LLM returned invalid JSON" });
+      console.error("scan-inventory JSON parse error:", e, raw);
+      return res
+        .status(500)
+        .json({ error: "Failed to parse JSON from model output" });
     }
 
-    const items = Array.isArray(data.items) ? data.items : [];
-    // 轻微兜底，防止字段缺失
-    const sanitized = items.map((it) => {
-      const name = (it.name || "").toString().trim() || "Unnamed item";
-      const quantity = Number(it.quantity) || 1;
-      const unit = (it.unit || "pcs").toString();
-      const location = (it.location || "fridge").toString();
-      const purchasedDate = (it.purchasedDate || "").toString();
-      const predictedExpiry = (it.predictedExpiry || "").toString();
+    if (!data || typeof data !== "object") {
+      return res.status(500).json({ error: "Model returned invalid structure" });
+    }
 
-      return {
-        name,
-        quantity,
-        unit,
-        location,
-        purchasedDate,
-        predictedExpiry,
-      };
-    });
+    if (!Array.isArray(data.items)) {
+      data.items = [];
+    }
 
-    return res.status(200).json({ items: sanitized });
+    // 兜底清洗一下，防止前端崩
+    data.items = data.items.map((item) => ({
+      name: item.name ?? "",
+      quantity:
+        typeof item.quantity === "number" && isFinite(item.quantity)
+          ? item.quantity
+          : 1,
+      unit: item.unit || "pcs",
+      storageLocation: ["fridge", "freezer", "pantry"].includes(
+        item.storageLocation
+      )
+        ? item.storageLocation
+        : "fridge",
+      predictedExpiry: item.predictedExpiry || "",
+      category: "scan",
+      confidence:
+        typeof item.confidence === "number" && isFinite(item.confidence)
+          ? Math.max(0, Math.min(1, item.confidence))
+          : 0.0,
+    }));
+
+    return res.status(200).json(data);
   } catch (err) {
-    console.error("scan-inventory error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("scan-inventory API error:", err);
+    return res.status(500).json({
+      error: err?.message || "Internal server error",
+    });
   }
 }
