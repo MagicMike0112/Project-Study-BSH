@@ -18,6 +18,8 @@ class InventoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bg = const Color(0xFFF6F8FA);
+
     final allItems = repo.getActiveItems();
 
     // 按剩余天数排序
@@ -41,14 +43,22 @@ class InventoryPage extends StatelessWidget {
         fridgeItems.isNotEmpty || freezerItems.isNotEmpty || pantryItems.isNotEmpty;
 
     return Scaffold(
+      backgroundColor: bg,
       appBar: AppBar(
         title: const Text('Inventory'),
       ),
       body: hasAnyItems
           ? ListView(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               children: [
-                // Fridge
+                _InventoryHeroCard(
+                  total: allItems.length,
+                  fridge: fridgeItems.length,
+                  freezer: freezerItems.length,
+                  pantry: pantryItems.length,
+                ),
+                const SizedBox(height: 14),
+
                 if (fridgeItems.isNotEmpty) ...[
                   _buildSectionHeader(
                     icon: Icons.kitchen,
@@ -56,17 +66,16 @@ class InventoryPage extends StatelessWidget {
                     color: const Color(0xFF005F87),
                     count: fridgeItems.length,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   ...fridgeItems.map(
                     (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 10),
                       child: _buildDismissibleItem(context, item, theme),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                 ],
 
-                // Freezer
                 if (freezerItems.isNotEmpty) ...[
                   _buildSectionHeader(
                     icon: Icons.ac_unit,
@@ -74,17 +83,16 @@ class InventoryPage extends StatelessWidget {
                     color: Colors.indigo,
                     count: freezerItems.length,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   ...freezerItems.map(
                     (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 10),
                       child: _buildDismissibleItem(context, item, theme),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 18),
                 ],
 
-                // Pantry
                 if (pantryItems.isNotEmpty) ...[
                   _buildSectionHeader(
                     icon: Icons.inventory_2_outlined,
@@ -92,10 +100,10 @@ class InventoryPage extends StatelessWidget {
                     color: Colors.brown,
                     count: pantryItems.length,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 10),
                   ...pantryItems.map(
                     (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 10),
                       child: _buildDismissibleItem(context, item, theme),
                     ),
                   ),
@@ -107,8 +115,6 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
-  // ================== Section Header ==================
-
   Widget _buildSectionHeader({
     required IconData icon,
     required String label,
@@ -118,81 +124,124 @@ class InventoryPage extends StatelessWidget {
     return Row(
       children: [
         Container(
-          padding: const EdgeInsets.all(6),
+          width: 36,
+          height: 36,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
-            borderRadius: BorderRadius.circular(8),
+            color: color.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withOpacity(0.14)),
           ),
           child: Icon(icon, size: 18, color: color),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Text(
           label,
           style: TextStyle(
             fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: color,
+            fontWeight: FontWeight.w900,
+            color: Colors.grey[900],
           ),
         ),
         const Spacer(),
-        Text(
-          '$count items',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count items',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  // ================== UI：空状态 ==================
-
   Widget _buildEmptyState(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.inbox_outlined,
-                size: 64, color: Colors.grey.shade300),
-            const SizedBox(height: 16),
-            Text(
-              'Your inventory is empty',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.grey.shade700,
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: Colors.black.withOpacity(0.06)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x12000000),
+                blurRadius: 14,
+                offset: Offset(0, 8),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap the + button to add some food.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade500,
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(
+                  Icons.inbox_outlined,
+                  size: 40,
+                  color: scheme.primary,
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 14),
+              Text(
+                'Your inventory is empty',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.grey.shade900,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Tap the + button to add some food.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade700,
+                  height: 1.25,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  // ================== UI：单个 item（左滑删除，直接删 + UNDO） ==================
-
   Widget _buildDismissibleItem(
-      BuildContext context, FoodItem item, ThemeData theme) {
+    BuildContext context,
+    FoodItem item,
+    ThemeData theme,
+  ) {
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(
-          color: Colors.red.shade50,
-          borderRadius: BorderRadius.circular(16),
+          color: Colors.red.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.red.withOpacity(0.18)),
         ),
-        child: Icon(Icons.delete, color: Colors.red.shade400, size: 28),
+        child: const Icon(Icons.delete_outline, color: Colors.red, size: 26),
       ),
-      // ⚠️ 已去掉 confirmDismiss，左滑直接删除，靠 SnackBar UNDO 兜底
       onDismissed: (_) async {
         final deletedItem = item;
 
@@ -215,89 +264,250 @@ class InventoryPage extends StatelessWidget {
             ),
           );
       },
-      child: _buildItemTile(context, item, theme),
+      child: _buildItemCard(context, item),
     );
   }
 
-  // ================== UI：ListTile 本体 ==================
+  // ================== ✅ 改这里：pill 挪到底部提示行 ==================
 
-  Widget _buildItemTile(
-      BuildContext context, FoodItem item, ThemeData theme) {
-    final subtitleLines = <String>[];
-
-    // 数量
-    subtitleLines.add(
-      '${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}',
-    );
-
-    // 存放位置 + 剩余天数
-    final locLabel = _locationLabel(item.location);
+  Widget _buildItemCard(BuildContext context, FoodItem item) {
+    final scheme = Theme.of(context).colorScheme;
     final days = item.daysToExpiry;
-    final daysLabel = days == 0
-        ? 'expires today'
-        : days < 0
-            ? 'expired ${-days}d ago'
-            : 'expires in ${days}d';
-    subtitleLines.add('$locLabel · $daysLabel');
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => _openEditPage(context, item),
-      onLongPress: () => _showItemActionsSheet(context, item),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: ListTile(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+    final qtyText =
+        '${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}';
+
+    final locLabel = _locationLabel(item.location);
+
+    final daysLabel = days == 0
+        ? 'Expires today'
+        : days < 0
+            ? 'Expired ${-days}d ago'
+            : 'Expires in ${days}d';
+
+    final urgency = _urgency(days);
+    final leading = _leadingIcon(item);
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(18),
+        onTap: () => _openEditPage(context, item),
+        onLongPress: () => _showItemActionsSheet(context, item),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.black.withOpacity(0.06)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0D000000),
+                blurRadius: 12,
+                offset: Offset(0, 8),
+              ),
+            ],
           ),
-          tileColor: Colors.grey.shade50,
-          leading: _buildLeadingIcon(item),
-          title: Text(
-            item.name,
-            style: const TextStyle(fontWeight: FontWeight.w600),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 左侧 icon
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: leading.color.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: leading.color.withOpacity(0.16)),
+                ),
+                child: Icon(leading.icon, color: leading.color),
+              ),
+              const SizedBox(width: 12),
+
+              // 中间信息
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ✅ title 行：只放名字，不放 pill（避免拥挤/溢出）
+                    Text(
+                      item.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+
+                    // qty + location
+                    Row(
+                      children: [
+                        Icon(Icons.scale_outlined,
+                            size: 14, color: Colors.grey[700]),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            qtyText,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[800],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Container(
+                          width: 4,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[400],
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(Icons.place_outlined,
+                            size: 14, color: Colors.grey[700]),
+                        const SizedBox(width: 6),
+                        Text(
+                          locLabel,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[800],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 10),
+                    Container(height: 1, color: Colors.black.withOpacity(0.06)),
+                    const SizedBox(height: 10),
+
+                    // ✅ 底部行：pill + 提示文字（防溢出）
+                   Align(
+                    alignment: Alignment.centerLeft,
+                    child: _expiryPill(context, urgency, daysLabel),
+                  ),
+
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 8),
+              Icon(Icons.chevron_right, color: scheme.primary.withOpacity(0.55)),
+            ],
           ),
-          subtitle: Text(
-            subtitleLines.join('\n'),
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade700,
-              height: 1.3,
-            ),
-          ),
-          trailing: const Icon(Icons.chevron_right),
         ),
       ),
     );
   }
 
-  Widget _buildLeadingIcon(FoodItem item) {
-    IconData icon;
-    Color color;
+  // ✅ 新增：底部提示行（pill 放这里，右侧文本 ellipsis，不溢出）
+  Widget _HintRowWithExpiry({required Widget pill}) {
+    return Row(
+      children: [
+        Flexible(child: pill), // pill 本身也允许收缩
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            'Tap to edit • Long-press for actions',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
-    switch (item.location) {
-      case StorageLocation.fridge:
-        icon = Icons.kitchen;
-        color = const Color(0xFF005F87);
+  _Urgency _urgency(int days) {
+    if (days < 0) return _Urgency.expired;
+    if (days == 0) return _Urgency.today;
+    if (days <= 3) return _Urgency.soon;
+    if (days >= 999) return _Urgency.none;
+    return _Urgency.ok;
+  }
+
+  // ✅ 让 pill 自己也能 ellipsis，避免极端情况下撑爆
+  Widget _expiryPill(BuildContext context, _Urgency u, String text) {
+    Color bg;
+    Color fg;
+    IconData icon;
+
+    switch (u) {
+      case _Urgency.expired:
+        bg = Colors.red.withOpacity(0.12);
+        fg = Colors.redAccent;
+        icon = Icons.error_outline;
         break;
-      case StorageLocation.freezer:
-        icon = Icons.ac_unit;
-        color = Colors.indigo;
+      case _Urgency.today:
+        bg = Colors.orange.withOpacity(0.14);
+        fg = Colors.deepOrange;
+        icon = Icons.warning_amber_rounded;
         break;
-      case StorageLocation.pantry:
-        icon = Icons.inventory_2_outlined;
-        color = Colors.brown;
+      case _Urgency.soon:
+        bg = Colors.amber.withOpacity(0.18);
+        fg = Colors.brown;
+        icon = Icons.schedule;
+        break;
+      case _Urgency.ok:
+        bg = Colors.green.withOpacity(0.12);
+        fg = Colors.green.shade700;
+        icon = Icons.eco;
+        break;
+      case _Urgency.none:
+        bg = Colors.black.withOpacity(0.06);
+        fg = Colors.grey.shade700;
+        icon = Icons.help_outline;
         break;
     }
 
     return Container(
-      width: 40,
-      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: fg.withOpacity(0.18)),
       ),
-      child: Icon(icon, color: color),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: fg),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: fg,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
+  }
+
+  _Leading _leadingIcon(FoodItem item) {
+    switch (item.location) {
+      case StorageLocation.fridge:
+        return const _Leading(Icons.kitchen, Color(0xFF005F87));
+      case StorageLocation.freezer:
+        return const _Leading(Icons.ac_unit, Colors.indigo);
+      case StorageLocation.pantry:
+        return const _Leading(Icons.inventory_2_outlined, Colors.brown);
+    }
   }
 
   String _locationLabel(StorageLocation loc) {
@@ -311,8 +521,6 @@ class InventoryPage extends StatelessWidget {
     }
   }
 
-  // ================== 跳转到编辑页（里面有删除按钮） ==================
-
   Future<void> _openEditPage(BuildContext context, FoodItem item) async {
     await Navigator.push(
       context,
@@ -323,128 +531,55 @@ class InventoryPage extends StatelessWidget {
         ),
       ),
     );
-
-    // 从编辑页返回后刷新 Today / Impact / Inventory
     onRefresh();
   }
 
-  // ================== 长按 bottom sheet：Edit / Cook / Feed / Delete（都带 Undo） ==================
-
-  Future<void> _showItemActionsSheet(
-      BuildContext context, FoodItem item) async {
+  Future<void> _showItemActionsSheet(BuildContext context, FoodItem item) async {
     await showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit item'),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _openEditPage(context, item);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.restaurant),
-                title: const Text('Cook with this'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-
-                  final oldItem = item;
-
-                  final usedQty =
-                      await _askQuantityDialog(context, item, 'eat');
-                  if (usedQty == null || usedQty <= 0) return;
-
-                  await repo.useItemWithImpact(item, 'eat', usedQty);
-                  onRefresh();
-
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      SnackBar(
-                        duration: const Duration(seconds: 3),
-                        content: Text(
-                          'Cooked ${usedQty.toStringAsFixed(usedQty == usedQty.roundToDouble() ? 0 : 1)} ${item.unit} of "${item.name}".',
-                        ),
-                        action: SnackBarAction(
-                          label: 'UNDO',
-                          onPressed: () async {
-                            await repo.updateItem(oldItem);
-                            onRefresh();
-                          },
-                        ),
-                      ),
-                    );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.pets),
-                title: const Text('Feed to pet'),
-                onTap: () async {
-                  Navigator.pop(ctx);
-
-                  final oldItem = item;
-
-                  final usedQty =
-                      await _askQuantityDialog(context, item, 'pet');
-                  if (usedQty == null || usedQty <= 0) return;
-
-                  await repo.useItemWithImpact(item, 'pet', usedQty);
-
-                  if (!repo.hasShownPetWarning) {
-                    await repo.markPetWarningShown();
-                    // ignore: use_build_context_synchronously
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Shi & Yuan: Thanks for dinner! Please make sure the food is safe for guinea pigs. If you’re not sure, ask a vet first 🐹',
-                        ),
-                        duration: Duration(seconds: 4),
-                      ),
-                    );
-                  }
-
-                  onRefresh();
-
-                  ScaffoldMessenger.of(context)
-                    ..hideCurrentSnackBar()
-                    ..showSnackBar(
-                      SnackBar(
-                        duration: const Duration(seconds: 3),
-                        content: Text(
-                          'Fed ${usedQty.toStringAsFixed(usedQty == usedQty.roundToDouble() ? 0 : 1)} ${item.unit} of "${item.name}" to your pet.',
-                        ),
-                        action: SnackBarAction(
-                          label: 'UNDO',
-                          onPressed: () async {
-                            await repo.updateItem(oldItem);
-                            onRefresh();
-                          },
-                        ),
-                      ),
-                    );
-                },
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text(
-                  'Delete from inventory',
-                  style: TextStyle(color: Colors.red),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
                 ),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final ok = await _confirmDelete(context, item);
-                  if (ok) {
-                    final deletedItem = item;
-                    await repo.deleteItem(item.id);
+                const SizedBox(height: 10),
+                _SheetHeader(itemName: item.name),
+                const SizedBox(height: 6),
+
+                _SheetTile(
+                  icon: Icons.edit,
+                  title: 'Edit item',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _openEditPage(context, item);
+                  },
+                ),
+
+                _SheetTile(
+                  icon: Icons.restaurant,
+                  title: 'Cook with this',
+                  onTap: () async {
+                    Navigator.pop(ctx);
+
+                    final oldItem = item;
+                    final usedQty = await _askQuantityDialog(context, item, 'eat');
+                    if (usedQty == null || usedQty <= 0) return;
+
+                    await repo.useItemWithImpact(item, 'eat', usedQty);
                     onRefresh();
 
                     ScaffoldMessenger.of(context)
@@ -452,28 +587,107 @@ class InventoryPage extends StatelessWidget {
                       ..showSnackBar(
                         SnackBar(
                           duration: const Duration(seconds: 3),
-                          content: Text('Deleted "${deletedItem.name}".'),
+                          content: Text(
+                            'Cooked ${usedQty.toStringAsFixed(usedQty == usedQty.roundToDouble() ? 0 : 1)} ${item.unit} of "${item.name}".',
+                          ),
                           action: SnackBarAction(
                             label: 'UNDO',
                             onPressed: () async {
-                              await repo.addItem(deletedItem);
+                              await repo.updateItem(oldItem);
                               onRefresh();
                             },
                           ),
                         ),
                       );
-                  }
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+                  },
+                ),
+
+                _SheetTile(
+                  icon: Icons.pets,
+                  title: 'Feed to pet',
+                  onTap: () async {
+                    Navigator.pop(ctx);
+
+                    final oldItem = item;
+                    final usedQty = await _askQuantityDialog(context, item, 'pet');
+                    if (usedQty == null || usedQty <= 0) return;
+
+                    await repo.useItemWithImpact(item, 'pet', usedQty);
+
+                    if (!repo.hasShownPetWarning) {
+                      await repo.markPetWarningShown();
+                      // ignore: use_build_context_synchronously
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'Shi & Yuan: Thanks for dinner! Please make sure the food is safe for guinea pigs. If you’re not sure, ask a vet first 🐹',
+                          ),
+                          duration: Duration(seconds: 4),
+                        ),
+                      );
+                    }
+
+                    onRefresh();
+
+                    ScaffoldMessenger.of(context)
+                      ..hideCurrentSnackBar()
+                      ..showSnackBar(
+                        SnackBar(
+                          duration: const Duration(seconds: 3),
+                          content: Text(
+                            'Fed ${usedQty.toStringAsFixed(usedQty == usedQty.roundToDouble() ? 0 : 1)} ${item.unit} of "${item.name}" to your pet.',
+                          ),
+                          action: SnackBarAction(
+                            label: 'UNDO',
+                            onPressed: () async {
+                              await repo.updateItem(oldItem);
+                              onRefresh();
+                            },
+                          ),
+                        ),
+                      );
+                  },
+                ),
+
+                _SheetTile(
+                  icon: Icons.delete_outline,
+                  title: 'Delete from inventory',
+                  danger: true,
+                  onTap: () async {
+                    Navigator.pop(ctx);
+                    final ok = await _confirmDelete(context, item);
+                    if (ok) {
+                      final deletedItem = item;
+                      await repo.deleteItem(item.id);
+                      onRefresh();
+
+                      ScaffoldMessenger.of(context)
+                        ..hideCurrentSnackBar()
+                        ..showSnackBar(
+                          SnackBar(
+                            duration: const Duration(seconds: 3),
+                            content: Text('Deleted "${deletedItem.name}".'),
+                            action: SnackBarAction(
+                              label: 'UNDO',
+                              onPressed: () async {
+                                await repo.addItem(deletedItem);
+                                onRefresh();
+                              },
+                            ),
+                          ),
+                        );
+                    }
+                  },
+                ),
+
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
     );
   }
-
-  // ================== “这次用多少”弹窗 ==================
 
   Future<double?> _askQuantityDialog(
     BuildContext context,
@@ -498,12 +712,12 @@ class InventoryPage extends StatelessWidget {
       builder: (ctx) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(22),
           ),
           title: Text(
             title,
             style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w900,
             ),
           ),
           content: Column(
@@ -513,7 +727,7 @@ class InventoryPage extends StatelessWidget {
               Text(
                 item.name,
                 style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 8),
@@ -521,6 +735,7 @@ class InventoryPage extends StatelessWidget {
                 'Available: ${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: Colors.grey[600],
+                  fontWeight: FontWeight.w600,
                 ),
               ),
               const SizedBox(height: 12),
@@ -531,8 +746,10 @@ class InventoryPage extends StatelessWidget {
                 decoration: InputDecoration(
                   labelText: 'Used quantity (${item.unit})',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  filled: true,
+                  fillColor: Colors.white,
                   errorText: errorText,
                 ),
                 onChanged: (_) {
@@ -544,7 +761,7 @@ class InventoryPage extends StatelessWidget {
             ],
           ),
           actionsPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, null),
@@ -555,8 +772,6 @@ class InventoryPage extends StatelessWidget {
                 final raw = double.tryParse(
                       controller.text.replaceAll(',', '.'),
                     ) ??
-
-
                     double.nan;
 
                 if (raw.isNaN) {
@@ -588,17 +803,15 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
-  // ================== 删除确认弹窗（只给长按菜单用） ==================
-
   Future<bool> _confirmDelete(BuildContext context, FoodItem item) async {
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) {
         return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           title: const Text('Delete item?'),
-          content: Text(
-            'Remove "${item.name}" from your inventory?',
-          ),
+          content: Text('Remove "${item.name}" from your inventory?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -616,3 +829,226 @@ class InventoryPage extends StatelessWidget {
     return result ?? false;
   }
 }
+
+// ================== 额外 UI 小组件（不影响逻辑） ==================
+
+class _InventoryHeroCard extends StatelessWidget {
+  final int total;
+  final int fridge;
+  final int freezer;
+  final int pantry;
+
+  const _InventoryHeroCard({
+    required this.total,
+    required this.fridge,
+    required this.freezer,
+    required this.pantry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 128,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(26),
+        gradient: const LinearGradient(
+          colors: [Color(0xFF003B66), Color(0xFF0A6BA8)],
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: Stack(
+          children: [
+            Positioned(right: -40, top: -30, child: _GlassCircle(size: 150)),
+            Positioned(left: 120, bottom: -60, child: _GlassCircle(size: 180)),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 62,
+                    height: 62,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(22),
+                      border: Border.all(color: Colors.white.withOpacity(0.18)),
+                    ),
+                    child: const Icon(Icons.inventory_2,
+                        color: Colors.white, size: 34),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Your inventory',
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.75),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '$total',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 42,
+                                height: 1.0,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.5,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 6),
+                              child: Text(
+                                'items',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Fridge $fridge • Freezer $freezer • Pantry $pantry',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.75),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassCircle extends StatelessWidget {
+  final double size;
+  const _GlassCircle({required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withOpacity(0.08),
+        border: Border.all(color: Colors.white.withOpacity(0.10)),
+      ),
+    );
+  }
+}
+
+class _SheetHeader extends StatelessWidget {
+  final String itemName;
+  const _SheetHeader({required this.itemName});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(Icons.more_horiz, color: Colors.grey[800]),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              itemName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final VoidCallback onTap;
+  final bool danger;
+
+  const _SheetTile({
+    required this.icon,
+    required this.title,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? Colors.red : Colors.grey[900]!;
+    final iconColor = danger ? Colors.red : Colors.grey[800]!;
+
+    return ListTile(
+      leading: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: (danger ? Colors.red : Colors.black).withOpacity(0.08),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(icon, color: iconColor),
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontWeight: FontWeight.w800,
+          color: color,
+        ),
+      ),
+      onTap: onTap,
+    );
+  }
+}
+
+class _Leading {
+  final IconData icon;
+  final Color color;
+  const _Leading(this.icon, this.color);
+}
+
+enum _Urgency { expired, today, soon, ok, none }

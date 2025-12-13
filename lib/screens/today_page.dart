@@ -21,40 +21,29 @@ class TodayPage extends StatelessWidget {
     final expiring = repo.getExpiringItems(3);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Smart Food Home')),
+      appBar: AppBar(
+        title: const Text('Smart Food Home'),
+        centerTitle: true,
+      ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           _buildImpactSummary(context),
-          const SizedBox(height: 24),
+          const SizedBox(height: 14),
 
-          // Cook with AI 按钮：一直显示
           _buildAiButton(
+            context,
             onTap: () => _showAiRecipeFlow(context, expiring),
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
 
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Expiring Soon',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '${expiring.length} items',
-                style: TextStyle(color: Colors.grey[600]),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
+          _buildSectionHeader(context, expiring.length),
+
+          const SizedBox(height: 10),
 
           if (expiring.isEmpty)
-            _buildEmptyState()
+            _buildEmptyState(context)
           else
             ...expiring.map(
               (item) => FoodCard(
@@ -84,9 +73,7 @@ class TodayPage extends StatelessWidget {
                     // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text(
-                          '请只喂适合宠物食用的食材，若不确定请先咨询兽医🐹',
-                        ),
+                        content: Text('请只喂适合宠物食用的食材，若不确定请先咨询兽医🐹'),
                         duration: Duration(seconds: 4),
                       ),
                     );
@@ -99,13 +86,10 @@ class TodayPage extends StatelessWidget {
                       ..showSnackBar(
                         SnackBar(
                           duration: const Duration(seconds: 3),
-                          content: Text(
-                            _undoLabelForAction(action, item.name),
-                          ),
+                          content: Text(_undoLabelForAction(action, item.name)),
                           action: SnackBarAction(
                             label: 'UNDO',
                             onPressed: () async {
-                              // 撤回：把状态改回去
                               await repo.updateStatus(item.id, oldStatus);
                               onRefresh();
                             },
@@ -139,98 +123,137 @@ class TodayPage extends StatelessWidget {
       ),
     );
 
-    // 如果在 Select/Recipe 那边有动库存，这里刷新一下
-    if (changed == true) {
-      onRefresh();
-    }
+    if (changed == true) onRefresh();
   }
 
-  Widget _buildAiButton({required VoidCallback onTap}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        height: 56,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: const LinearGradient(
-            colors: [
-              Color(0xFF003B66),
-              Color(0xFF0A6BA8),
-            ],
-          ),
-          boxShadow: const [
-            BoxShadow(
-              color: Colors.black12,
-              blurRadius: 12,
-              offset: Offset(0, 4),
-            )
-          ],
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.auto_awesome, color: Colors.white),
-            SizedBox(width: 8),
-            Text(
-              "AI Recipe Suggestions",
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.2,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ================== 顶部 Impact 卡片 ==================
+  // ================== 顶部 Impact 卡片（更“高级感”） ==================
 
   Widget _buildImpactSummary(BuildContext context) {
     final saved = repo.getSavedCount();
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      height: 118,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF005F87), Color(0xFF0082B0)],
-        ),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.eco, color: Colors.white, size: 32),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 16,
+            offset: Offset(0, 10),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+        gradient: const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [
+            Color(0xFF0A5678),
+            Color(0xFF0E7AA8),
+          ],
+        ),
+      ),
+      child: Stack(
+        children: [
+          // 背景装饰：两团柔和光斑（不影响内容）
+          Positioned(
+            right: -40,
+            top: -60,
+            child: Container(
+              width: 160,
+              height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.10),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 40,
+            bottom: -70,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.08),
+              ),
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+            child: Row(
               children: [
-                const Text(
-                  'Sustainability Goal',
-                  style: TextStyle(color: Colors.white70, fontSize: 12),
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.18),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(Icons.eco, color: Colors.white, size: 30),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '$saved items are saved this week!',
-                  maxLines: 1,
-                  softWrap: false,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'This week',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.80),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            '$saved',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 34,
+                              fontWeight: FontWeight.w800,
+                              height: 1.0,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Text(
+                              saved == 1 ? 'item saved' : 'items saved',
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.92),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Keep it up — fewer items wasted.',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.78),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+                
               ],
             ),
           ),
@@ -239,21 +262,183 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyState() {
-    return Container(
-      padding: const EdgeInsets.all(32),
-      alignment: Alignment.center,
-      child: Column(
-        children: [
-          Icon(
-            Icons.check_circle_outline,
-            size: 48,
-            color: Colors.grey[300],
+  // ================== AI 按钮（更现代、更统一） ==================
+
+  Widget _buildAiButton(BuildContext context, {required VoidCallback onTap}) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(26),
+        child: Ink(
+          height: 62,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            gradient: const LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: [
+                Color(0xFF0A3F6B),
+                Color(0xFF176FA6),
+              ],
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 16,
+                offset: Offset(0, 10),
+              )
+            ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            'Fridge is fresh!',
-            style: TextStyle(color: Colors.grey[500]),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.18),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(Icons.auto_awesome, color: Colors.white),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'AI Recipe Suggestions',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.18),
+                      width: 1,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ================== Section Header（更干净） ==================
+
+  Widget _buildSectionHeader(BuildContext context, int count) {
+    return Row(
+      children: [
+        Text(
+          'Expiring Soon',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF0A6BA8).withOpacity(0.10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: const Color(0xFF0A6BA8).withOpacity(0.18),
+              width: 1,
+            ),
+          ),
+          child: Text(
+            '$count',
+            style: const TextStyle(
+              color: Color(0xFF0A6BA8),
+              fontWeight: FontWeight.w800,
+              fontSize: 12,
+            ),
+          ),
+        ),
+        const Spacer(),
+        Text(
+          '$count items',
+          style: TextStyle(color: Colors.grey[600]),
+        ),
+      ],
+    );
+  }
+
+  // ================== Empty State（更像“卡片”） ==================
+
+  Widget _buildEmptyState(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        boxShadow: const [
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 14,
+            offset: Offset(0, 8),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0A6BA8).withOpacity(0.10),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(
+              Icons.check_circle_outline,
+              color: Color(0xFF0A6BA8),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'All good!',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                      ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Fridge is fresh. No items expiring in the next 3 days.',
+                  style: TextStyle(
+                    color: Colors.grey[700],
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

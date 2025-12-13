@@ -116,6 +116,23 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   // ========= 小工具 =========
 
+  String _formatQty(double q) {
+    final isInt = (q - q.round()).abs() < 1e-9;
+    return isInt ? q.round().toString() : q.toStringAsFixed(1);
+  }
+
+  String _locationLabel(StorageLocation loc) {
+    switch (loc) {
+      case StorageLocation.freezer:
+        return 'Freezer';
+      case StorageLocation.pantry:
+        return 'Pantry';
+      case StorageLocation.fridge:
+      default:
+        return 'Fridge';
+    }
+  }
+
   String _formatDate(DateTime? d) {
     if (d == null) return 'Not set';
     return '${d.year.toString().padLeft(4, '0')}-'
@@ -296,6 +313,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   // ========= 调用 /api/recipe 做“保质期预测” =========
+
   Future<void> _predictExpiryWithAi() async {
     if (_name.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -498,137 +516,254 @@ class _AddFoodPageState extends State<AddFoodPage>
     }
   }
 
-  Future<void> _showScannedItemsPreview(List<_ScannedItem> items) async {
-    // 允许用户勾选 / 取消某些条目
-    final selected = List<bool>.filled(items.length, true);
+  // ========= Scan 预览（优化布局：只展示关键数据 + 不溢出） =========
 
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setStateDialog) {
-            return AlertDialog(
-              title: const Text('Add scanned items to inventory?'),
-              content: SizedBox(
-                width: 400,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
+  Future<void> _showScannedItemsPreview(List<_ScannedItem> items) async {
+  final selected = List<bool>.filled(items.length, true);
+
+  final bool? confirmed = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (ctx) {
+      final maxH = MediaQuery.of(ctx).size.height * 0.78;
+
+      return StatefulBuilder(
+        builder: (ctx, setStateSheet) {
+          final count = selected.where((v) => v).length;
+
+          return SafeArea(
+            child: Container(
+              height: maxH,
+              margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: const [
+                  BoxShadow(
+                    blurRadius: 18,
+                    spreadRadius: 2,
+                    color: Color(0x22000000),
+                    offset: Offset(0, 8),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  // 顶部标题
+                  Row(
                     children: [
-                      Text(
-                        'We detected the following items. '
-                        'You can edit or deselect items you don\'t want to add.',
-                        style: Theme.of(ctx)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.grey[700]),
-                      ),
-                      const SizedBox(height: 12),
-                      ...List.generate(items.length, (index) {
-                        final item = items[index];
-                        return CheckboxListTile(
-                          value: selected[index],
-                          onChanged: (v) {
-                            setStateDialog(() {
-                              selected[index] = v ?? false;
-                            });
-                          },
-                          title: Row(
-                            children: [
-                              Icon(
-                                _locationIcon(item.location),
-                                size: 16,
-                                color: Theme.of(ctx).colorScheme.primary,
+                      Expanded(
+                        child: Text(
+                          'Add scanned items',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
                               ),
-                              const SizedBox(width: 6),
-                              Expanded(child: Text(item.name)),
-                            ],
-                          ),
-                          subtitle: Text(
-                            '${item.quantity} ${item.unit} • '
-                            '${item.location.name} • '
-                            'purchased ${_formatDate(item.purchaseDate)}'
-                            '${item.predictedExpiry != null ? ' • expiry ${_formatDate(item.predictedExpiry)}' : ''}',
-                          ),
-                          secondary: IconButton(
-                            icon: const Icon(Icons.edit),
-                            onPressed: () async {
-                              final updated =
-                                  await _showEditScannedItemDialog(item);
-                              if (updated != null) {
-                                setStateDialog(() {
-                                  items[index] = updated;
-                                });
-                              }
-                            },
-                          ),
-                        );
-                      }),
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        icon: const Icon(Icons.close),
+                      )
                     ],
                   ),
-                ),
+                  Text(
+                    'Review and edit if needed. Uncheck items you don’t want to add.',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                          color: Colors.grey[700],
+                        ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // 列表
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: List.generate(items.length, (i) {
+                          final it = items[i];
+
+                          // ✅ 只保留关键数据：qty + unit + location
+                          final line1 =
+                              '${_formatQty(it.quantity)} ${it.unit} • ${_locationLabel(it.location)}';
+
+                          return InkWell(
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () =>
+                                setStateSheet(() => selected[i] = !selected[i]),
+                            child: Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding:
+                                  const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF6F7F9),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: selected[i]
+                                      ? const Color(0xFF005F87)
+                                          .withOpacity(0.25)
+                                      : Colors.black.withOpacity(0.06),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(
+                                      _locationIcon(it.location),
+                                      color: const Color(0xFF005F87),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          it.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          line1,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            color: Colors.grey[850],
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+
+                                        // ✅ 不要 Purchased 那行：删掉
+                                        // （这里不留 SizedBox，不占高度）
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+
+                                  SizedBox(
+                                    width: 82,
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.end,
+                                      children: [
+                                        IconButton(
+                                          tooltip: 'Edit',
+                                          icon: const Icon(Icons.edit, size: 20),
+                                          onPressed: () async {
+                                            final updated =
+                                                await _showEditScannedItemDialog(
+                                                    it);
+                                            if (updated != null) {
+                                              setStateSheet(
+                                                  () => items[i] = updated);
+                                            }
+                                          },
+                                        ),
+                                        Checkbox(
+                                          value: selected[i],
+                                          onChanged: (v) => setStateSheet(
+                                              () =>
+                                                  selected[i] = v ?? false),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 6),
+
+                  // 底部按钮条
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Cancel'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: count == 0
+                              ? null
+                              : () => Navigator.pop(ctx, true),
+                          child: Text('Add ($count)'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(false),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.of(ctx).pop(true),
-                  child: const Text('Add to inventory'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  if (confirmed != true) return;
+
+  // 保存（expiry 也一起存）
+  for (int i = 0; i < items.length; i++) {
+    if (!selected[i]) continue;
+    final s = items[i];
+
+    DateTime expiry = s.predictedExpiry ??
+        (s.location == StorageLocation.freezer
+            ? s.purchaseDate.add(const Duration(days: 90))
+            : s.location == StorageLocation.pantry
+                ? s.purchaseDate.add(const Duration(days: 30))
+                : s.purchaseDate.add(const Duration(days: 7)));
+
+    if (expiry.isBefore(s.purchaseDate)) {
+      expiry = s.purchaseDate.add(const Duration(days: 3));
+    }
+
+    final foodItem = FoodItem(
+      id: const Uuid().v4(),
+      name: s.name,
+      location: s.location,
+      quantity: s.quantity,
+      unit: s.unit,
+      purchasedDate: s.purchaseDate,
+      openDate: null,
+      bestBeforeDate: null,
+      predictedExpiry: expiry,
+      category: s.category,
     );
-
-    if (confirmed != true) return;
-
-    // 写入 inventory
-    for (int i = 0; i < items.length; i++) {
-      if (!selected[i]) continue;
-      final s = items[i];
-
-      // 如果 predictedExpiry 仍然为空，给个简单 fallback（例如 fridge 7 天）
-      DateTime? expiry = s.predictedExpiry;
-      expiry ??= () {
-        switch (s.location) {
-          case StorageLocation.freezer:
-            return s.purchaseDate.add(const Duration(days: 90));
-          case StorageLocation.pantry:
-            return s.purchaseDate.add(const Duration(days: 30));
-          case StorageLocation.fridge:
-          default:
-            return s.purchaseDate.add(const Duration(days: 7));
-        }
-      }();
-
-      final foodItem = FoodItem(
-        id: const Uuid().v4(),
-        name: s.name,
-        location: s.location,
-        quantity: s.quantity,
-        unit: s.unit,
-        purchasedDate: s.purchaseDate,
-        openDate: null,
-        bestBeforeDate: null,
-        predictedExpiry: expiry,
-        category: s.category,
-      );
-      await widget.repo.addItem(foodItem);
-    }
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('Added ${selected.where((v) => v).length} items to inventory ✅'),
-        ),
-      );
-    }
+    await widget.repo.addItem(foodItem);
   }
+
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added ${selected.where((v) => v).length} items ✅')),
+    );
+  }
+}
 
   Future<_ScannedItem?> _showEditScannedItemDialog(_ScannedItem item) async {
     final nameCtrl = TextEditingController(text: item.name);
@@ -658,7 +793,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                       style: Theme.of(ctx)
                           .textTheme
                           .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                          ?.copyWith(fontWeight: FontWeight.w900),
                     ),
                     const SizedBox(height: 16),
                     TextField(
@@ -675,9 +810,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                           child: TextField(
                             controller: qtyCtrl,
                             keyboardType:
-                                const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
+                                const TextInputType.numberWithOptions(decimal: true),
                             decoration: const InputDecoration(
                               labelText: 'Quantity',
                               border: OutlineInputBorder(),
@@ -699,7 +832,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                     const SizedBox(height: 16),
                     const Text(
                       'Storage location',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                     const SizedBox(height: 8),
                     SegmentedButton<StorageLocation>(
@@ -707,7 +840,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                         ButtonSegment(
                           value: StorageLocation.fridge,
                           icon: Icon(Icons.kitchen_outlined),
-                          label: SizedBox.shrink(), // 纯图标
+                          label: SizedBox.shrink(),
                         ),
                         ButtonSegment(
                           value: StorageLocation.freezer,
@@ -735,65 +868,110 @@ class _AddFoodPageState extends State<AddFoodPage>
                       ),
                     ),
                     const SizedBox(height: 16),
+
+                    // Purchased date
                     const Text(
                       'Purchased date',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    const SizedBox(height: 4),
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(_formatDate(purchase)),
-                      trailing: const Icon(Icons.calendar_today_outlined),
+                    const SizedBox(height: 6),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(12),
                       onTap: () async {
                         final picked = await showDatePicker(
                           context: ctx,
                           initialDate: purchase,
-                          firstDate: DateTime.now()
-                              .subtract(const Duration(days: 365)),
-                          lastDate: DateTime.now()
-                              .add(const Duration(days: 365)),
+                          firstDate:
+                              DateTime.now().subtract(const Duration(days: 365)),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
                         );
                         if (picked != null) {
                           setStateDialog(() => purchase = picked);
                         }
                       },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.03),
+                          borderRadius: BorderRadius.circular(12),
+                          border:
+                              Border.all(color: Colors.black.withOpacity(0.06)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _formatDate(purchase),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const Icon(Icons.calendar_today_outlined, size: 18),
+                          ],
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 12),
+
+                    const SizedBox(height: 14),
+
+                    // Expiry
                     const Text(
                       'Predicted expiry',
-                      style: TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
                         Expanded(
-                          child: ListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: Text(_formatDate(expiry)),
-                            trailing:
-                                const Icon(Icons.calendar_today_outlined),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
                             onTap: () async {
                               final base = expiry ?? purchase;
                               final picked = await showDatePicker(
                                 context: ctx,
                                 initialDate: base,
                                 firstDate: purchase,
-                                lastDate: purchase
-                                    .add(const Duration(days: 365)),
+                                lastDate: purchase.add(const Duration(days: 365)),
                               );
                               if (picked != null) {
                                 setStateDialog(() => expiry = picked);
                               }
                             },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.03),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: Colors.black.withOpacity(0.06)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      _formatDate(expiry),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const Icon(Icons.calendar_today_outlined,
+                                      size: 18),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
+                        const SizedBox(width: 8),
                         IconButton(
-                          onPressed: () =>
-                              setStateDialog(() => expiry = null),
+                          tooltip: 'Clear expiry',
+                          onPressed: () => setStateDialog(() => expiry = null),
                           icon: const Icon(Icons.close),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -805,8 +983,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                         const SizedBox(width: 8),
                         FilledButton(
                           onPressed: () {
-                            final qty =
-                                double.tryParse(qtyCtrl.text.trim()) ?? 1;
+                            final qty = double.tryParse(qtyCtrl.text.trim()) ?? 1;
                             Navigator.pop(
                               ctx,
                               _ScannedItem(
@@ -961,8 +1138,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                       labelText: 'Quantity',
                       border: OutlineInputBorder(),
                     ),
-                    onSaved: (v) =>
-                        _qty = double.tryParse(v ?? '1') ?? 1,
+                    onSaved: (v) => _qty = double.tryParse(v ?? '1') ?? 1,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1091,6 +1267,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     );
   }
 
+  // ✅ 优化：避免 Row 里长文本溢出
   Widget _buildExpiryAiCard() {
     final canPredict = _name.trim().isNotEmpty && !_isPredictingExpiry;
 
@@ -1105,12 +1282,11 @@ class _AddFoodPageState extends State<AddFoodPage>
           children: [
             const Text(
               'AI expiry suggestion (optional)',
-              style: TextStyle(fontWeight: FontWeight.w600),
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 6),
             Text(
-              'Based on food type, storage and purchase date, '
-              'ask AI to suggest an expiry date. '
+              'Based on food type, storage and purchase date, ask AI to suggest an expiry date. '
               'If you manually set Best-before, that will override AI when saving.',
               style: TextStyle(fontSize: 12, color: Colors.grey[700]),
             ),
@@ -1129,12 +1305,16 @@ class _AddFoodPageState extends State<AddFoodPage>
               ),
             ] else if (_predictedExpiryFromAi != null) ...[
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'AI suggests: ${_formatDate(_predictedExpiryFromAi)}',
-                    style: const TextStyle(fontWeight: FontWeight.w500),
+                  Expanded(
+                    child: Text(
+                      'AI suggests: ${_formatDate(_predictedExpiryFromAi)}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
                   ),
+                  const SizedBox(width: 8),
                   TextButton(
                     onPressed: () {
                       setState(() {
@@ -1150,15 +1330,18 @@ class _AddFoodPageState extends State<AddFoodPage>
               ),
               if (_bestBefore != null)
                 Text(
-                  'Note: current Best-before ${_formatDate(_bestBefore)} '
-                  'will override this when saving.',
-                  style:
-                      const TextStyle(fontSize: 11, color: Colors.redAccent),
+                  'Note: current Best-before ${_formatDate(_bestBefore)} will override this when saving.',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Colors.redAccent,
+                  ),
                 ),
             ] else ...[
               if (_predictionError != null) ...[
                 Text(
                   '上次预测失败：$_predictionError',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 11, color: Colors.red),
                 ),
                 const SizedBox(height: 8),
@@ -1192,7 +1375,7 @@ class _AddFoodPageState extends State<AddFoodPage>
             const SizedBox(height: 16),
             const Text(
               "Scan to auto-fill inventory",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 8),
             Text(
@@ -1247,8 +1430,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   // --- Voice Tab ---
 
   Widget _buildVoiceTab() {
-    final canSend =
-        _voiceController.text.trim().length > 2 && !_isProcessing;
+    final canSend = _voiceController.text.trim().length > 2 && !_isProcessing;
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -1261,8 +1443,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               duration: const Duration(milliseconds: 300),
               padding: const EdgeInsets.all(30),
               decoration: BoxDecoration(
-                color:
-                    _isListening ? Colors.red.shade50 : Colors.grey.shade100,
+                color: _isListening ? Colors.red.shade50 : Colors.grey.shade100,
                 shape: BoxShape.circle,
                 border: Border.all(
                   color: _isListening ? Colors.red : Colors.grey,
@@ -1291,8 +1472,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               labelText: 'Recognized text',
               alignLabelWithHint: true,
               border: OutlineInputBorder(),
-              hintText:
-                  'For example: "500g chicken breast in freezer"',
+              hintText: 'For example: "500g chicken breast in freezer"',
             ),
           ),
           const SizedBox(height: 12),
