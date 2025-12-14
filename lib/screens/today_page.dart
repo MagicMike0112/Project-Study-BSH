@@ -73,7 +73,7 @@ class TodayPage extends StatelessWidget {
                     // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('请只喂适合宠物食用的食材，若不确定请先咨询兽医🐹'),
+                        content: Text('Please ensure the food is safe for your pet!'),
                         duration: Duration(seconds: 4),
                       ),
                     );

@@ -138,38 +138,6 @@ class InventoryRepository {
       }
     }
 
-    // 第一次使用 / 没有任何数据：塞一点 demo 方便看 UI
-    if (items.isEmpty) {
-      items.add(
-        FoodItem(
-          id: const Uuid().v4(),
-          name: 'Greek Yogurt',
-          location: StorageLocation.fridge,
-          quantity: 2,
-          unit: 'cups',
-          purchasedDate: DateTime.now().subtract(const Duration(days: 2)),
-          predictedExpiry: DateTime.now().add(const Duration(days: 1)),
-          status: FoodStatus.good,
-        ),
-      );
-      items.add(
-        FoodItem(
-          id: const Uuid().v4(),
-          name: 'Carrots',
-          location: StorageLocation.fridge,
-          quantity: 500,
-          unit: 'g',
-          purchasedDate: DateTime.now(),
-          predictedExpiry: DateTime.now().add(const Duration(days: 4)),
-          status: FoodStatus.good,
-        ),
-      );
-      // 把 demo 也存起来，避免刷新又消失
-      await prefs.setString(
-        _itemsKey,
-        jsonEncode(items.map((e) => e.toJson()).toList()),
-      );
-    }
 
     // ---------- 2. 读取 impact events ----------
     final impactJson = prefs.getString(_impactKey);

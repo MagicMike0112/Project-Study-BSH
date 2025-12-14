@@ -33,6 +33,9 @@ class _AccountPageState extends State<AccountPage> {
   Map<String, dynamic>? _hcInfo;
   String? _hcError;
 
+  // appliances（debug/后续找 oven haId）
+  List<Map<String, dynamic>> _hcAppliances = const [];
+
   @override
   void initState() {
     super.initState();
@@ -66,6 +69,7 @@ class _AccountPageState extends State<AccountPage> {
         _hcConnected = false;
         _hcInfo = null;
         _hcError = null;
+        _hcAppliances = const [];
       });
       return;
     }
@@ -92,12 +96,14 @@ class _AccountPageState extends State<AccountPage> {
       setState(() {
         _hcConnected = (data['connected'] == true);
         _hcInfo = (data['info'] is Map<String, dynamic>) ? (data['info'] as Map<String, dynamic>) : null;
+        if (!_hcConnected) _hcAppliances = const [];
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _hcConnected = false;
         _hcInfo = null;
+        _hcAppliances = const [];
         _hcError = e.toString();
       });
     } finally {
@@ -108,94 +114,93 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-Future<void> _startHomeConnectBind() async {
-  final client = Supabase.instance.client;
-  final session = client.auth.currentSession;
-  final user = client.auth.currentUser;
+  Future<void> _startHomeConnectBind() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    final user = client.auth.currentUser;
 
-  if (!(widget.isLoggedIn && session != null && user != null)) {
-    widget.onLogin();
-    return;
-  }
+    if (!(widget.isLoggedIn && session != null && user != null)) {
+      widget.onLogin();
+      return;
+    }
 
-  setState(() {
-    _hcLoading = true;
-    _hcError = null;
-  });
+    setState(() {
+      _hcLoading = true;
+      _hcError = null;
+    });
 
-  try {
-    final r = await http.post(
-      Uri.parse('$_backendBase/api/hc/connect'),
-      headers: {
-        'Authorization': 'Bearer ${session.accessToken}',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        "returnTo": "https://bshpwa.vercel.app/#/account?hc=connected",
-      }),
-    );
-
-    // ✅ 关键：无论成功失败都把原始 body 打出来
-    debugPrint('[HC] /api/hc/connect status=${r.statusCode}');
-    debugPrint('[HC] /api/hc/connect body=${r.body}');
-
-    // 尝试解析 JSON（失败也不要直接崩）
-    Map<String, dynamic>? data;
     try {
-      final decoded = jsonDecode(r.body);
-      if (decoded is Map<String, dynamic>) data = decoded;
-    } catch (_) {
-      data = null;
-    }
-
-    // 非 200：优先把后端返回的 step/error/stack 展示出来
-    if (r.statusCode != 200) {
-      final step = data?['step'];
-      final err = data?['error'] ?? r.body;
-      final stack = data?['stack'];
-
-      // 给你一个更有用的异常信息
-      throw Exception(
-        [
-          'Backend ${r.statusCode}',
-          if (step != null) 'step=$step',
-          'error=$err',
-          if (stack != null) 'stack=$stack',
-        ].join(' | '),
+      final r = await http.post(
+        Uri.parse('$_backendBase/api/hc/connect'),
+        headers: {
+          'Authorization': 'Bearer ${session.accessToken}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          "returnTo": "https://bshpwa.vercel.app/#/account?hc=connected",
+        }),
       );
-    }
 
-    // 200 但 ok != true
-    if (data == null || data['ok'] != true) {
-      throw Exception('Invalid response: ${r.body}');
-    }
+      // ✅ 关键：无论成功失败都把原始 body 打出来
+      debugPrint('[HC] /api/hc/connect status=${r.statusCode}');
+      debugPrint('[HC] /api/hc/connect body=${r.body}');
 
-    final authorizeUrl = data['authorizeUrl'] as String?;
-    if (authorizeUrl == null || authorizeUrl.isEmpty) {
-      throw Exception('Missing authorizeUrl. Full response: ${r.body}');
-    }
+      // 尝试解析 JSON（失败也不要直接崩）
+      Map<String, dynamic>? data;
+      try {
+        final decoded = jsonDecode(r.body);
+        if (decoded is Map<String, dynamic>) data = decoded;
+      } catch (_) {
+        data = null;
+      }
 
-    final uri = Uri.parse(authorizeUrl);
+      // 非 200：优先把后端返回的 step/error/stack 展示出来
+      if (r.statusCode != 200) {
+        final step = data?['step'];
+        final err = data?['error'] ?? r.body;
+        final stack = data?['stack'];
 
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok) {
-      throw Exception('Could not open Home Connect authorization page');
+        throw Exception(
+          [
+            'Backend ${r.statusCode}',
+            if (step != null) 'step=$step',
+            'error=$err',
+            if (stack != null) 'stack=$stack',
+          ].join(' | '),
+        );
+      }
+
+      // 200 但 ok != true
+      if (data == null || data['ok'] != true) {
+        throw Exception('Invalid response: ${r.body}');
+      }
+
+      final authorizeUrl = data['authorizeUrl'] as String?;
+      if (authorizeUrl == null || authorizeUrl.isEmpty) {
+        throw Exception('Missing authorizeUrl. Full response: ${r.body}');
+      }
+
+      final uri = Uri.parse(authorizeUrl);
+
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        throw Exception('Could not open Home Connect authorization page');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hcError = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Home Connect bind failed: $e')),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _hcLoading = false;
+      });
     }
-  } catch (e) {
-    if (!mounted) return;
-    setState(() {
-      _hcError = e.toString();
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Home Connect bind failed: $e')),
-    );
-  } finally {
-    if (!mounted) return;
-    setState(() {
-      _hcLoading = false;
-    });
   }
-}
 
   Future<void> _disconnectHomeConnect() async {
     final client = Supabase.instance.client;
@@ -239,6 +244,161 @@ Future<void> _startHomeConnectBind() async {
         _hcLoading = false;
       });
     }
+  }
+
+  Future<void> _fetchHomeConnectAppliances() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    final user = client.auth.currentUser;
+
+    if (!(widget.isLoggedIn && session != null && user != null)) {
+      widget.onLogin();
+      return;
+    }
+    if (!_hcConnected) {
+      setState(() => _hcError = 'Home Connect is not connected yet.');
+      return;
+    }
+
+    setState(() {
+      _hcLoading = true;
+      _hcError = null;
+    });
+
+    try {
+      final r = await http.get(
+        Uri.parse('$_backendBase/api/hc/appliances'),
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
+      );
+
+      debugPrint('[HC] /api/hc/appliances status=${r.statusCode}');
+      debugPrint('[HC] /api/hc/appliances body=${r.body}');
+
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      if (r.statusCode != 200 || data['ok'] != true) {
+        throw Exception(data['error'] ?? 'Failed to fetch appliances');
+      }
+
+      final list = (data['homeappliances'] as List?) ?? const [];
+      final parsed = list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _hcAppliances = parsed;
+      });
+
+      if (!mounted) return;
+      _showApplianceListSheet();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hcError = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Fetch appliances failed: $e')),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _hcLoading = false;
+      });
+    }
+  }
+
+  void _showApplianceListSheet() {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) {
+        final items = _hcAppliances;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.list_alt),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Home Connect appliances',
+                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                      ),
+                    ),
+                    Text(
+                      '${items.length}',
+                      style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w800),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                if (items.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'No appliances returned by simulator.',
+                      style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
+                    ),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.55,
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final a = items[i];
+                        final name = (a['name'] ?? a['brand'] ?? a['type'] ?? 'Appliance').toString();
+                        final type = (a['type'] ?? a['encryption'] ?? '').toString();
+                        final haId = (a['haId'] ?? a['id'] ?? '').toString();
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                          title: Text(
+                            name,
+                            style: const TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                          subtitle: Text(
+                            'type: ${type.isEmpty ? '-' : type}\nhaId: ${haId.isEmpty ? '-' : haId}',
+                            style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600, height: 1.2),
+                          ),
+                          trailing: haId.isEmpty
+                              ? null
+                              : IconButton(
+                                  icon: const Icon(Icons.copy),
+                                  onPressed: () {
+                                    // 不引入 clipboard 依赖，先用 snackbar 提示你自己复制/截图
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('haId: $haId')),
+                                    );
+                                  },
+                                ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 44,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                    label: const Text('Close', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -335,7 +495,6 @@ Future<void> _startHomeConnectBind() async {
                           return;
                         }
                         if (_hcConnected) {
-                          // 已连接：给个管理入口（刷新/解绑）
                           await showModalBottomSheet(
                             context: context,
                             showDragHandle: true,
@@ -353,6 +512,14 @@ Future<void> _startHomeConnectBind() async {
                                       },
                                     ),
                                     ListTile(
+                                      leading: const Icon(Icons.list_alt),
+                                      title: const Text('Fetch appliances (get oven haId)'),
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        await _fetchHomeConnectAppliances();
+                                      },
+                                    ),
+                                    ListTile(
                                       leading: const Icon(Icons.link_off),
                                       title: const Text('Disconnect'),
                                       onTap: () async {
@@ -365,6 +532,8 @@ Future<void> _startHomeConnectBind() async {
                                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                                         child: Text(
                                           'Host: ${_hcInfo?['hc_host'] ?? '-'}\n'
+                                          'Scope: ${_hcInfo?['scope'] ?? '-'}\n'
+                                          'Expires: ${_hcInfo?['expires_at'] ?? '-'}\n'
                                           'Updated: ${_hcInfo?['updated_at'] ?? '-'}',
                                           style: TextStyle(
                                             color: Colors.grey[700],
