@@ -4,18 +4,21 @@ import { createClient } from "@supabase/supabase-js";
 
 export const HC_HOST =
   process.env.HC_HOST || "https://simulator.home-connect.com";
+
 export const HC_CLIENT_ID = process.env.HC_CLIENT_ID;
+export const HC_CLIENT_SECRET = process.env.HC_CLIENT_SECRET; // ✅ 必须有
 export const HC_REDIRECT_URI = process.env.HC_REDIRECT_URI;
 export const STATE_SECRET = process.env.HC_STATE_SECRET;
 
 export const SUPABASE_URL = process.env.SUPABASE_URL;
-export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY; // 建议填 sb_publishable_...
-export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // 填 sb_secret_...
+export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY; // sb_publishable_...
+export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY; // sb_secret_...
 
 export function assertEnv() {
   const missing = [];
   for (const k of [
     "HC_CLIENT_ID",
+    "HC_CLIENT_SECRET", // ✅
     "HC_REDIRECT_URI",
     "HC_STATE_SECRET",
     "SUPABASE_URL",
@@ -50,7 +53,7 @@ export function getBearer(req) {
   return auth.startsWith("Bearer ") ? auth.slice(7) : null;
 }
 
-// ✅ 用 Supabase 官方接口验证 access token，并拿 userId（把真实错误吐出来）
+// 更稳：把 Supabase 返回状态码和 body 都带上
 export async function getUserIdFromSupabase(accessToken) {
   const url = `${SUPABASE_URL}/auth/v1/user`;
 
@@ -72,7 +75,6 @@ export async function getUserIdFromSupabase(accessToken) {
   const u = JSON.parse(text);
   return u.id;
 }
-
 
 export function signState(obj) {
   const payload = Buffer.from(JSON.stringify(obj)).toString("base64url");
