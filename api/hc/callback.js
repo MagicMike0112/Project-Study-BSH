@@ -6,11 +6,11 @@ import {
   supabaseAdmin,
   HC_HOST,
   HC_CLIENT_ID,
+  HC_CLIENT_SECRET,
   HC_REDIRECT_URI,
 } from "../_lib/hc.js";
 
 export default async function handler(req, res) {
-  // callback 主要是浏览器跳转，不是 fetch；但加 CORS 不会坏
   applyCors(req, res);
   if (handleOptions(req, res)) return;
 
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
 
     const st = verifyState(state);
 
-    // state 过期保护（10分钟）
+    // 10 分钟过期
     if (!st.t || Date.now() - st.t > 10 * 60 * 1000) {
       return res.status(400).send("state expired");
     }
@@ -30,22 +30,25 @@ export default async function handler(req, res) {
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       client_id: HC_CLIENT_ID,
+      client_secret: HC_CLIENT_SECRET, // ✅ 永远带
       redirect_uri: HC_REDIRECT_URI,
       code: String(code),
     });
 
-    // 真机时才会需要
-    if (process.env.HC_CLIENT_SECRET) {
-      body.set("client_secret", process.env.HC_CLIENT_SECRET);
-    }
-
     const r = await fetch(`${HC_HOST}/security/oauth/token`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
+      body: body.toString(),
     });
 
-    const token = await r.json();
+    const raw = await r.text();
+    let token;
+    try {
+      token = JSON.parse(raw);
+    } catch (_) {
+      token = { raw };
+    }
+
     if (!r.ok) {
       return res.status(400).json({ ok: false, token });
     }
@@ -71,12 +74,9 @@ export default async function handler(req, res) {
         { onConflict: "user_id" },
       );
 
-    if (error) {
-      return res.status(500).json({ ok: false, error });
-    }
+    if (error) return res.status(500).json({ ok: false, error });
 
-    const returnTo =
-      st.returnTo || "https://bshpwa.vercel.app/#/account?hc=connected";
+    const returnTo = st.returnTo || "https://bshpwa.vercel.app/#/account?hc=connected";
     res.writeHead(302, { Location: returnTo });
     res.end();
   } catch (e) {
