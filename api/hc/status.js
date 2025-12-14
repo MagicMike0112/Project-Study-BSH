@@ -8,25 +8,30 @@ import {
 import { applyCors, handleOptions } from "../_lib/cors.js";
 
 export default async function handler(req, res) {
-  // CORS + preflight
   applyCors(req, res);
   if (handleOptions(req, res)) return;
 
-  try {
-    assertEnv();
-    console.log("[hc/connect] hasAuth=", !!req.headers.authorization, "origin=", req.headers.origin);
+  let step = "start";
 
+  try {
+    step = "assertEnv";
+    assertEnv();
+
+    step = "methodCheck";
     if (req.method !== "GET") {
       return res.status(405).json({ ok: false, error: "Method not allowed" });
     }
 
+    step = "getBearer";
     const accessToken = getBearer(req);
     if (!accessToken) {
       return res.status(401).json({ ok: false, error: "Missing Bearer token" });
     }
 
+    step = "getUserIdFromSupabase";
     const userId = await getUserIdFromSupabase(accessToken);
 
+    step = "queryDB";
     const admin = supabaseAdmin();
     const { data, error } = await admin
       .from("homeconnect_tokens")
@@ -35,19 +40,21 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (error) {
-      return res.status(500).json({ ok: false, error });
+      return res.status(500).json({ ok: false, step, error });
     }
 
+    step = "done";
     return res.status(200).json({
       ok: true,
       connected: !!data,
       info: data || null,
     });
- } catch (e) {
-  console.error("[hc/connect] error:", e);
-  const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
-  return res.status(status).json({ ok: false, error: String(e?.message || e) });
-}
-
-
+  } catch (e) {
+    return res.status(500).json({
+      ok: false,
+      step,
+      error: String(e?.message || e),
+      stack: String(e?.stack || ""),
+    });
+  }
 }

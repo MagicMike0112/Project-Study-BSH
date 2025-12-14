@@ -9,51 +9,51 @@ import {
   HC_CLIENT_ID,
   HC_REDIRECT_URI,
 } from "../_lib/hc.js";
-
 import { applyCors, handleOptions } from "../_lib/cors.js";
 
 export default async function handler(req, res) {
-  // CORS + preflight
   applyCors(req, res);
   if (handleOptions(req, res)) return;
 
-  try {
-    assertEnv();
-    console.log("[hc/connect] hasAuth=", !!req.headers.authorization, "origin=", req.headers.origin);
+  let step = "start";
 
+  try {
+    step = "assertEnv";
+    assertEnv();
+
+    step = "methodCheck";
     if (req.method !== "POST") {
       return res.status(405).json({ ok: false, error: "Method not allowed" });
     }
 
+    step = "getBearer";
     const accessToken = getBearer(req);
     if (!accessToken) {
       return res.status(401).json({ ok: false, error: "Missing Bearer token" });
     }
 
-    // 通过 Supabase 校验 access token，并拿到 userId（不需要 JWT secret）
+    step = "getUserIdFromSupabase";
     const userId = await getUserIdFromSupabase(accessToken);
 
+    step = "readBody";
     const body = await readJson(req);
 
-    // scopes 默认：绑定 Oven（你要跑通就够了）
+    step = "buildScopes";
     const scopes =
       Array.isArray(body?.scopes) && body.scopes.length
         ? body.scopes
         : ["IdentifyAppliance", "Oven"];
 
-    // 成功后回到你的前端
+    step = "buildReturnTo";
     const returnTo =
       body?.returnTo ||
       process.env.APP_RETURN_URL_DEFAULT ||
       "https://bshpwa.vercel.app/#/account?hc=connected";
 
-    // state：把“这次 OAuth 绑定给哪个 userId”签名封装进去（防 CSRF/错绑）
-    const state = signState({
-      userId,
-      returnTo,
-      t: Date.now(),
-    });
+    step = "signState";
+    const state = signState({ userId, returnTo, t: Date.now() });
 
+    step = "buildAuthorizeUrl";
     const authorizeUrl =
       `${HC_HOST}/security/oauth/authorize` +
       `?response_type=code` +
@@ -62,12 +62,15 @@ export default async function handler(req, res) {
       `&scope=${encodeURIComponent(scopes.join(" "))}` +
       `&state=${encodeURIComponent(state)}`;
 
+    step = "done";
     return res.status(200).json({ ok: true, authorizeUrl });
- } catch (e) {
-  console.error("[hc/connect] error:", e);
-  const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
-  return res.status(status).json({ ok: false, error: String(e?.message || e) });
-}
-
-
+  } catch (e) {
+    // ⚠️ 调试用：把 stack 返回给你看。跑通后记得去掉 stack
+    return res.status(500).json({
+      ok: false,
+      step,
+      error: String(e?.message || e),
+      stack: String(e?.stack || ""),
+    });
+  }
 }
