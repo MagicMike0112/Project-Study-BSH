@@ -43,6 +43,8 @@ export default async function handler(req, res) {
       info: data || null,
     });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: String(e?.message || e) });
-  }
+  const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
+  return res.status(status).json({ ok: false, error: String(e?.message || e) });
+}
+
 }
