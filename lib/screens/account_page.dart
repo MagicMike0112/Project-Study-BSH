@@ -108,67 +108,94 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  Future<void> _startHomeConnectBind() async {
-    final client = Supabase.instance.client;
-    final session = client.auth.currentSession;
-    final user = client.auth.currentUser;
+Future<void> _startHomeConnectBind() async {
+  final client = Supabase.instance.client;
+  final session = client.auth.currentSession;
+  final user = client.auth.currentUser;
 
-    if (!(widget.isLoggedIn && session != null && user != null)) {
-      widget.onLogin();
-      return;
-    }
-
-    setState(() {
-      _hcLoading = true;
-      _hcError = null;
-    });
-
-    try {
-      final r = await http.post(
-        Uri.parse('$_backendBase/api/hc/connect'),
-        headers: {
-          'Authorization': 'Bearer ${session.accessToken}',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          // 跑通绑定就够：默认 IdentifyAppliance + Oven
-          // 你也可以传 returnTo 覆盖后端默认回跳地址
-          "returnTo": "https://bshpwa.vercel.app/#/account?hc=connected",
-        }),
-      );
-
-      final data = jsonDecode(r.body) as Map<String, dynamic>;
-      if (r.statusCode != 200 || data['ok'] != true) {
-        throw Exception(data['error'] ?? 'Failed to start OAuth');
-      }
-
-      final authorizeUrl = data['authorizeUrl'] as String?;
-      if (authorizeUrl == null || authorizeUrl.isEmpty) {
-        throw Exception('Missing authorizeUrl');
-      }
-
-      final uri = Uri.parse(authorizeUrl);
-
-      // Web/PWA：externalApplication 通常会新开/跳转
-      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!ok) {
-        throw Exception('Could not open Home Connect authorization page');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _hcError = e.toString();
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Home Connect bind failed: $e')),
-      );
-    } finally {
-      if (!mounted) return;
-      setState(() {
-        _hcLoading = false;
-      });
-    }
+  if (!(widget.isLoggedIn && session != null && user != null)) {
+    widget.onLogin();
+    return;
   }
+
+  setState(() {
+    _hcLoading = true;
+    _hcError = null;
+  });
+
+  try {
+    final r = await http.post(
+      Uri.parse('$_backendBase/api/hc/connect'),
+      headers: {
+        'Authorization': 'Bearer ${session.accessToken}',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        "returnTo": "https://bshpwa.vercel.app/#/account?hc=connected",
+      }),
+    );
+
+    // ✅ 关键：无论成功失败都把原始 body 打出来
+    debugPrint('[HC] /api/hc/connect status=${r.statusCode}');
+    debugPrint('[HC] /api/hc/connect body=${r.body}');
+
+    // 尝试解析 JSON（失败也不要直接崩）
+    Map<String, dynamic>? data;
+    try {
+      final decoded = jsonDecode(r.body);
+      if (decoded is Map<String, dynamic>) data = decoded;
+    } catch (_) {
+      data = null;
+    }
+
+    // 非 200：优先把后端返回的 step/error/stack 展示出来
+    if (r.statusCode != 200) {
+      final step = data?['step'];
+      final err = data?['error'] ?? r.body;
+      final stack = data?['stack'];
+
+      // 给你一个更有用的异常信息
+      throw Exception(
+        [
+          'Backend ${r.statusCode}',
+          if (step != null) 'step=$step',
+          'error=$err',
+          if (stack != null) 'stack=$stack',
+        ].join(' | '),
+      );
+    }
+
+    // 200 但 ok != true
+    if (data == null || data['ok'] != true) {
+      throw Exception('Invalid response: ${r.body}');
+    }
+
+    final authorizeUrl = data['authorizeUrl'] as String?;
+    if (authorizeUrl == null || authorizeUrl.isEmpty) {
+      throw Exception('Missing authorizeUrl. Full response: ${r.body}');
+    }
+
+    final uri = Uri.parse(authorizeUrl);
+
+    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!ok) {
+      throw Exception('Could not open Home Connect authorization page');
+    }
+  } catch (e) {
+    if (!mounted) return;
+    setState(() {
+      _hcError = e.toString();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Home Connect bind failed: $e')),
+    );
+  } finally {
+    if (!mounted) return;
+    setState(() {
+      _hcLoading = false;
+    });
+  }
+}
 
   Future<void> _disconnectHomeConnect() async {
     final client = Supabase.instance.client;
