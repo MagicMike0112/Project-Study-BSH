@@ -1,4 +1,5 @@
 // api/hc/callback.js
+import { applyCors, handleOptions } from "../_lib/cors.js";
 import {
   assertEnv,
   verifyState,
@@ -9,8 +10,13 @@ import {
 } from "../_lib/hc.js";
 
 export default async function handler(req, res) {
+  // callback 主要是浏览器跳转，不是 fetch；但加 CORS 不会坏
+  applyCors(req, res);
+  if (handleOptions(req, res)) return;
+
   try {
     assertEnv();
+
     const { code, state } = req.query;
     if (!code || !state) return res.status(400).send("missing code/state");
 
@@ -21,7 +27,6 @@ export default async function handler(req, res) {
       return res.status(400).send("state expired");
     }
 
-    // 模拟器：不需要 client_secret；真机可加上 process.env.HC_CLIENT_SECRET
     const body = new URLSearchParams({
       grant_type: "authorization_code",
       client_id: HC_CLIENT_ID,
@@ -29,6 +34,7 @@ export default async function handler(req, res) {
       code: String(code),
     });
 
+    // 真机时才会需要
     if (process.env.HC_CLIENT_SECRET) {
       body.set("client_secret", process.env.HC_CLIENT_SECRET);
     }
@@ -48,7 +54,6 @@ export default async function handler(req, res) {
       ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString()
       : null;
 
-    // 存到 Supabase（绑定到你的 userId）
     const admin = supabaseAdmin();
     const { error } = await admin
       .from("homeconnect_tokens")
@@ -63,12 +68,15 @@ export default async function handler(req, res) {
           expires_at: expiresAt,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "user_id" }
+        { onConflict: "user_id" },
       );
 
-    if (error) return res.status(500).json({ ok: false, error });
+    if (error) {
+      return res.status(500).json({ ok: false, error });
+    }
 
-    const returnTo = st.returnTo || "https://bshpwa.vercel.app/#/account?hc=connected";
+    const returnTo =
+      st.returnTo || "https://bshpwa.vercel.app/#/account?hc=connected";
     res.writeHead(302, { Location: returnTo });
     res.end();
   } catch (e) {
