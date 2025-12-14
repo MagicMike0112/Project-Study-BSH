@@ -14,6 +14,7 @@ export default async function handler(req, res) {
 
   try {
     assertEnv();
+    console.log("[hc/connect] hasAuth=", !!req.headers.authorization, "origin=", req.headers.origin);
 
     if (req.method !== "GET") {
       return res.status(405).json({ ok: false, error: "Method not allowed" });
@@ -42,9 +43,11 @@ export default async function handler(req, res) {
       connected: !!data,
       info: data || null,
     });
-  } catch (e) {
+ } catch (e) {
+  console.error("[hc/connect] error:", e);
   const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
   return res.status(status).json({ ok: false, error: String(e?.message || e) });
 }
+
 
 }

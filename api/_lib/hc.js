@@ -73,6 +73,7 @@ export async function getUserIdFromSupabase(accessToken) {
   return u.id;
 }
 
+
 export function signState(obj) {
   const payload = Buffer.from(JSON.stringify(obj)).toString("base64url");
   const sig = crypto
