@@ -21,12 +21,24 @@ export default async function handler(req, res) {
       status: r.status,
       sample: text.slice(0, 120),
     });
-  } catch (e) {
-    return res.status(500).json({
-      ok: false,
-      supabaseUrl: SUPABASE_URL,
-      error: String(e?.message || e),
-      stack: String(e?.stack || ""),
-    });
-  }
+ } catch (e) {
+  return res.status(500).json({
+    ok: false,
+    supabaseUrl: SUPABASE_URL,
+    error: String(e?.message || e),
+    cause: e?.cause
+      ? {
+          message: String(e.cause.message || e.cause),
+          code: e.cause.code,
+          errno: e.cause.errno,
+          syscall: e.cause.syscall,
+          address: e.cause.address,
+          port: e.cause.port,
+          hostname: e.cause.hostname,
+        }
+      : null,
+    stack: String(e?.stack || ""),
+  });
+}
+
 }
