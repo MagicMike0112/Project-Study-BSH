@@ -7,7 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:http/http.dart' as http;
-
+import '../utils/auth_guard.dart';
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 
@@ -315,93 +315,114 @@ class _AddFoodPageState extends State<AddFoodPage>
   // ========= 调用 /api/recipe 做“保质期预测” =========
 
   Future<void> _predictExpiryWithAi() async {
-    if (_name.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the food name first')),
-      );
-      return;
+  // ✅ 未登录：不能用 AI 保质期预测
+  final ok = await requireLogin(context);
+  if (!ok) return;
+
+  if (_name.trim().isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Please enter the food name first')),
+    );
+    return;
+  }
+
+  setState(() {
+    _isPredictingExpiry = true;
+    _predictionError = null;
+  });
+
+  try {
+    final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
+
+    final body = <String, dynamic>{
+      'name': _name.trim(),
+      'location': _location.name,
+      'purchasedDate': _purchased.toIso8601String(),
+      if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
+      if (_bestBefore != null) 'bestBeforeDate': _bestBefore!.toIso8601String(),
+    };
+
+    final resp = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
+    }
+
+    final data = jsonDecode(resp.body) as Map<String, dynamic>;
+    final iso = data['predictedExpiry'] as String?;
+    if (iso == null) {
+      throw Exception('No predictedExpiry in response');
     }
 
     setState(() {
-      _isPredictingExpiry = true;
+      _predictedExpiryFromAi = DateTime.parse(iso);
       _predictionError = null;
     });
-
-    try {
-      final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
-
-      final body = <String, dynamic>{
-        'name': _name.trim(),
-        'location': _location.name,
-        'purchasedDate': _purchased.toIso8601String(),
-        if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
-        if (_bestBefore != null)
-          'bestBeforeDate': _bestBefore!.toIso8601String(),
-      };
-
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-
-      if (resp.statusCode != 200) {
-        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
-      }
-
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final iso = data['predictedExpiry'] as String?;
-      if (iso == null) {
-        throw Exception('No predictedExpiry in response');
-      }
-
+  } catch (e) {
+    setState(() {
+      _predictionError = e.toString();
+    });
+  } finally {
+    if (mounted) {
       setState(() {
-        _predictedExpiryFromAi = DateTime.parse(iso);
-        _predictionError = null;
+        _isPredictingExpiry = false;
       });
-    } catch (e) {
-      setState(() {
-        _predictionError = e.toString();
-      });
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isPredictingExpiry = false;
-        });
-      }
     }
   }
+}
+
 
   // ========= Scan 统一入口：拍照 / 相册 + 调 /api/scan-inventory =========
 
   Future<void> _takePhoto() async {
-    final status = await Permission.camera.request();
-    if (!status.isGranted) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Camera permission needed")),
-        );
-      }
-      return;
+  // ✅ 未登录：不能用 Scan 上传
+  final ok = await requireLogin(context);
+  if (!ok) return;
+
+  final status = await Permission.camera.request();
+  if (!status.isGranted) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Camera permission needed")),
+      );
     }
-
-    final xfile = await _picker.pickImage(source: ImageSource.camera);
-    if (xfile == null) return;
-
-    await _scanImageWithAi(xfile, mode: _scanMode);
+    return;
   }
 
-  Future<void> _pickFromGallery() async {
-    final xfile = await _picker.pickImage(source: ImageSource.gallery);
-    if (xfile == null) return;
+  final xfile = await _picker.pickImage(source: ImageSource.camera,maxWidth: 1280,
+    maxHeight: 1280,
+    imageQuality: 70,);
+  if (xfile == null) return;
 
-    await _scanImageWithAi(xfile, mode: _scanMode);
-  }
+  await _scanImageWithAi(xfile, mode: _scanMode);
+}
+
+Future<void> _pickFromGallery() async {
+  // ✅ 未登录：不能用 Scan 上传
+  final ok = await requireLogin(context);
+  if (!ok) return;
+
+  final xfile = await _picker.pickImage(source: ImageSource.gallery,maxWidth: 1280,
+    maxHeight: 1280,
+    imageQuality: 70,);
+  if (xfile == null) return;
+
+  await _scanImageWithAi(xfile, mode: _scanMode);
+}
+
 
   Future<void> _scanImageWithAi(
     XFile xfile, {
     required StorageScanMode mode,
   }) async {
+    // ✅ 兜底：防止未来从别处绕过入口直接调用上传
+        final ok = await requireLogin(context);
+      if (!ok) return;
+
     setState(() => _isProcessing = true);
 
     try {

@@ -1,10 +1,14 @@
 // lib/screens/account_page.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
 
-import 'notification_settings_page.dart'; // 👈 新增：跳转到通知设置页
+import 'notification_settings_page.dart';
 
-class AccountPage extends StatelessWidget {
+class AccountPage extends StatefulWidget {
   final bool isLoggedIn;
   final VoidCallback onLogin;
   final VoidCallback onLogout;
@@ -17,193 +21,525 @@ class AccountPage extends StatelessWidget {
   });
 
   @override
+  State<AccountPage> createState() => _AccountPageState();
+}
+
+class _AccountPageState extends State<AccountPage> {
+  // 你的 Vercel backend（跑 Home Connect OAuth 的那套）
+  static const String _backendBase = 'https://project-study-bsh.vercel.app';
+
+  bool _hcLoading = false;
+  bool _hcConnected = false;
+  Map<String, dynamic>? _hcInfo;
+  String? _hcError;
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 如果用户从 callback 302 回到前端并带了 ?hc=connected，自动刷新一次状态并提示
+    final qp = Uri.base.queryParameters;
+    if (qp['hc'] == 'connected') {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _refreshHomeConnectStatus();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Home Connect connected ✅')),
+        );
+      });
+    } else {
+      // 正常进页面也尝试拉一次状态（仅登录时）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _refreshHomeConnectStatus();
+      });
+    }
+  }
+
+  Future<void> _refreshHomeConnectStatus() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+
+    // 未登录：直接清空状态
+    if (!(widget.isLoggedIn && session != null && client.auth.currentUser != null)) {
+      if (!mounted) return;
+      setState(() {
+        _hcConnected = false;
+        _hcInfo = null;
+        _hcError = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _hcLoading = true;
+      _hcError = null;
+    });
+
+    try {
+      final r = await http.get(
+        Uri.parse('$_backendBase/api/hc/status'),
+        headers: {
+          'Authorization': 'Bearer ${session.accessToken}',
+        },
+      );
+
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      if (r.statusCode != 200 || data['ok'] != true) {
+        throw Exception(data['error'] ?? 'Failed to fetch status');
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _hcConnected = (data['connected'] == true);
+        _hcInfo = (data['info'] is Map<String, dynamic>) ? (data['info'] as Map<String, dynamic>) : null;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hcConnected = false;
+        _hcInfo = null;
+        _hcError = e.toString();
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _hcLoading = false;
+      });
+    }
+  }
+
+  Future<void> _startHomeConnectBind() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    final user = client.auth.currentUser;
+
+    if (!(widget.isLoggedIn && session != null && user != null)) {
+      widget.onLogin();
+      return;
+    }
+
+    setState(() {
+      _hcLoading = true;
+      _hcError = null;
+    });
+
+    try {
+      final r = await http.post(
+        Uri.parse('$_backendBase/api/hc/connect'),
+        headers: {
+          'Authorization': 'Bearer ${session.accessToken}',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          // 跑通绑定就够：默认 IdentifyAppliance + Oven
+          // 你也可以传 returnTo 覆盖后端默认回跳地址
+          "returnTo": "https://bshpwa.vercel.app/#/account?hc=connected",
+        }),
+      );
+
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      if (r.statusCode != 200 || data['ok'] != true) {
+        throw Exception(data['error'] ?? 'Failed to start OAuth');
+      }
+
+      final authorizeUrl = data['authorizeUrl'] as String?;
+      if (authorizeUrl == null || authorizeUrl.isEmpty) {
+        throw Exception('Missing authorizeUrl');
+      }
+
+      final uri = Uri.parse(authorizeUrl);
+
+      // Web/PWA：externalApplication 通常会新开/跳转
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        throw Exception('Could not open Home Connect authorization page');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hcError = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Home Connect bind failed: $e')),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _hcLoading = false;
+      });
+    }
+  }
+
+  Future<void> _disconnectHomeConnect() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    final user = client.auth.currentUser;
+
+    if (!(widget.isLoggedIn && session != null && user != null)) return;
+
+    setState(() {
+      _hcLoading = true;
+      _hcError = null;
+    });
+
+    try {
+      final r = await http.delete(
+        Uri.parse('$_backendBase/api/hc/disconnect'),
+        headers: {'Authorization': 'Bearer ${session.accessToken}'},
+      );
+      final data = jsonDecode(r.body) as Map<String, dynamic>;
+      if (r.statusCode != 200 || data['ok'] != true) {
+        throw Exception(data['error'] ?? 'Failed to disconnect');
+      }
+
+      await _refreshHomeConnectStatus();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Home Connect disconnected')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _hcError = e.toString();
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Disconnect failed: $e')),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _hcLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bg = const Color(0xFFF6F8FA);
+
     final client = Supabase.instance.client;
     final user = client.auth.currentUser;
 
-    final bool loggedIn = isLoggedIn && user != null;
+    final bool loggedIn = widget.isLoggedIn && user != null;
     final email = user?.email ?? '';
 
     return Scaffold(
+      backgroundColor: bg,
       appBar: AppBar(
         title: const Text('Settings'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
+      body: Stack(
         children: [
-          // 顶部卡片：登录状态
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-              child: loggedIn
-                  ? _buildLoggedInHeader(context, email)
-                  : _buildLoggedOutHeader(context),
+          // 科技感背景装饰
+          Positioned(
+            right: -90,
+            top: -120,
+            child: _GlowOrb(
+              size: 260,
+              color: scheme.primary.withOpacity(0.18),
             ),
           ),
-          const SizedBox(height: 24),
+          Positioned(
+            left: -90,
+            bottom: -120,
+            child: _GlowOrb(
+              size: 280,
+              color: scheme.secondary.withOpacity(0.14),
+            ),
+          ),
 
-          // 合作伙伴
-          Text(
-            'Partners',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: const [
-                ListTile(
-                  leading: Icon(Icons.kitchen_outlined),
-                  title: Text('Home Connect (BSH appliances)'),
-                  subtitle: Text('Planned integration – not available yet'),
-                  trailing: Icon(Icons.chevron_right),
-                  enabled: false, // 依然灰：还没实现
+          ListView(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            children: [
+              // 顶部：账号状态（更“产品化”）
+              _GlassCard(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                  child: loggedIn
+                      ? _buildLoggedInHeader(context, email)
+                      : _buildLoggedOutHeader(context),
                 ),
-                Divider(height: 1),
-                ListTile(
-                  leading: Icon(Icons.card_giftcard_outlined),
-                  title: Text('PAYBACK / loyalty cards'),
-                  subtitle: Text('Explore rewards for reducing food waste'),
-                  trailing: Icon(Icons.chevron_right),
-                  enabled: false, // 依然灰：还没实现
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
+              ),
 
-          // 偏好设置
-          Text(
-            'Preferences',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: [
-                // 👇 这里从占位变成真正可点的入口
-                ListTile(
-                  leading: const Icon(Icons.notifications_none),
-                  title: const Text('Notifications'),
-                  subtitle: const Text('Reminders for items close to expiry'),
-                  trailing: const Icon(Icons.chevron_right),
-                  enabled: true,
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => const NotificationSettingsPage(),
+              const SizedBox(height: 18),
+
+              _SectionHeader(
+                title: 'Partners',
+                subtitle: 'Appliances and rewards (coming soon)',
+                icon: Icons.hub_outlined,
+                color: scheme.primary,
+              ),
+              const SizedBox(height: 10),
+
+              _GlassCard(
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: const _SquareIconStatic(
+                        icon: Icons.kitchen_outlined,
+                        color: Color(0xFF0A6BA8),
                       ),
-                    );
-                  },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // 隐私 & 法律
-          Text(
-            'Privacy & legal',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Card(
-            elevation: 0,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Column(
-              children: const [
-                ListTile(
-                  leading: Icon(Icons.insights_outlined),
-                  title: Text('App data usage'),
-                  subtitle: Text('How we use your feedback and behaviour'),
-                  enabled: false,
-                ),
-                Divider(height: 1),
-                ListTile(
-                  leading: Icon(Icons.description_outlined),
-                  title: Text('Legal information'),
-                  subtitle: Text('Terms of use, privacy policy'),
-                  enabled: false,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          if (loggedIn)
-            Center(
-              child: SizedBox(
-                width: 260,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.logout),
-                  onPressed: onLogout,
-                  label: const Text('Log out'),
+                      title: const Text(
+                        'Home Connect (BSH appliances)',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text(
+                        !loggedIn
+                            ? 'Log in to connect your Home Connect account'
+                            : _hcLoading
+                                ? 'Checking connection...'
+                                : _hcConnected
+                                    ? 'Connected ✅'
+                                    : 'Connect to control appliances (simulator)',
+                      ),
+                      trailing: _hcLoading
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(_hcConnected ? Icons.check_circle : Icons.chevron_right),
+                      enabled: true,
+                      onTap: () async {
+                        if (!loggedIn) {
+                          widget.onLogin();
+                          return;
+                        }
+                        if (_hcConnected) {
+                          // 已连接：给个管理入口（刷新/解绑）
+                          await showModalBottomSheet(
+                            context: context,
+                            showDragHandle: true,
+                            builder: (_) {
+                              return SafeArea(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ListTile(
+                                      leading: const Icon(Icons.refresh),
+                                      title: const Text('Refresh status'),
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        await _refreshHomeConnectStatus();
+                                      },
+                                    ),
+                                    ListTile(
+                                      leading: const Icon(Icons.link_off),
+                                      title: const Text('Disconnect'),
+                                      onTap: () async {
+                                        Navigator.pop(context);
+                                        await _disconnectHomeConnect();
+                                      },
+                                    ),
+                                    if (_hcInfo != null)
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                                        child: Text(
+                                          'Host: ${_hcInfo?['hc_host'] ?? '-'}\n'
+                                          'Updated: ${_hcInfo?['updated_at'] ?? '-'}',
+                                          style: TextStyle(
+                                            color: Colors.grey[700],
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
+                          );
+                        } else {
+                          await _startHomeConnectBind();
+                        }
+                      },
+                    ),
+                    const _SoftDividerStatic(),
+                    const ListTile(
+                      leading: _SquareIconStatic(
+                        icon: Icons.card_giftcard_outlined,
+                        color: Color(0xFF3B6AF0),
+                      ),
+                      title: Text(
+                        'PAYBACK / loyalty cards',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text('Explore rewards for reducing food waste'),
+                      trailing: Icon(Icons.chevron_right),
+                      enabled: false,
+                    ),
+                    if (_hcError != null) ...[
+                      const _SoftDividerStatic(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                        child: Text(
+                          _hcError!,
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-            )
-          else
-            Center(
-              child: SizedBox(
-                width: 260,
-                child: FilledButton(
-                  onPressed: onLogin,
-                  child: const Text('Log in / Sign up'),
+
+              const SizedBox(height: 18),
+
+              _SectionHeader(
+                title: 'Preferences',
+                subtitle: 'Personalize the experience',
+                icon: Icons.tune_rounded,
+                color: scheme.secondary,
+              ),
+              const SizedBox(height: 10),
+
+              _GlassCard(
+                child: Column(
+                  children: [
+                    _SettingTile(
+                      title: 'Notifications',
+                      subtitle: 'Reminders for items close to expiry',
+                      icon: Icons.notifications_none_rounded,
+                      color: scheme.primary,
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const NotificationSettingsPage(),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
-            ),
+
+              const SizedBox(height: 18),
+
+              _SectionHeader(
+                title: 'Privacy & legal',
+                subtitle: 'Transparency and terms',
+                icon: Icons.verified_outlined,
+                color: Colors.grey.shade800,
+              ),
+              const SizedBox(height: 10),
+
+              _GlassCard(
+                child: Column(
+                  children: const [
+                    ListTile(
+                      leading: _SquareIconStatic(
+                        icon: Icons.insights_outlined,
+                        color: Color(0xFF55606A),
+                      ),
+                      title: Text(
+                        'App data usage',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text('How we use your feedback and behaviour'),
+                      enabled: false,
+                    ),
+                    _SoftDividerStatic(),
+                    ListTile(
+                      leading: _SquareIconStatic(
+                        icon: Icons.description_outlined,
+                        color: Color(0xFF55606A),
+                      ),
+                      title: Text(
+                        'Legal information',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      subtitle: Text('Terms of use, privacy policy'),
+                      enabled: false,
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 18),
+
+              Center(
+                child: SizedBox(
+                  width: 280,
+                  height: 48,
+                  child: loggedIn
+                      ? OutlinedButton.icon(
+                          icon: const Icon(Icons.logout),
+                          onPressed: widget.onLogout,
+                          label: const Text(
+                            'Log out',
+                            style: TextStyle(fontWeight: FontWeight.w800),
+                          ),
+                        )
+                      : _GradientButton(
+                          text: 'Log in / Sign up',
+                          onPressed: widget.onLogin,
+                        ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
   }
 
   Widget _buildLoggedOutHeader(BuildContext context) {
-    return Column(
+    final scheme = Theme.of(context).colorScheme;
+
+    return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Start using Smart Food Home',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: scheme.primary.withOpacity(0.10),
+            border: Border.all(color: scheme.primary.withOpacity(0.16)),
           ),
+          child: Icon(Icons.person_outline_rounded, color: scheme.primary),
         ),
-        const SizedBox(height: 8),
-        Text(
-          'Log in to back up your inventory and prepare for future integrations with BSH appliances and loyalty programs.',
-          style: Theme.of(context)
-              .textTheme
-              .bodyMedium
-              ?.copyWith(color: Colors.grey[700]),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton(
-            onPressed: onLogin,
-            child: const Text('Log in / Sign up'),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Start using Smart Food Home',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.grey[900],
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Log in to enable AI features!',
+                style: TextStyle(
+                  color: Colors.grey[700],
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: FilledButton.tonal(
+                  onPressed: widget.onLogin,
+                  child: const Text(
+                    'Log in / Sign up',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -213,34 +549,354 @@ class AccountPage extends StatelessWidget {
   Widget _buildLoggedInHeader(BuildContext context, String email) {
     return Row(
       children: [
-        const CircleAvatar(
-          radius: 22,
-          child: Icon(Icons.person_outline),
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: Colors.green.withOpacity(0.10),
+            border: Border.all(color: Colors.green.withOpacity(0.16)),
+          ),
+          child: Icon(Icons.verified_user_outlined, color: Colors.green.shade700),
         ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Logged in',
                 style: TextStyle(
                   fontSize: 16,
-                  fontWeight: FontWeight.w600,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.grey[900],
+                  letterSpacing: -0.2,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 email,
-                style: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.copyWith(color: Colors.grey[700]),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
         ),
       ],
     );
+  }
+}
+
+// ===================== UI components (no logic changes) =====================
+
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+
+  const _SectionHeader({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _SquareIcon(icon: icon, color: color),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.grey[900],
+                  letterSpacing: -0.2,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[700],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GlassCard extends StatelessWidget {
+  final Widget child;
+  const _GlassCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withOpacity(0.92),
+        border: Border.all(color: Colors.black.withOpacity(0.06)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 16,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
+          children: [
+            Positioned(
+              right: -40,
+              top: -40,
+              child: _GlowOrb(
+                size: 140,
+                color: scheme.primary.withOpacity(0.10),
+              ),
+            ),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingTile extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  final Widget trailing;
+
+  const _SettingTile({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    required this.onTap,
+    required this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Row(
+          children: [
+            _SquareIcon(icon: icon, color: color),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.2,
+                      color: Colors.grey[700],
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            trailing,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SquareIcon extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _SquareIcon({required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: color.withOpacity(0.10),
+        border: Border.all(color: color.withOpacity(0.16)),
+      ),
+      child: Icon(icon, size: 20, color: color),
+    );
+  }
+}
+
+// 用于 const ListTile（不能用 Theme.of）
+class _SquareIconStatic extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+
+  const _SquareIconStatic({required this.icon, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        color: color.withOpacity(0.10),
+        border: Border.all(color: color.withOpacity(0.16)),
+      ),
+      child: Icon(icon, size: 20, color: color),
+    );
+  }
+}
+
+class _PillChip extends StatelessWidget {
+  final String text;
+  final Color color;
+
+  const _PillChip({required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.18)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _GradientButton extends StatelessWidget {
+  final String text;
+  final VoidCallback onPressed;
+
+  const _GradientButton({required this.text, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primary,
+            scheme.primary.withOpacity(0.78),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withOpacity(0.20),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        onPressed: onPressed,
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.2,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GlowOrb extends StatelessWidget {
+  final double size;
+  final Color color;
+
+  const _GlowOrb({required this.size, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: RadialGradient(
+          colors: [
+            color,
+            color.withOpacity(0.0),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SoftDividerStatic extends StatelessWidget {
+  const _SoftDividerStatic();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(height: 1, color: Color(0x11000000));
   }
 }
