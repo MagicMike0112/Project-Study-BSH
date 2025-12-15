@@ -1,12 +1,14 @@
 // api/hc/oven/preheat.js
-import { applyCors, handleOptions } from "../_lib/cors.js";
+import { applyCors, handleOptions } from "../../_lib/cors.js";
 import {
   assertEnv,
   readJson,
   getBearer,
   getUserIdFromSupabase,
   hcFetchJson,
-} from "../_lib/hc.js";
+} from "../../_lib/hc.js";
+
+const DEFAULT_PROGRAM_KEY = "Cooking.Oven.Program.HeatingMode.PreHeating";
 
 export default async function handler(req, res) {
   applyCors(req, res);
@@ -22,33 +24,41 @@ export default async function handler(req, res) {
     const userId = await getUserIdFromSupabase(accessToken);
     const body = await readJson(req);
 
-    const haId = body.haId;
-    const temperatureC = Number(body.temperatureC);
+    let haId = body?.haId || null;
+    const temperatureC = Number(body?.temperatureC);
 
-    if (!haId) return res.status(400).json({ ok: false, error: "Missing haId" });
-    if (!Number.isFinite(temperatureC))
+    if (!Number.isFinite(temperatureC)) {
       return res.status(400).json({ ok: false, error: "Missing/invalid temperatureC" });
+    }
 
-    // 预热程序 key（你 programs/available 里已经看到它）
-    const programKey = body.programKey || "Cooking.Oven.Program.HeatingMode.PreHeating";
+    // 不传 haId：自动找第一个 oven（跑通最省事）
+    if (!haId) {
+      const listResp = await hcFetchJson(userId, "/api/homeappliances", { method: "GET" });
+      const list = listResp?.data?.homeappliances || listResp?.homeappliances || [];
+      const oven = list.find((x) => String(x?.type || "").toLowerCase() === "oven");
+      if (!oven?.haId) {
+        return res.status(400).json({ ok: false, error: "No oven found in homeappliances" });
+      }
+      haId = oven.haId;
+    }
 
-    // options：不同设备可能约束不同，但常见是 SetpointTemperature
+    const programKey = body?.programKey || DEFAULT_PROGRAM_KEY;
+
     const options = [
       {
         key: "Cooking.Oven.Option.SetpointTemperature",
         value: temperatureC,
-        unit: "°C",
+        unit: "C", // 比 "°C" 更稳
       },
     ];
 
-    // 可选：FastPreHeat / Duration（有些机型才支持）
-    if (typeof body.fastPreHeat === "boolean") {
+    if (typeof body?.fastPreHeat === "boolean") {
       options.push({
         key: "Cooking.Oven.Option.FastPreHeat",
         value: body.fastPreHeat,
       });
     }
-    if (Number.isFinite(Number(body.durationSeconds))) {
+    if (Number.isFinite(Number(body?.durationSeconds))) {
       options.push({
         key: "BSH.Common.Option.Duration",
         value: Number(body.durationSeconds),
@@ -56,21 +66,15 @@ export default async function handler(req, res) {
       });
     }
 
-    // 设置 active program（Home Connect 标准做法）
     const path = `/api/homeappliances/${encodeURIComponent(haId)}/programs/active`;
-
-    const payload = {
-      data: {
-        key: programKey,
-        options,
-      },
-    };
+    const payload = { data: { key: programKey, options } };
 
     const raw = await hcFetchJson(userId, path, { method: "PUT", body: payload });
 
     return res.status(200).json({ ok: true, haId, programKey, options, raw });
   } catch (e) {
     const msg = String(e?.message || e);
-    return res.status(500).json({ ok: false, error: msg });
+    const status = Number.isFinite(e?.status) ? e.status : 500;
+    return res.status(status).json({ ok: false, error: msg });
   }
 }
