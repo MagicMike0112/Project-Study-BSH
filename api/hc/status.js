@@ -1,6 +1,6 @@
 // api/hc/status.js
 import { applyCors, handleOptions } from "../_lib/cors.js";
-import { assertEnv, getBearer, getUserIdFromSupabase, getTokensForUser } from "../_lib/hc.js";
+import { assertEnv, getBearer, getUserIdFromSupabase, supabaseAdmin } from "../_lib/hc.js";
 
 export default async function handler(req, res) {
   applyCors(req, res);
@@ -14,19 +14,20 @@ export default async function handler(req, res) {
     if (!accessToken) return res.status(401).json({ ok: false, error: "Missing Bearer token" });
 
     const userId = await getUserIdFromSupabase(accessToken);
-    const row = await getTokensForUser(userId);
+
+    const admin = supabaseAdmin();
+    const { data, error } = await admin
+      .from("homeconnect_tokens")
+      .select("hc_host, scope, expires_at, updated_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ ok: false, error });
 
     return res.status(200).json({
       ok: true,
-      connected: !!row?.access_token,
-      info: row
-        ? {
-            hc_host: row.hc_host,
-            scope: row.scope,
-            expires_at: row.expires_at,
-            updated_at: row.updated_at,
-          }
-        : null,
+      connected: !!data,
+      info: data || null,
     });
   } catch (e) {
     return res.status(500).json({ ok: false, error: String(e?.message || e) });
