@@ -1,5 +1,4 @@
 // api/hc/connect.js
-import { applyCors, handleOptions } from "../_lib/cors.js";
 import {
   assertEnv,
   readJson,
@@ -10,6 +9,7 @@ import {
   HC_CLIENT_ID,
   HC_REDIRECT_URI,
 } from "../_lib/hc.js";
+import { applyCors, handleOptions } from "../_lib/cors.js";
 
 export default async function handler(req, res) {
   applyCors(req, res);
@@ -28,7 +28,7 @@ export default async function handler(req, res) {
     const scopes =
       Array.isArray(body.scopes) && body.scopes.length
         ? body.scopes
-        : ["IdentifyAppliance", "Oven"];
+        : ["IdentifyAppliance", "Oven"]; // 默认够你做预热演示
 
     const returnTo =
       body.returnTo ||
