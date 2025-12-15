@@ -65,6 +65,9 @@ class _AddFoodPageState extends State<AddFoodPage>
   // 扫描模式（一个入口，前端选择是小票还是冰箱）
   StorageScanMode _scanMode = StorageScanMode.receipt;
 
+  // ✅ 新增：用于显示“更好的等待页面”
+  StorageScanMode? _activeProcessingScanMode;
+
   @override
   void initState() {
     super.initState();
@@ -91,7 +94,6 @@ class _AddFoodPageState extends State<AddFoodPage>
       'pack',
       'box',
       'cup',
-      'cups',
     ];
     if (!allowedUnits.contains(_unit)) {
       _unit = 'pcs';
@@ -102,8 +104,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     _purchased = item?.purchasedDate ?? DateTime.now();
     _openDate = item?.openDate;
     _bestBefore = item?.bestBeforeDate;
-    _expiry =
-        item?.predictedExpiry ?? DateTime.now().add(const Duration(days: 7));
+    _expiry = item?.predictedExpiry ?? DateTime.now().add(const Duration(days: 7));
   }
 
   @override
@@ -315,115 +316,123 @@ class _AddFoodPageState extends State<AddFoodPage>
   // ========= 调用 /api/recipe 做“保质期预测” =========
 
   Future<void> _predictExpiryWithAi() async {
-  // ✅ 未登录：不能用 AI 保质期预测
-  final ok = await requireLogin(context);
-  if (!ok) return;
+    // ✅ 未登录：不能用 AI 保质期预测
+    final ok = await requireLogin(context);
+    if (!ok) return;
 
-  if (_name.trim().isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Please enter the food name first')),
-    );
-    return;
-  }
-
-  setState(() {
-    _isPredictingExpiry = true;
-    _predictionError = null;
-  });
-
-  try {
-    final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
-
-    final body = <String, dynamic>{
-      'name': _name.trim(),
-      'location': _location.name,
-      'purchasedDate': _purchased.toIso8601String(),
-      if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
-      if (_bestBefore != null) 'bestBeforeDate': _bestBefore!.toIso8601String(),
-    };
-
-    final resp = await http.post(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
-    );
-
-    if (resp.statusCode != 200) {
-      throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
-    }
-
-    final data = jsonDecode(resp.body) as Map<String, dynamic>;
-    final iso = data['predictedExpiry'] as String?;
-    if (iso == null) {
-      throw Exception('No predictedExpiry in response');
+    if (_name.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter the food name first')),
+      );
+      return;
     }
 
     setState(() {
-      _predictedExpiryFromAi = DateTime.parse(iso);
+      _isPredictingExpiry = true;
       _predictionError = null;
     });
-  } catch (e) {
-    setState(() {
-      _predictionError = e.toString();
-    });
-  } finally {
-    if (mounted) {
+
+    try {
+      final uri = Uri.parse('$kBackendBaseUrl/api/recipe');
+
+      final body = <String, dynamic>{
+        'name': _name.trim(),
+        'location': _location.name,
+        'purchasedDate': _purchased.toIso8601String(),
+        if (_openDate != null) 'openDate': _openDate!.toIso8601String(),
+        if (_bestBefore != null) 'bestBeforeDate': _bestBefore!.toIso8601String(),
+      };
+
+      final resp = await http.post(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode(body),
+      );
+
+      if (resp.statusCode != 200) {
+        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
+      }
+
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final iso = data['predictedExpiry'] as String?;
+      if (iso == null) {
+        throw Exception('No predictedExpiry in response');
+      }
+
       setState(() {
-        _isPredictingExpiry = false;
+        _predictedExpiryFromAi = DateTime.parse(iso);
+        _predictionError = null;
       });
+    } catch (e) {
+      setState(() {
+        _predictionError = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isPredictingExpiry = false;
+        });
+      }
     }
   }
-}
-
 
   // ========= Scan 统一入口：拍照 / 相册 + 调 /api/scan-inventory =========
 
   Future<void> _takePhoto() async {
-  // ✅ 未登录：不能用 Scan 上传
-  final ok = await requireLogin(context);
-  if (!ok) return;
+    // ✅ 未登录：不能用 Scan 上传
+    final ok = await requireLogin(context);
+    if (!ok) return;
 
-  final status = await Permission.camera.request();
-  if (!status.isGranted) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Camera permission needed")),
-      );
+    final status = await Permission.camera.request();
+    if (!status.isGranted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Camera permission needed")),
+        );
+      }
+      return;
     }
-    return;
+
+    final xfile = await _picker.pickImage(
+      source: ImageSource.camera,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 70,
+    );
+    if (xfile == null) return;
+
+    await _scanImageWithAi(xfile, mode: _scanMode);
   }
 
-  final xfile = await _picker.pickImage(source: ImageSource.camera,maxWidth: 1280,
-    maxHeight: 1280,
-    imageQuality: 70,);
-  if (xfile == null) return;
+  Future<void> _pickFromGallery() async {
+    // ✅ 未登录：不能用 Scan 上传
+    final ok = await requireLogin(context);
+    if (!ok) return;
 
-  await _scanImageWithAi(xfile, mode: _scanMode);
-}
+    final xfile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 70,
+    );
+    if (xfile == null) return;
 
-Future<void> _pickFromGallery() async {
-  // ✅ 未登录：不能用 Scan 上传
-  final ok = await requireLogin(context);
-  if (!ok) return;
-
-  final xfile = await _picker.pickImage(source: ImageSource.gallery,maxWidth: 1280,
-    maxHeight: 1280,
-    imageQuality: 70,);
-  if (xfile == null) return;
-
-  await _scanImageWithAi(xfile, mode: _scanMode);
-}
-
+    await _scanImageWithAi(xfile, mode: _scanMode);
+  }
 
   Future<void> _scanImageWithAi(
     XFile xfile, {
     required StorageScanMode mode,
   }) async {
     // ✅ 兜底：防止未来从别处绕过入口直接调用上传
-        final ok = await requireLogin(context);
-      if (!ok) return;
+    final ok = await requireLogin(context);
+    if (!ok) return;
 
-    setState(() => _isProcessing = true);
+    // ✅ 新增：记录当前扫描类型，用于显示更好的等待页面
+    setState(() {
+      _isProcessing = true;
+      _activeProcessingScanMode = mode;
+    });
 
     try {
       final bytes = await xfile.readAsBytes();
@@ -467,8 +476,9 @@ Future<void> _pickFromGallery() async {
         return;
       }
 
-      final now = DateTime.now();
-      final max = now.add(const Duration(days: 365));
+      // ✅ 修改逻辑：expiry 以小票 purchaseDate 为基准
+      // 允许 predictedExpiry 早于“当前日期”（比如小票是一周前）
+      final max = purchaseDate.add(const Duration(days: 365));
 
       // 解析为临时对象，给用户预览
       final scannedItems = itemsJson.map((e) {
@@ -502,10 +512,12 @@ Future<void> _pickFromGallery() async {
           } catch (_) {}
         }
 
-        // 前端再兜底一次：不能早于今天，也不要超过 365 天
+        // ✅ 核心改动：
+        // - 不再强制 predictedExpiry >= DateTime.now()
+        // - 只做“合理性”兜底：不能早于 purchaseDate、不能超过 purchaseDate+365
         if (predictedExpiry != null) {
-          if (predictedExpiry.isBefore(now)) {
-            predictedExpiry = now.add(const Duration(days: 3));
+          if (predictedExpiry.isBefore(purchaseDate)) {
+            predictedExpiry = purchaseDate; // 最小也应 >= purchaseDate
           } else if (predictedExpiry.isAfter(max)) {
             predictedExpiry = max;
           }
@@ -533,258 +545,251 @@ Future<void> _pickFromGallery() async {
         );
       }
     } finally {
-      if (mounted) setState(() => _isProcessing = false);
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _activeProcessingScanMode = null;
+        });
+      }
     }
   }
 
   // ========= Scan 预览（优化布局：只展示关键数据 + 不溢出） =========
 
   Future<void> _showScannedItemsPreview(List<_ScannedItem> items) async {
-  final selected = List<bool>.filled(items.length, true);
+    final selected = List<bool>.filled(items.length, true);
 
-  final bool? confirmed = await showModalBottomSheet<bool>(
-    context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.transparent,
-    builder: (ctx) {
-      final maxH = MediaQuery.of(ctx).size.height * 0.78;
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        final maxH = MediaQuery.of(ctx).size.height * 0.78;
 
-      return StatefulBuilder(
-        builder: (ctx, setStateSheet) {
-          final count = selected.where((v) => v).length;
+        return StatefulBuilder(
+          builder: (ctx, setStateSheet) {
+            final count = selected.where((v) => v).length;
 
-          return SafeArea(
-            child: Container(
-              height: maxH,
-              margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-              padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: const [
-                  BoxShadow(
-                    blurRadius: 18,
-                    spreadRadius: 2,
-                    color: Color(0x22000000),
-                    offset: Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  // 顶部标题
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Add scanned items',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.w800,
-                              ),
+            return SafeArea(
+              child: Container(
+                height: maxH,
+                margin: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: const [
+                    BoxShadow(
+                      blurRadius: 18,
+                      spreadRadius: 2,
+                      color: Color(0x22000000),
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    // 顶部标题
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Add scanned items',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(ctx).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        icon: const Icon(Icons.close),
-                      )
-                    ],
-                  ),
-                  Text(
-                    'Review and edit if needed. Uncheck items you don’t want to add.',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                          color: Colors.grey[700],
-                        ),
-                  ),
-                  const SizedBox(height: 12),
+                        IconButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          icon: const Icon(Icons.close),
+                        )
+                      ],
+                    ),
+                    Text(
+                      'Review and edit if needed. Uncheck items you don’t want to add.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                            color: Colors.grey[700],
+                          ),
+                    ),
+                    const SizedBox(height: 12),
 
-                  // 列表
-                  Expanded(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        children: List.generate(items.length, (i) {
-                          final it = items[i];
+                    // 列表
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: List.generate(items.length, (i) {
+                            final it = items[i];
 
-                          // ✅ 只保留关键数据：qty + unit + location
-                          final line1 =
-                              '${_formatQty(it.quantity)} ${it.unit} • ${_locationLabel(it.location)}';
+                            // ✅ 只保留关键数据：qty + unit + location
+                            final line1 =
+                                '${_formatQty(it.quantity)} ${it.unit} • ${_locationLabel(it.location)}';
 
-                          return InkWell(
-                            borderRadius: BorderRadius.circular(16),
-                            onTap: () =>
-                                setStateSheet(() => selected[i] = !selected[i]),
-                            child: Container(
-                              margin: const EdgeInsets.only(bottom: 10),
-                              padding:
-                                  const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF6F7F9),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: selected[i]
-                                      ? const Color(0xFF005F87)
-                                          .withOpacity(0.25)
-                                      : Colors.black.withOpacity(0.06),
+                            return InkWell(
+                              borderRadius: BorderRadius.circular(16),
+                              onTap: () => setStateSheet(() => selected[i] = !selected[i]),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 10),
+                                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF6F7F9),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: selected[i]
+                                        ? const Color(0xFF005F87).withOpacity(0.25)
+                                        : Colors.black.withOpacity(0.06),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 40,
+                                      height: 40,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: Icon(
+                                        _locationIcon(it.location),
+                                        color: const Color(0xFF005F87),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            it.name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            line1,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                              color: Colors.grey[850],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+
+                                    SizedBox(
+                                      width: 82,
+                                      child: Row(
+                                        mainAxisAlignment: MainAxisAlignment.end,
+                                        children: [
+                                          IconButton(
+                                            tooltip: 'Edit',
+                                            icon: const Icon(Icons.edit, size: 20),
+                                            onPressed: () async {
+                                              final updated =
+                                                  await _showEditScannedItemDialog(it);
+                                              if (updated != null) {
+                                                setStateSheet(() => items[i] = updated);
+                                              }
+                                            },
+                                          ),
+                                          Checkbox(
+                                            value: selected[i],
+                                            onChanged: (v) =>
+                                                setStateSheet(() => selected[i] = v ?? false),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: Colors.white,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(
-                                      _locationIcon(it.location),
-                                      color: const Color(0xFF005F87),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          it.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          line1,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Colors.grey[850],
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-
-                                        // ✅ 不要 Purchased 那行：删掉
-                                        // （这里不留 SizedBox，不占高度）
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-
-                                  SizedBox(
-                                    width: 82,
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.end,
-                                      children: [
-                                        IconButton(
-                                          tooltip: 'Edit',
-                                          icon: const Icon(Icons.edit, size: 20),
-                                          onPressed: () async {
-                                            final updated =
-                                                await _showEditScannedItemDialog(
-                                                    it);
-                                            if (updated != null) {
-                                              setStateSheet(
-                                                  () => items[i] = updated);
-                                            }
-                                          },
-                                        ),
-                                        Checkbox(
-                                          value: selected[i],
-                                          onChanged: (v) => setStateSheet(
-                                              () =>
-                                                  selected[i] = v ?? false),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }),
+                            );
+                          }),
+                        ),
                       ),
                     ),
-                  ),
 
-                  const SizedBox(height: 6),
+                    const SizedBox(height: 6),
 
-                  // 底部按钮条
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Cancel'),
+                    // 底部按钮条
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text('Cancel'),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: count == 0
-                              ? null
-                              : () => Navigator.pop(ctx, true),
-                          child: Text('Add ($count)'),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: count == 0 ? null : () => Navigator.pop(ctx, true),
+                            child: Text('Add ($count)'),
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    // 保存（expiry 也一起存）
+    for (int i = 0; i < items.length; i++) {
+      if (!selected[i]) continue;
+      final s = items[i];
+
+      DateTime expiry = s.predictedExpiry ??
+          (s.location == StorageLocation.freezer
+              ? s.purchaseDate.add(const Duration(days: 90))
+              : s.location == StorageLocation.pantry
+                  ? s.purchaseDate.add(const Duration(days: 30))
+                  : s.purchaseDate.add(const Duration(days: 7)));
+
+      // ✅ 仍然保留“不能早于 purchaseDate”的合法性检查（不影响你要的“可早于当前日期”）
+      if (expiry.isBefore(s.purchaseDate)) {
+        expiry = s.purchaseDate.add(const Duration(days: 3));
+      }
+
+      final foodItem = FoodItem(
+        id: const Uuid().v4(),
+        name: s.name,
+        location: s.location,
+        quantity: s.quantity,
+        unit: s.unit,
+        purchasedDate: s.purchaseDate,
+        openDate: null,
+        bestBeforeDate: null,
+        predictedExpiry: expiry,
+        category: s.category,
       );
-    },
-  );
-
-  if (confirmed != true) return;
-
-  // 保存（expiry 也一起存）
-  for (int i = 0; i < items.length; i++) {
-    if (!selected[i]) continue;
-    final s = items[i];
-
-    DateTime expiry = s.predictedExpiry ??
-        (s.location == StorageLocation.freezer
-            ? s.purchaseDate.add(const Duration(days: 90))
-            : s.location == StorageLocation.pantry
-                ? s.purchaseDate.add(const Duration(days: 30))
-                : s.purchaseDate.add(const Duration(days: 7)));
-
-    if (expiry.isBefore(s.purchaseDate)) {
-      expiry = s.purchaseDate.add(const Duration(days: 3));
+      await widget.repo.addItem(foodItem);
     }
 
-    final foodItem = FoodItem(
-      id: const Uuid().v4(),
-      name: s.name,
-      location: s.location,
-      quantity: s.quantity,
-      unit: s.unit,
-      purchasedDate: s.purchaseDate,
-      openDate: null,
-      bestBeforeDate: null,
-      predictedExpiry: expiry,
-      category: s.category,
-    );
-    await widget.repo.addItem(foodItem);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Added ${selected.where((v) => v).length} items ✅')),
+      );
+    }
   }
-
-  if (mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added ${selected.where((v) => v).length} items ✅')),
-    );
-  }
-}
 
   Future<_ScannedItem?> _showEditScannedItemDialog(_ScannedItem item) async {
     final nameCtrl = TextEditingController(text: item.name);
@@ -902,8 +907,7 @@ Future<void> _pickFromGallery() async {
                         final picked = await showDatePicker(
                           context: ctx,
                           initialDate: purchase,
-                          firstDate:
-                              DateTime.now().subtract(const Duration(days: 365)),
+                          firstDate: DateTime.now().subtract(const Duration(days: 365)),
                           lastDate: DateTime.now().add(const Duration(days: 365)),
                         );
                         if (picked != null) {
@@ -911,13 +915,11 @@ Future<void> _pickFromGallery() async {
                         }
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                         decoration: BoxDecoration(
                           color: Colors.black.withOpacity(0.03),
                           borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: Colors.black.withOpacity(0.06)),
+                          border: Border.all(color: Colors.black.withOpacity(0.06)),
                         ),
                         child: Row(
                           children: [
@@ -960,13 +962,12 @@ Future<void> _pickFromGallery() async {
                               }
                             },
                             child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 10),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                               decoration: BoxDecoration(
                                 color: Colors.black.withOpacity(0.03),
                                 borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                    color: Colors.black.withOpacity(0.06)),
+                                border: Border.all(color: Colors.black.withOpacity(0.06)),
                               ),
                               child: Row(
                                 children: [
@@ -977,8 +978,7 @@ Future<void> _pickFromGallery() async {
                                       overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                  const Icon(Icons.calendar_today_outlined,
-                                      size: 18),
+                                  const Icon(Icons.calendar_today_outlined, size: 18),
                                 ],
                               ),
                             ),
@@ -1008,13 +1008,9 @@ Future<void> _pickFromGallery() async {
                             Navigator.pop(
                               ctx,
                               _ScannedItem(
-                                name: nameCtrl.text.trim().isEmpty
-                                    ? item.name
-                                    : nameCtrl.text.trim(),
+                                name: nameCtrl.text.trim().isEmpty ? item.name : nameCtrl.text.trim(),
                                 quantity: qty,
-                                unit: unitCtrl.text.trim().isEmpty
-                                    ? item.unit
-                                    : unitCtrl.text.trim(),
+                                unit: unitCtrl.text.trim().isEmpty ? item.unit : unitCtrl.text.trim(),
                                 location: loc,
                                 category: item.category,
                                 purchaseDate: purchase,
@@ -1080,6 +1076,74 @@ Future<void> _pickFromGallery() async {
 
   // ========= UI =========
 
+  Widget _buildProcessingOverlay() {
+    final mode = _activeProcessingScanMode;
+
+    // ✅ “更好的等待页面”主要用于：扫描小票
+    final isReceipt = mode == StorageScanMode.receipt;
+
+    final title = isReceipt ? 'Scanning receipt…' : 'Processing…';
+    final subtitle = isReceipt
+        ? 'Uploading photo → reading items → estimating expiry\nPlease keep the app open.'
+        : 'Please wait…';
+
+    return Container(
+      color: Colors.white.withOpacity(0.92),
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: const [
+              BoxShadow(
+                blurRadius: 22,
+                spreadRadius: 2,
+                color: Color(0x22000000),
+                offset: Offset(0, 10),
+              )
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                isReceipt ? Icons.receipt_long : Icons.auto_awesome,
+                size: 42,
+                color: const Color(0xFF005F87),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                subtitle,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+              ),
+              const SizedBox(height: 14),
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              if (isReceipt) ...[
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: const LinearProgressIndicator(minHeight: 6),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1107,11 +1171,7 @@ Future<void> _pickFromGallery() async {
               _buildVoiceTab(),
             ],
           ),
-          if (_isProcessing)
-            Container(
-              color: Colors.black26,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
+          if (_isProcessing) _buildProcessingOverlay(),
         ],
       ),
     );
@@ -1391,8 +1451,7 @@ Future<void> _pickFromGallery() async {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.document_scanner_outlined,
-                size: 80, color: Colors.grey),
+            const Icon(Icons.document_scanner_outlined, size: 80, color: Colors.grey),
             const SizedBox(height: 16),
             const Text(
               "Scan to auto-fill inventory",

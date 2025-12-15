@@ -469,7 +469,7 @@ class _AccountPageState extends State<AccountPage> {
                         color: Color(0xFF0A6BA8),
                       ),
                       title: const Text(
-                        'Home Connect (BSH appliances)',
+                        'BSH Home Connect',
                         style: TextStyle(fontWeight: FontWeight.w800),
                       ),
                       subtitle: Text(

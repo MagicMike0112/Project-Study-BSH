@@ -3,11 +3,89 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import '../utils/auth_guard.dart'; // 👈 登录检查
+
+// ================== Recipe archive (local) ==================
+
+const String _kRecipeArchiveKey = 'recipe_archive_v1';
+
+class RecipeArchiveEntry {
+  final RecipeSuggestion recipe;
+  final DateTime addedAt;
+
+  RecipeArchiveEntry({
+    required this.recipe,
+    required this.addedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'recipe': recipe.toJson(),
+        'addedAt': addedAt.toIso8601String(),
+      };
+
+  static RecipeArchiveEntry fromJson(Map<String, dynamic> json) {
+    final r = (json['recipe'] as Map).cast<String, dynamic>();
+    return RecipeArchiveEntry(
+      recipe: RecipeSuggestion.fromJson(r),
+      addedAt: DateTime.tryParse(json['addedAt']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+class RecipeArchiveStore {
+  static Future<List<RecipeArchiveEntry>> load() async {
+    final sp = await SharedPreferences.getInstance();
+    final raw = sp.getString(_kRecipeArchiveKey);
+    if (raw == null || raw.trim().isEmpty) return [];
+    try {
+      final list = (jsonDecode(raw) as List<dynamic>)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .map(RecipeArchiveEntry.fromJson)
+          .toList();
+
+      // newest first
+      list.sort((a, b) => b.addedAt.compareTo(a.addedAt));
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<void> add(RecipeSuggestion recipe) async {
+    final sp = await SharedPreferences.getInstance();
+    final list = await load();
+
+    // de-dup by id: keep newest
+    final filtered = list.where((e) => e.recipe.id != recipe.id).toList();
+    filtered.insert(
+      0,
+      RecipeArchiveEntry(recipe: recipe, addedAt: DateTime.now()),
+    );
+
+    final encoded = jsonEncode(filtered.map((e) => e.toJson()).toList());
+    await sp.setString(_kRecipeArchiveKey, encoded);
+  }
+
+  static Future<void> remove(String recipeId) async {
+    final sp = await SharedPreferences.getInstance();
+    final list = await load();
+    final filtered = list.where((e) => e.recipe.id != recipeId).toList();
+    final encoded = jsonEncode(filtered.map((e) => e.toJson()).toList());
+    await sp.setString(_kRecipeArchiveKey, encoded);
+  }
+
+  static Future<void> clear() async {
+    final sp = await SharedPreferences.getInstance();
+    await sp.remove(_kRecipeArchiveKey);
+  }
+}
 
 // ================== 选食材页面 ==================
 
@@ -36,8 +114,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   final TextEditingController _extraController = TextEditingController();
 
   /// 特殊要求（菜系 / 饮食偏好）
-  final TextEditingController _specialRequestController =
-      TextEditingController();
+  final TextEditingController _specialRequestController = TextEditingController();
 
   /// 记录在本页面 / AI 菜谱里有没有对库存产生影响
   bool _hasChanged = false;
@@ -85,14 +162,21 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
     });
   }
 
+  Future<void> _openArchive() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RecipeArchivePage(repo: widget.repo),
+      ),
+    );
+  }
+
   Future<void> _confirm() async {
     // ✅ AI 菜谱前先要求登录
     final ok = await requireLogin(context);
     if (!ok) return;
 
-    final selected = _activeItems
-        .where((item) => _selectedIds.contains(item.id))
-        .toList();
+    final selected = _activeItems.where((item) => _selectedIds.contains(item.id)).toList();
 
     final requestText = _specialRequestController.text.trim();
     final special = requestText.isEmpty ? null : requestText;
@@ -164,6 +248,19 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
               ),
               const SizedBox(height: 12),
 
+              // ===== Archive entry (above inventory) =====
+              _SectionCard(
+                title: 'Archive',
+                subtitle: 'Saved recipes • sorted by time you added them.',
+                child: _EntryTile(
+                  icon: Icons.archive_outlined,
+                  title: 'Open archive',
+                  subtitle: 'View your saved recipe ideas',
+                  onTap: _openArchive,
+                ),
+              ),
+              const SizedBox(height: 12),
+
               // ===== From inventory =====
               _SectionCard(
                 title: 'From your inventory',
@@ -174,15 +271,13 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                     ? _EmptyHint(
                         icon: Icons.inventory_2_outlined,
                         title: 'No inventory items',
-                        subtitle:
-                            'Add items first, then generate recipes here.',
+                        subtitle: 'Add items first, then generate recipes here.',
                       )
                     : Column(
                         children: _activeItems.map((item) {
                           final selected = _selectedIds.contains(item.id);
                           final days = item.daysToExpiry;
-                          final leftText =
-                              days >= 999 ? 'no expiry set' : '$days days left';
+                          final leftText = days >= 999 ? 'no expiry set' : '$days days left';
 
                           final urgency = days >= 999
                               ? _Urgency.neutral
@@ -211,8 +306,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
               // ===== Extra ingredients =====
               _SectionCard(
                 title: 'Extra ingredients',
-                subtitle:
-                    'Not in inventory but you plan to use today (e.g. rice, noodles, sauces).',
+                subtitle: 'Not in inventory but you plan to use today (e.g. rice, noodles, sauces).',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -227,8 +321,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                       _EmptyHint(
                         icon: Icons.add_circle_outline,
                         title: 'No extra ingredients',
-                        subtitle:
-                            'Optional — add staples to help AI complete dishes.',
+                        subtitle: 'Optional — add staples to help AI complete dishes.',
                       )
                     else
                       Wrap(
@@ -247,10 +340,8 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                     _ToggleRow(
                       value: _addExtrasToInventory,
                       title: 'Also add new ingredients to inventory',
-                      subtitle:
-                          'Use this only for fresh ingredients you want to track (not condiments).',
-                      onChanged: (v) =>
-                          setState(() => _addExtrasToInventory = v),
+                      subtitle: 'Use this only for fresh ingredients you want to track (not condiments).',
+                      onChanged: (v) => setState(() => _addExtrasToInventory = v),
                     ),
                   ],
                 ),
@@ -260,8 +351,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
               // ===== Special request =====
               _SectionCard(
                 title: 'Special request',
-                subtitle:
-                    'Diet preferences or style, e.g. “vegan”, “no peanuts”, “Chinese style”, “high protein”…',
+                subtitle: 'Diet preferences or style, e.g. “vegan”, “no peanuts”, “Chinese style”, “high protein”…',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -307,6 +397,342 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                   : '$selectedCount selected • generate recipes',
               enabled: selectedCount > 0 || _extraIngredients.isNotEmpty,
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ================== Archive page ==================
+
+class RecipeArchivePage extends StatefulWidget {
+  final InventoryRepository repo;
+
+  const RecipeArchivePage({
+    super.key,
+    required this.repo,
+  });
+
+  @override
+  State<RecipeArchivePage> createState() => _RecipeArchivePageState();
+}
+
+class _RecipeArchivePageState extends State<RecipeArchivePage> {
+  List<RecipeArchiveEntry> _items = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  Future<void> _reload() async {
+    setState(() => _loading = true);
+    final list = await RecipeArchiveStore.load();
+    if (!mounted) return;
+    setState(() {
+      _items = list;
+      _loading = false;
+    });
+  }
+
+  Future<void> _removeOne(String id) async {
+    await RecipeArchiveStore.remove(id);
+    await _reload();
+  }
+
+  Future<void> _clearAll() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Clear archive?'),
+          content: const Text('This will remove all archived recipes from this device.'),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
+          ],
+        );
+      },
+    );
+    if (ok == true) {
+      await RecipeArchiveStore.clear();
+      await _reload();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = const Color(0xFFF6F8FA);
+
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        title: const Text('Archive'),
+        actions: [
+          if (_items.isNotEmpty)
+            IconButton(
+              onPressed: _clearAll,
+              icon: const Icon(Icons.delete_outline),
+            ),
+        ],
+      ),
+      body: SafeArea(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _items.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        child: Container(
+                          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(22),
+                            border: Border.all(color: Colors.black.withOpacity(0.06)),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x12000000),
+                                blurRadius: 16,
+                                offset: Offset(0, 10),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 56,
+                                height: 56,
+                                decoration: BoxDecoration(
+                                  color: Colors.black.withOpacity(0.05),
+                                  borderRadius: BorderRadius.circular(18),
+                                ),
+                                child: Icon(
+                                  Icons.archive_outlined,
+                                  size: 28,
+                                  color: Colors.grey[800],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              const Text(
+                                'No archived recipes',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                'Open a recipe and tap “Add to archive”.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  height: 1.25,
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                              SizedBox(
+                                width: double.infinity,
+                                height: 46,
+                                child: FilledButton(
+                                  onPressed: () => Navigator.pop(context),
+                                  child: const Text('Back'),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    itemCount: _items.length,
+                    itemBuilder: (context, index) {
+                      final e = _items[index];
+                      final r = e.recipe;
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _ArchiveRecipeCard(
+                          title: r.title,
+                          subtitle: '${r.timeLabel} • ${r.appliancesLabel}',
+                          addedAt: e.addedAt,
+                          onOpen: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => RecipeDetailPage(
+                                  recipe: r,
+                                  repo: widget.repo,
+                                  usedItems: const [],
+                                  onInventoryUpdated: null,
+                                ),
+                              ),
+                            );
+                          },
+                          onRemove: () => _removeOne(r.id),
+                        ),
+                      );
+                    },
+                  ),
+      ),
+    );
+  }
+}
+
+
+class _ArchiveRecipeCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final DateTime addedAt;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  const _ArchiveRecipeCard({
+    required this.title,
+    required this.subtitle,
+    required this.addedAt,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  String _fmt(DateTime t) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.black.withOpacity(0.05)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10000000),
+            blurRadius: 12,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.04),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.fastfood),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Added: ${_fmt(addedAt)}',
+                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: onRemove,
+              icon: const Icon(Icons.close),
+              tooltip: 'Remove',
+            ),
+            IconButton(
+              onPressed: onOpen,
+              icon: const Icon(Icons.chevron_right),
+              tooltip: 'Open',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ================== 通用 entry tile ==================
+
+class _EntryTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _EntryTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withOpacity(0.03),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: Theme.of(context).colorScheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Icon(Icons.chevron_right, color: Colors.grey[700]),
+            ],
           ),
         ),
       ),
@@ -655,9 +1081,7 @@ class _InventoryPickTile extends StatelessWidget {
                 width: 26,
                 height: 26,
                 decoration: BoxDecoration(
-                  color: selected
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.black.withOpacity(0.05),
+                  color: selected ? Theme.of(context).colorScheme.primary : Colors.black.withOpacity(0.05),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
@@ -920,10 +1344,21 @@ class _GradientPrimaryButton extends StatelessWidget {
 class RecipeSuggestion {
   final String id;
   final String title;
+
+  /// e.g. "20 min"
   final String timeLabel;
+
   final int expiringCount;
+
   final List<String> ingredients;
   final List<String> steps;
+
+  /// 🆕 厨具/家电（例如 ["Oven","Pan"]），用于 pills & HC actions
+  final List<String> appliances;
+
+  /// 🆕 可选：烤箱预热温度（摄氏度）
+  final int? ovenTempC;
+
   final String? description;
   final String? imageUrl;
 
@@ -934,9 +1369,88 @@ class RecipeSuggestion {
     required this.expiringCount,
     required this.ingredients,
     required this.steps,
+    this.appliances = const [],
+    this.ovenTempC,
     this.description,
     this.imageUrl,
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'timeLabel': timeLabel,
+        'expiringCount': expiringCount,
+        'ingredients': ingredients,
+        'steps': steps,
+        'appliances': appliances,
+        'ovenTempC': ovenTempC,
+        'description': description,
+        'imageUrl': imageUrl,
+      };
+
+  static RecipeSuggestion fromJson(Map<String, dynamic> m) {
+    final appliancesRaw = m['appliances'];
+    final appliances = (appliancesRaw is List)
+        ? appliancesRaw.map((x) => x.toString()).toList()
+        : const <String>[];
+
+    int? ovenTempC;
+    final v = m['ovenTempC'];
+    if (v is int) {
+      ovenTempC = v;
+    } else if (v is num) {
+      ovenTempC = v.round();
+    } else if (v != null) {
+      ovenTempC = int.tryParse(v.toString());
+    }
+
+    return RecipeSuggestion(
+      id: m['id']?.toString() ?? const Uuid().v4(),
+      title: (m['title'] ?? 'Untitled').toString(),
+      timeLabel: (m['timeLabel'] ?? '20 min').toString(),
+      expiringCount: (m['expiringCount'] ?? 0) is int
+          ? (m['expiringCount'] ?? 0) as int
+          : int.tryParse((m['expiringCount'] ?? '0').toString()) ?? 0,
+      ingredients: (m['ingredients'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
+      steps: (m['steps'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
+      appliances: appliances,
+      ovenTempC: ovenTempC,
+      description: m['description']?.toString(),
+      imageUrl: m['imageUrl']?.toString(),
+    );
+  }
+
+  bool get usesOven {
+    final a = appliances.map((x) => x.toLowerCase()).toList();
+    if (a.any((x) => x.contains('oven'))) return true;
+
+    // fallback: steps/title heuristic
+    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
+    return text.contains('oven') || text.contains('preheat') || text.contains('bake');
+  }
+
+  int? inferOvenTempFromText() {
+    // try appliances-provided first
+    if (ovenTempC != null) return ovenTempC;
+
+    // Find patterns like "200°C" / "200 C" / "200 degrees"
+    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
+    final reg = RegExp(r'(\d{2,3})\s*(°\s*c|°c|c\b|degrees?\s*c)');
+    final m = reg.firstMatch(text);
+    if (m != null) {
+      final v = int.tryParse(m.group(1) ?? '');
+      if (v != null && v >= 50 && v <= 300) return v;
+    }
+
+    // common fallback: "preheat the oven" without temp
+    return null;
+  }
+
+  String get appliancesLabel {
+    if (appliances.isEmpty) return 'No tools';
+    if (appliances.length == 1) return appliances.first;
+    return '${appliances.first} +${appliances.length - 1}';
+  }
 }
 
 // ================== Recipe Generator 页面 ==================
@@ -962,6 +1476,8 @@ class RecipeGeneratorSheet extends StatefulWidget {
 }
 
 class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
+  static const String _backendBase = 'https://project-study-bsh.vercel.app';
+
   int _state = 0; // 0 配置, 1 loading, 2 结果
   List<RecipeSuggestion> _recipes = [];
 
@@ -969,19 +1485,16 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
     setState(() => _state = 1);
 
     try {
-      final ingredients = widget.items
-          .map((i) => '${i.name} (${i.quantity} ${i.unit})')
-          .toList();
+      final ingredients = widget.items.map((i) => '${i.name} (${i.quantity} ${i.unit})').toList();
 
-      final uri = Uri.parse('https://project-study-bsh.vercel.app/api/recipe');
+      final uri = Uri.parse('$_backendBase/api/recipe');
 
       final body = <String, dynamic>{
         'ingredients': ingredients,
         'extraIngredients': widget.extraIngredients,
       };
 
-      if (widget.specialRequest != null &&
-          widget.specialRequest!.trim().isNotEmpty) {
+      if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) {
         body['specialRequest'] = widget.specialRequest!.trim();
       }
 
@@ -1018,17 +1531,44 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
 
       _recipes = rawList.map((e) {
         final m = (e as Map).cast<String, dynamic>();
+
+        final appliancesRaw = m['appliances'];
+        final appliances = (appliancesRaw is List)
+            ? appliancesRaw.map((x) => x.toString()).toList()
+            : const <String>[];
+
+        int? ovenTempC;
+        for (final k in [
+          'ovenTempC',
+          'oven_temp_c',
+          'ovenTemperatureC',
+          'oven_temperature',
+          'temperatureC',
+        ]) {
+          if (m[k] != null) {
+            final v = m[k];
+            if (v is int) {
+              ovenTempC = v;
+            } else if (v is num) {
+              ovenTempC = v.round();
+            } else {
+              ovenTempC = int.tryParse(v.toString());
+            }
+            break;
+          }
+        }
+
         return RecipeSuggestion(
           id: m['id']?.toString() ?? const Uuid().v4(),
           title: m['title'] ?? 'Untitled',
           timeLabel: m['timeLabel'] ?? '20 min',
-          expiringCount: (m['expiringCount'] ?? 0) as int,
-          ingredients: (m['ingredients'] as List<dynamic>? ?? const [])
-              .map((x) => x.toString())
-              .toList(),
-          steps: (m['steps'] as List<dynamic>? ?? const [])
-              .map((x) => x.toString())
-              .toList(),
+          expiringCount: (m['expiringCount'] ?? 0) is int
+              ? (m['expiringCount'] ?? 0) as int
+              : int.tryParse((m['expiringCount'] ?? '0').toString()) ?? 0,
+          ingredients: (m['ingredients'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
+          steps: (m['steps'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
+          appliances: appliances,
+          ovenTempC: ovenTempC,
           description: m['description']?.toString(),
         );
       }).toList();
@@ -1072,8 +1612,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
       children: [
         _SectionCard(
           title: 'AI recipe generator',
-          subtitle:
-              'We prioritize expiring items first, and use extra ingredients to complete dishes.',
+          subtitle: 'We prioritize expiring items first, and use extra ingredients to complete dishes.',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1092,8 +1631,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children:
-                      widget.items.map((i) => Chip(label: Text(i.name))).toList(),
+                  children: widget.items.map((i) => Chip(label: Text(i.name))).toList(),
                 ),
               const SizedBox(height: 14),
               if (widget.extraIngredients.isNotEmpty) ...[
@@ -1105,14 +1643,11 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 6,
-                  children: widget.extraIngredients
-                      .map((e) => Chip(label: Text(e)))
-                      .toList(),
+                  children: widget.extraIngredients.map((e) => Chip(label: Text(e))).toList(),
                 ),
                 const SizedBox(height: 14),
               ],
-              if (widget.specialRequest != null &&
-                  widget.specialRequest!.trim().isNotEmpty) ...[
+              if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) ...[
                 const Text(
                   'Special request',
                   style: TextStyle(fontWeight: FontWeight.w800),
@@ -1210,7 +1745,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
               crossAxisCount: 2,
               mainAxisSpacing: 12,
               crossAxisSpacing: 12,
-              childAspectRatio: 0.62, // ✅ 更高更稳：彻底避免 bottom overflow
+              childAspectRatio: 0.62,
             ),
             itemBuilder: (context, index) {
               final recipe = _recipes[index];
@@ -1249,6 +1784,14 @@ class _RecipeCard extends StatelessWidget {
     required this.onTap,
   });
 
+  IconData _toolIcon(String label) {
+    final t = label.toLowerCase();
+    if (t.contains('oven')) return Icons.local_fire_department;
+    if (t.contains('pan') || t.contains('wok')) return Icons.soup_kitchen;
+    if (t.contains('pot')) return Icons.outdoor_grill;
+    return Icons.handyman_outlined;
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -1264,10 +1807,8 @@ class _RecipeCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // 顶部图片区：Stack 叠加 expiring 角标（不占内容区高度）
             ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(18)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
               child: Stack(
                 children: [
                   Container(
@@ -1290,8 +1831,6 @@ class _RecipeCard extends StatelessWidget {
                 ],
               ),
             ),
-
-            // 内容区：标题(2行) + 时间(1个pill)，其余不显示（避免溢出）
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
               child: Column(
@@ -1308,11 +1847,23 @@ class _RecipeCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  _InfoPill(
-                    icon: Icons.schedule,
-                    text: recipe.timeLabel,
-                    bg: Colors.black.withOpacity(0.06),
-                    fg: Colors.grey.shade800,
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _InfoPill(
+                        icon: Icons.schedule,
+                        text: recipe.timeLabel,
+                        bg: Colors.black.withOpacity(0.06),
+                        fg: Colors.grey.shade800,
+                      ),
+                      _InfoPill(
+                        icon: _toolIcon(recipe.appliancesLabel),
+                        text: recipe.appliancesLabel,
+                        bg: Colors.black.withOpacity(0.06),
+                        fg: Colors.grey.shade800,
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -1412,7 +1963,7 @@ class _BadgePill extends StatelessWidget {
 
 // ================== 详情页（更清晰、更可读） ==================
 
-class RecipeDetailPage extends StatelessWidget {
+class RecipeDetailPage extends StatefulWidget {
   final RecipeSuggestion recipe;
   final InventoryRepository repo;
   final List<FoodItem> usedItems;
@@ -1427,13 +1978,194 @@ class RecipeDetailPage extends StatelessWidget {
   });
 
   @override
+  State<RecipeDetailPage> createState() => _RecipeDetailPageState();
+}
+
+class _RecipeDetailPageState extends State<RecipeDetailPage> {
+  static const String _backendBase = 'https://project-study-bsh.vercel.app';
+
+  bool _hcActionLoading = false;
+  bool _archiving = false;
+
+  Future<String?> _getSupabaseAccessTokenOrNull() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    return session?.accessToken;
+  }
+
+  Future<void> _addToArchive() async {
+    setState(() => _archiving = true);
+    try {
+      await RecipeArchiveStore.add(widget.recipe);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Added to archive ✅')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Add to archive failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _archiving = false);
+    }
+  }
+
+  Future<int?> _askTempC(BuildContext context, {int? initial}) async {
+    final c = TextEditingController(
+      text: initial != null ? initial.toString() : '',
+    );
+    final v = await showDialog<int?>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Oven temperature'),
+          content: TextField(
+            controller: c,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              hintText: 'e.g. 200',
+              suffixText: '°C',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, null),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final n = int.tryParse(c.text.trim());
+                Navigator.pop(ctx, n);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+    return v;
+  }
+
+  Future<String> _findOvenHaId(String token) async {
+    final r = await http.get(
+      Uri.parse('$_backendBase/api/hc/appliances'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/json',
+      },
+    );
+    final text = r.body;
+    if (r.statusCode != 200) {
+      throw Exception('Fetch appliances failed: ${r.statusCode} $text');
+    }
+    final obj = jsonDecode(text) as Map<String, dynamic>;
+    final list = (obj['homeappliances'] as List<dynamic>? ?? const [])
+        .map((e) => (e as Map).cast<String, dynamic>())
+        .toList();
+
+    Map<String, dynamic>? oven;
+    for (final a in list) {
+      final t = (a['type'] ?? '').toString().toLowerCase();
+      final name = (a['name'] ?? '').toString().toLowerCase();
+      if (t == 'oven' || name.contains('oven')) {
+        oven = a;
+        break;
+      }
+    }
+    if (oven == null) {
+      throw Exception('No oven appliance found in Home Connect.');
+    }
+    final haId = oven['haId']?.toString();
+    if (haId == null || haId.isEmpty) {
+      throw Exception('Oven haId missing.');
+    }
+    return haId;
+  }
+
+  Future<void> _preheatOven() async {
+    // ✅ HC action 前也要求登录
+    final ok = await requireLogin(context);
+    if (!ok) return;
+
+    final token = await _getSupabaseAccessTokenOrNull();
+    if (token == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Not logged in.')),
+      );
+      return;
+    }
+
+    int? temp = widget.recipe.ovenTempC ?? widget.recipe.inferOvenTempFromText();
+    if (temp == null) {
+      temp = await _askTempC(context);
+      if (temp == null) return;
+    }
+
+    setState(() => _hcActionLoading = true);
+    try {
+      final haId = await _findOvenHaId(token);
+
+      final r = await http.post(
+        Uri.parse('$_backendBase/api/hc/oven/preheat'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'haId': haId,
+          'temperatureC': temp,
+          'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating',
+        }),
+      );
+
+      if (r.statusCode != 200) {
+        throw Exception('Preheat failed: ${r.statusCode} ${r.body}');
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Oven preheating to $temp°C ✅')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Preheat oven failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _hcActionLoading = false);
+    }
+  }
+
+  IconData _toolIcon(String label) {
+    final t = label.toLowerCase();
+    if (t.contains('oven')) return Icons.local_fire_department;
+    if (t.contains('pan') || t.contains('wok')) return Icons.soup_kitchen;
+    if (t.contains('pot')) return Icons.outdoor_grill;
+    return Icons.handyman_outlined;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final bg = const Color(0xFFF6F8FA);
+    final recipe = widget.recipe;
 
     return Scaffold(
       backgroundColor: bg,
-      appBar: AppBar(title: Text(recipe.title)),
+      appBar: AppBar(
+        title: Text(recipe.title),
+        actions: [
+          IconButton(
+            onPressed: _archiving ? null : _addToArchive,
+            icon: _archiving
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5))
+                : const Icon(Icons.archive_outlined),
+            tooltip: 'Add to archive',
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
@@ -1462,7 +2194,6 @@ class RecipeDetailPage extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // ✅ 详情页可显示全信息（这里不会溢出）
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -1470,6 +2201,13 @@ class RecipeDetailPage extends StatelessWidget {
               _Pill(
                 icon: Icons.schedule,
                 text: recipe.timeLabel,
+                color: Colors.black.withOpacity(0.06),
+                textColor: Colors.grey[800]!,
+                iconColor: Colors.grey[700]!,
+              ),
+              _Pill(
+                icon: _toolIcon(recipe.appliancesLabel),
+                text: recipe.appliancesLabel,
                 color: Colors.black.withOpacity(0.06),
                 textColor: Colors.grey[800]!,
                 iconColor: Colors.grey[700]!,
@@ -1504,6 +2242,46 @@ class RecipeDetailPage extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
+
+          if (recipe.usesOven) ...[
+            _InfoCard(
+              title: 'Cook with this',
+              icon: Icons.electrical_services_outlined,
+              child: Column(
+                children: [
+                  _ActionTile(
+                    icon: Icons.local_fire_department,
+                    title: 'Preheat oven',
+                    subtitle: (recipe.ovenTempC ?? recipe.inferOvenTempFromText()) != null
+                        ? 'Preheat to ${(recipe.ovenTempC ?? recipe.inferOvenTempFromText())}°C'
+                        : 'Choose a temperature and start preheating',
+                    loading: _hcActionLoading,
+                    onTap: _hcActionLoading ? null : _preheatOven,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Requires Home Connect binding.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+
+          _InfoCard(
+            title: 'Archive',
+            icon: Icons.archive_outlined,
+            child: _ActionTile(
+              icon: Icons.archive_outlined,
+              title: 'Add to archive',
+              subtitle: 'Save this recipe for later',
+              loading: _archiving,
+              onTap: _archiving ? null : _addToArchive,
+            ),
+          ),
+
+          const SizedBox(height: 12),
 
           _InfoCard(
             title: 'Ingredients',
@@ -1584,54 +2362,127 @@ class RecipeDetailPage extends StatelessWidget {
 
           const SizedBox(height: 18),
 
-          _GradientPrimaryButton(
-            onTap: () async {
-              final shouldUpdate = await showDialog<bool>(
-                context: context,
-                builder: (ctx) {
-                  return AlertDialog(
-                    title: const Text('Update inventory?'),
-                    content: const Text(
-                      'Did you use up the selected ingredients from your fridge for this recipe?\n'
-                      'If yes, we will mark them as cooked and remove them from your inventory.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Skip'),
+          if (widget.usedItems.isNotEmpty)
+            _GradientPrimaryButton(
+              onTap: () async {
+                final shouldUpdate = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) {
+                    return AlertDialog(
+                      title: const Text('Update inventory?'),
+                      content: const Text(
+                        'Did you use up the selected ingredients from your fridge for this recipe?\n'
+                        'If yes, we will mark them as cooked and remove them from your inventory.',
                       ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: const Text('Update'),
-                      ),
-                    ],
-                  );
-                },
-              );
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, false),
+                          child: const Text('Skip'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(ctx, true),
+                          child: const Text('Update'),
+                        ),
+                      ],
+                    );
+                  },
+                );
 
-              if (shouldUpdate == true) {
-                for (final item in usedItems) {
-                  await repo.recordImpactForAction(item, 'eat');
-                  await repo.updateStatus(item.id, FoodStatus.consumed);
+                if (shouldUpdate == true) {
+                  for (final item in widget.usedItems) {
+                    await widget.repo.recordImpactForAction(item, 'eat');
+                    await widget.repo.updateStatus(item.id, FoodStatus.consumed);
+                  }
+                  widget.onInventoryUpdated?.call();
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Inventory updated ✅')),
+                    );
+                  }
                 }
-                onInventoryUpdated?.call();
+
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Inventory updated ✅')),
-                  );
+                  Navigator.pop(context);
                 }
-              }
-
-              if (context.mounted) {
-                Navigator.pop(context);
-              }
-            },
-            icon: Icons.check,
-            title: 'I cooked this',
-            subtitle: 'Mark selected items as used',
-            enabled: true,
-          ),
+              },
+              icon: Icons.check,
+              title: 'I cooked this',
+              subtitle: 'Mark selected items as used',
+              enabled: true,
+            ),
         ],
+      ),
+    );
+  }
+}
+
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+
+    return Material(
+      color: Colors.black.withOpacity(0.03),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: scheme.primary.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(icon, color: scheme.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              if (loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2.5),
+                )
+              else
+                Icon(Icons.chevron_right, color: Colors.grey[700]),
+            ],
+          ),
+        ),
       ),
     );
   }
