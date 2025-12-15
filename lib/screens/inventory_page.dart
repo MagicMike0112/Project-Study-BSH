@@ -39,8 +39,9 @@ class InventoryPage extends StatelessWidget {
       allItems.where((i) => i.location == StorageLocation.pantry).toList(),
     );
 
-    final hasAnyItems =
-        fridgeItems.isNotEmpty || freezerItems.isNotEmpty || pantryItems.isNotEmpty;
+    final hasAnyItems = fridgeItems.isNotEmpty ||
+        freezerItems.isNotEmpty ||
+        pantryItems.isNotEmpty;
 
     return Scaffold(
       backgroundColor: bg,
@@ -268,7 +269,7 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
-  // ================== ✅ 改这里：pill 挪到底部提示行 ==================
+  // ================== ✅ pill 挪到底部提示行 ==================
 
   Widget _buildItemCard(BuildContext context, FoodItem item) {
     final scheme = Theme.of(context).colorScheme;
@@ -279,11 +280,14 @@ class InventoryPage extends StatelessWidget {
 
     final locLabel = _locationLabel(item.location);
 
-    final daysLabel = days == 0
-        ? 'Expires today'
-        : days < 0
-            ? 'Expired ${-days}d ago'
-            : 'Expires in ${days}d';
+    // ✅ 关键改动：999d => Expiry not set
+    final daysLabel = days >= 999
+        ? 'Expiry not set'
+        : days == 0
+            ? 'Expires today'
+            : days < 0
+                ? 'Expired ${-days}d ago'
+                : 'Expires in ${days}d';
 
     final urgency = _urgency(days);
     final leading = _leadingIcon(item);
@@ -329,7 +333,7 @@ class InventoryPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ✅ title 行：只放名字，不放 pill（避免拥挤/溢出）
+                    // title
                     Text(
                       item.name,
                       maxLines: 1,
@@ -387,12 +391,10 @@ class InventoryPage extends StatelessWidget {
                     Container(height: 1, color: Colors.black.withOpacity(0.06)),
                     const SizedBox(height: 10),
 
-                    // ✅ 底部行：pill + 提示文字（防溢出）
-                   Align(
-                    alignment: Alignment.centerLeft,
-                    child: _expiryPill(context, urgency, daysLabel),
-                  ),
-
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: _expiryPill(context, urgency, daysLabel),
+                    ),
                   ],
                 ),
               ),
@@ -406,11 +408,11 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
-  // ✅ 新增：底部提示行（pill 放这里，右侧文本 ellipsis，不溢出）
+  // ✅ 这个目前没被用到，保留不动（你原来就是这样）
   Widget _HintRowWithExpiry({required Widget pill}) {
     return Row(
       children: [
-        Flexible(child: pill), // pill 本身也允许收缩
+        Flexible(child: pill),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -436,7 +438,6 @@ class InventoryPage extends StatelessWidget {
     return _Urgency.ok;
   }
 
-  // ✅ 让 pill 自己也能 ellipsis，避免极端情况下撑爆
   Widget _expiryPill(BuildContext context, _Urgency u, String text) {
     Color bg;
     Color fg;
@@ -576,7 +577,8 @@ class InventoryPage extends StatelessWidget {
                     Navigator.pop(ctx);
 
                     final oldItem = item;
-                    final usedQty = await _askQuantityDialog(context, item, 'eat');
+                    final usedQty =
+                        await _askQuantityDialog(context, item, 'eat');
                     if (usedQty == null || usedQty <= 0) return;
 
                     await repo.useItemWithImpact(item, 'eat', usedQty);
@@ -609,7 +611,8 @@ class InventoryPage extends StatelessWidget {
                     Navigator.pop(ctx);
 
                     final oldItem = item;
-                    final usedQty = await _askQuantityDialog(context, item, 'pet');
+                    final usedQty =
+                        await _askQuantityDialog(context, item, 'pet');
                     if (usedQty == null || usedQty <= 0) return;
 
                     await repo.useItemWithImpact(item, 'pet', usedQty);
@@ -620,7 +623,7 @@ class InventoryPage extends StatelessWidget {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
-                            'Shi & Yuan: Thanks for dinner! Please make sure the food is safe for guinea pigs. If you’re not sure, ask a vet first 🐹',
+                            'Please make sure the food is safe for your pet before feeding it.',
                           ),
                           duration: Duration(seconds: 4),
                         ),
@@ -769,10 +772,9 @@ class InventoryPage extends StatelessWidget {
             ),
             FilledButton(
               onPressed: () {
-                final raw = double.tryParse(
-                      controller.text.replaceAll(',', '.'),
-                    ) ??
-                    double.nan;
+                final raw =
+                    double.tryParse(controller.text.replaceAll(',', '.')) ??
+                        double.nan;
 
                 if (raw.isNaN) {
                   errorText = '请输入一个数字';
@@ -808,8 +810,7 @@ class InventoryPage extends StatelessWidget {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
           title: const Text('Delete item?'),
           content: Text('Remove "${item.name}" from your inventory?'),
           actions: [

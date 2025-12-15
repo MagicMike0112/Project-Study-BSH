@@ -48,6 +48,12 @@ class TodayPage extends StatelessWidget {
             ...expiring.map(
               (item) => FoodCard(
                 item: item,
+
+                // ✅ 关键改动：把 TodayPage 的图标逻辑切换为 InventoryPage 同款
+                // 前提：你的 FoodCard 支持传入 leading（或 icon/leadingIcon）之类的参数。
+                // 如果你当前 food_card.dart 没这个参数，我后面会给你一份 food_card 的改法（不动其它逻辑）。
+                leading: _buildInventoryStyleLeading(item),
+
                 onAction: (action) async {
                   // 0) 备份旧状态，方便 UNDO
                   final oldStatus = item.status;
@@ -73,7 +79,8 @@ class TodayPage extends StatelessWidget {
                     // ignore: use_build_context_synchronously
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('Please ensure the food is safe for your pet!'),
+                        content:
+                            Text('Please ensure the food is safe for your pet!'),
                         duration: Duration(seconds: 4),
                       ),
                     );
@@ -86,7 +93,8 @@ class TodayPage extends StatelessWidget {
                       ..showSnackBar(
                         SnackBar(
                           duration: const Duration(seconds: 3),
-                          content: Text(_undoLabelForAction(action, item.name)),
+                          content:
+                              Text(_undoLabelForAction(action, item.name)),
                           action: SnackBarAction(
                             label: 'UNDO',
                             onPressed: () async {
@@ -105,6 +113,34 @@ class TodayPage extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // ================== ✅ Inventory 样式的 leading（同 inventory_page.dart） ==================
+
+  Widget _buildInventoryStyleLeading(FoodItem item) {
+    final leading = _leadingIcon(item);
+
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: leading.color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: leading.color.withOpacity(0.16)),
+      ),
+      child: Icon(leading.icon, color: leading.color),
+    );
+  }
+
+  _Leading _leadingIcon(FoodItem item) {
+    switch (item.location) {
+      case StorageLocation.fridge:
+        return const _Leading(Icons.kitchen, Color(0xFF005F87));
+      case StorageLocation.freezer:
+        return const _Leading(Icons.ac_unit, Colors.indigo);
+      case StorageLocation.pantry:
+        return const _Leading(Icons.inventory_2_outlined, Colors.brown);
+    }
   }
 
   // ================== AI Flow 入口 ==================
@@ -153,7 +189,6 @@ class TodayPage extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // 背景装饰：两团柔和光斑（不影响内容）
           Positioned(
             right: -40,
             top: -60,
@@ -178,7 +213,6 @@ class TodayPage extends StatelessWidget {
               ),
             ),
           ),
-
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
             child: Row(
@@ -253,7 +287,6 @@ class TodayPage extends StatelessWidget {
                     ],
                   ),
                 ),
-                
               ],
             ),
           ),
@@ -457,4 +490,10 @@ class TodayPage extends StatelessWidget {
         return 'Updated "$name". Tap UNDO to revert.';
     }
   }
+}
+
+class _Leading {
+  final IconData icon;
+  final Color color;
+  const _Leading(this.icon, this.color);
 }

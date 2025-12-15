@@ -6,10 +6,15 @@ class FoodCard extends StatelessWidget {
   final FoodItem item;
   final Function(String action) onAction; // 回调函数
 
+  /// ✅ 可选：允许外部传入 leading（用于 TodayPage 与 InventoryPage 统一图标风格）
+  /// 不传则保持你原来的 CircleAvatar(timer) 逻辑不变。
+  final Widget? leading;
+
   const FoodCard({
     super.key,
     required this.item,
     required this.onAction,
+    this.leading,
   });
 
   String _locationLabel(StorageLocation loc) {
@@ -36,10 +41,12 @@ class FoodCard extends StatelessWidget {
     return Card(
       elevation: 0,
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: bgColor,
-          child: Icon(Icons.timer, color: iconColor),
-        ),
+        // ✅ 如果传了 leading 就用传入的；否则维持原样（不动其它逻辑）
+        leading: leading ??
+            CircleAvatar(
+              backgroundColor: bgColor,
+              child: Icon(Icons.timer, color: iconColor),
+            ),
         title: Text(
           item.name,
           style: const TextStyle(fontWeight: FontWeight.bold),
