@@ -9,11 +9,27 @@ import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
-import '../utils/auth_guard.dart'; // 👈 登录检查
+import '../utils/auth_guard.dart';
 
-// ================== Recipe archive (local) ==================
+// ================== Global UI Constants ==================
 
 const String _kRecipeArchiveKey = 'recipe_archive_v1';
+
+class AppStyle {
+  static const Color bg = Color(0xFFF4F6F9);
+  static const Color primary = Color(0xFF005F87);
+  static const Color cardColor = Colors.white;
+  static const double cardRadius = 20.0;
+  static const List<BoxShadow> softShadow = [
+    BoxShadow(
+      color: Color(0x08000000),
+      blurRadius: 12,
+      offset: Offset(0, 4),
+    ),
+  ];
+}
+
+// ================== Recipe Archive Logic ==================
 
 class RecipeArchiveEntry {
   final RecipeSuggestion recipe;
@@ -49,8 +65,6 @@ class RecipeArchiveStore {
           .map((e) => (e as Map).cast<String, dynamic>())
           .map(RecipeArchiveEntry.fromJson)
           .toList();
-
-      // newest first
       list.sort((a, b) => b.addedAt.compareTo(a.addedAt));
       return list;
     } catch (_) {
@@ -61,14 +75,11 @@ class RecipeArchiveStore {
   static Future<void> add(RecipeSuggestion recipe) async {
     final sp = await SharedPreferences.getInstance();
     final list = await load();
-
-    // de-dup by id: keep newest
     final filtered = list.where((e) => e.recipe.id != recipe.id).toList();
     filtered.insert(
       0,
       RecipeArchiveEntry(recipe: recipe, addedAt: DateTime.now()),
     );
-
     final encoded = jsonEncode(filtered.map((e) => e.toJson()).toList());
     await sp.setString(_kRecipeArchiveKey, encoded);
   }
@@ -87,12 +98,10 @@ class RecipeArchiveStore {
   }
 }
 
-// ================== 选食材页面 ==================
+// ================== Main Page: Select Ingredients ==================
 
 class SelectIngredientsPage extends StatefulWidget {
   final InventoryRepository repo;
-
-  /// 预选中的“快过期”食材
   final List<FoodItem> preselectedExpiring;
 
   const SelectIngredientsPage({
@@ -112,19 +121,13 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   bool _addExtrasToInventory = false;
 
   final TextEditingController _extraController = TextEditingController();
-
-  /// 特殊要求（菜系 / 饮食偏好）
   final TextEditingController _specialRequestController = TextEditingController();
-
-  /// 记录在本页面 / AI 菜谱里有没有对库存产生影响
   bool _hasChanged = false;
 
   @override
   void initState() {
     super.initState();
     _activeItems = widget.repo.getActiveItems();
-
-    // 预选中快要过期的
     for (final item in widget.preselectedExpiring) {
       _selectedIds.add(item.id);
     }
@@ -165,23 +168,18 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   Future<void> _openArchive() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => RecipeArchivePage(repo: widget.repo),
-      ),
+      MaterialPageRoute(builder: (_) => RecipeArchivePage(repo: widget.repo)),
     );
   }
 
   Future<void> _confirm() async {
-    // ✅ AI 菜谱前先要求登录
     final ok = await requireLogin(context);
     if (!ok) return;
 
     final selected = _activeItems.where((item) => _selectedIds.contains(item.id)).toList();
-
     final requestText = _specialRequestController.text.trim();
     final special = requestText.isEmpty ? null : requestText;
 
-    // 可选：把 extra 食材加进 inventory
     if (_addExtrasToInventory) {
       for (final extra in _extraIngredients) {
         await widget.repo.addItem(
@@ -203,7 +201,6 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
       });
     }
 
-    // 进入 AI 菜谱页面
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -225,7 +222,6 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFFF6F8FA);
     final selectedCount = _selectedIds.length;
 
     return WillPopScope(
@@ -234,58 +230,52 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
         return false;
       },
       child: Scaffold(
-        backgroundColor: bg,
+        backgroundColor: AppStyle.bg,
         appBar: AppBar(
-          title: const Text('Choose ingredients'),
+          title: const Text('Choose ingredients', style: TextStyle(fontWeight: FontWeight.w700)),
+          backgroundColor: AppStyle.bg,
+          elevation: 0,
+          centerTitle: false,
         ),
         body: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 92),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
             children: [
               _HeroCard(
                 selectedCount: selectedCount,
                 preselectedCount: widget.preselectedExpiring.length,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              // ===== Archive entry (above inventory) =====
               _SectionCard(
                 title: 'Archive',
-                subtitle: 'Saved recipes • sorted by time you added them.',
+                subtitle: 'View saved recipe ideas',
                 child: _EntryTile(
-                  icon: Icons.archive_outlined,
-                  title: 'Open archive',
-                  subtitle: 'View your saved recipe ideas',
+                  icon: Icons.bookmark_outline,
+                  title: 'Open Recipe Archive',
+                  subtitle: 'Your saved collection',
                   onTap: _openArchive,
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              // ===== From inventory =====
               _SectionCard(
-                title: 'From your inventory',
-                subtitle: _activeItems.isEmpty
-                    ? 'No items in your inventory yet.'
-                    : 'Tap an item to include it in today\'s AI recipes.',
+                title: 'From Inventory',
+                subtitle: _activeItems.isEmpty ? null : 'Select items to use in today\'s recipe.',
                 child: _activeItems.isEmpty
                     ? _EmptyHint(
                         icon: Icons.inventory_2_outlined,
-                        title: 'No inventory items',
+                        title: 'Inventory is empty',
                         subtitle: 'Add items first, then generate recipes here.',
                       )
                     : Column(
                         children: _activeItems.map((item) {
                           final selected = _selectedIds.contains(item.id);
                           final days = item.daysToExpiry;
-                          final leftText = days >= 999 ? 'no expiry set' : '$days days left';
-
+                          final leftText = days >= 999 ? 'No expiry' : '$days days left';
                           final urgency = days >= 999
                               ? _Urgency.neutral
-                              : days <= 1
-                                  ? _Urgency.high
-                                  : days <= 3
-                                      ? _Urgency.medium
-                                      : _Urgency.low;
+                              : days <= 1 ? _Urgency.high : days <= 3 ? _Urgency.medium : _Urgency.low;
 
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 10),
@@ -301,100 +291,90 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                         }).toList(),
                       ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              // ===== Extra ingredients =====
               _SectionCard(
-                title: 'Extra ingredients',
-                subtitle: 'Not in inventory but you plan to use today (e.g. rice, noodles, sauces).',
+                title: 'Additional Ingredients',
+                subtitle: 'Staples not in inventory (e.g. rice, oil, spices).',
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _InputRow(
                       controller: _extraController,
-                      hintText: 'Type an ingredient',
+                      hintText: 'Add an ingredient...',
                       onSubmit: _addExtraIngredient,
                       onAdd: _addExtraIngredient,
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
                     if (_extraIngredients.isEmpty)
                       _EmptyHint(
-                        icon: Icons.add_circle_outline,
-                        title: 'No extra ingredients',
-                        subtitle: 'Optional — add staples to help AI complete dishes.',
+                        icon: Icons.kitchen_outlined,
+                        title: 'No extras added',
+                        subtitle: 'Optional ingredients to help AI.',
                       )
                     else
                       Wrap(
                         spacing: 8,
-                        runSpacing: 6,
-                        children: _extraIngredients
-                            .map(
-                              (e) => Chip(
-                                label: Text(e),
-                                onDeleted: () => _removeExtraIngredient(e),
-                              ),
-                            )
-                            .toList(),
+                        runSpacing: 8,
+                        children: _extraIngredients.map((e) => Chip(
+                          label: Text(e, style: const TextStyle(fontSize: 13)),
+                          backgroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(color: Colors.grey.shade300),
+                          ),
+                          onDeleted: () => _removeExtraIngredient(e),
+                        )).toList(),
                       ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     _ToggleRow(
                       value: _addExtrasToInventory,
-                      title: 'Also add new ingredients to inventory',
-                      subtitle: 'Use this only for fresh ingredients you want to track (not condiments).',
+                      title: 'Add to Inventory',
+                      subtitle: 'Save these new items to your stock list.',
                       onChanged: (v) => setState(() => _addExtrasToInventory = v),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
-              // ===== Special request =====
               _SectionCard(
-                title: 'Special request',
-                subtitle: 'Diet preferences or style, e.g. “vegan”, “no peanuts”, “Chinese style”, “high protein”…',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    TextField(
-                      controller: _specialRequestController,
-                      minLines: 1,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Optional…',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        filled: true,
-                        fillColor: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'We will send this to AI together with your ingredients.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
+                title: 'Special Preferences',
+                subtitle: 'E.g., "Vegan", "High protein", "Spicy Sichuan style".',
+                child: TextField(
+                  controller: _specialRequestController,
+                  minLines: 1,
+                  maxLines: 3,
+                  style: const TextStyle(fontSize: 15),
+                  decoration: InputDecoration(
+                    hintText: 'Any specific requests?',
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    filled: true,
+                    fillColor: Colors.grey.shade100,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  ),
                 ),
               ),
             ],
           ),
         ),
-
-        // 底部主按钮（渐变 + 更有质感）
         bottomNavigationBar: SafeArea(
           top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5)),
+              ],
+            ),
             child: _GradientPrimaryButton(
               onTap: _confirm,
               icon: Icons.auto_awesome,
-              title: 'Use these ingredients',
-              subtitle: selectedCount == 0
-                  ? 'Select at least 1 item to get recipes'
-                  : '$selectedCount selected • generate recipes',
+              title: 'Generate Recipes',
+              subtitle: selectedCount == 0 ? 'Select items to start' : 'Using $selectedCount items',
               enabled: selectedCount > 0 || _extraIngredients.isNotEmpty,
             ),
           ),
@@ -404,15 +384,11 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   }
 }
 
-// ================== Archive page ==================
+// ================== Archive Page ==================
 
 class RecipeArchivePage extends StatefulWidget {
   final InventoryRepository repo;
-
-  const RecipeArchivePage({
-    super.key,
-    required this.repo,
-  });
+  const RecipeArchivePage({super.key, required this.repo});
 
   @override
   State<RecipeArchivePage> createState() => _RecipeArchivePageState();
@@ -430,6 +406,7 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
 
   Future<void> _reload() async {
     setState(() => _loading = true);
+    await Future.delayed(const Duration(milliseconds: 300));
     final list = await RecipeArchiveStore.load();
     if (!mounted) return;
     setState(() {
@@ -449,10 +426,11 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
       builder: (ctx) {
         return AlertDialog(
           title: const Text('Clear archive?'),
-          content: const Text('This will remove all archived recipes from this device.'),
+          content: const Text('This will remove all archived recipes.'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Clear All')),
           ],
         );
       },
@@ -465,104 +443,64 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFFF6F8FA);
-
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: AppStyle.bg,
       appBar: AppBar(
-        title: const Text('Archive'),
+        title: const Text('Saved Recipes', style: TextStyle(fontWeight: FontWeight.w700)),
+        backgroundColor: AppStyle.bg,
+        elevation: 0,
         actions: [
           if (_items.isNotEmpty)
-            IconButton(
-              onPressed: _clearAll,
-              icon: const Icon(Icons.delete_outline),
-            ),
+            IconButton(onPressed: _clearAll, icon: const Icon(Icons.delete_outline, color: Colors.grey)),
         ],
       ),
       body: SafeArea(
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: 5,
+                itemBuilder: (ctx, i) => const Padding(
+                  padding: EdgeInsets.only(bottom: 16),
+                  child: _ShimmerArchiveCard(),
+                ),
+              )
             : _items.isEmpty
                 ? Center(
                     child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 420),
-                        child: Container(
-                          padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(color: Colors.black.withOpacity(0.06)),
-                            boxShadow: const [
-                              BoxShadow(
-                                color: Color(0x12000000),
-                                blurRadius: 16,
-                                offset: Offset(0, 10),
-                              ),
-                            ],
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: AppStyle.softShadow,
+                            ),
+                            child: Icon(Icons.bookmark_border, size: 48, color: Colors.grey.shade300),
                           ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Container(
-                                width: 56,
-                                height: 56,
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.05),
-                                  borderRadius: BorderRadius.circular(18),
-                                ),
-                                child: Icon(
-                                  Icons.archive_outlined,
-                                  size: 28,
-                                  color: Colors.grey[800],
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              const Text(
-                                'No archived recipes',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 16,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                'Open a recipe and tap “Add to archive”.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Colors.grey[700],
-                                  height: 1.25,
-                                ),
-                              ),
-                              const SizedBox(height: 14),
-                              SizedBox(
-                                width: double.infinity,
-                                height: 46,
-                                child: FilledButton(
-                                  onPressed: () => Navigator.pop(context),
-                                  child: const Text('Back'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
+                          const SizedBox(height: 24),
+                          const Text('No recipes saved yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87)),
+                          const SizedBox(height: 8),
+                          Text('Generate recipes and tap the archive icon to save them here.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600, height: 1.5)),
+                          const SizedBox(height: 32),
+                          FilledButton.tonal(onPressed: () => Navigator.pop(context), child: const Text('Go Back')),
+                        ],
                       ),
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                    padding: const EdgeInsets.all(16),
                     itemCount: _items.length,
                     itemBuilder: (context, index) {
                       final e = _items[index];
                       final r = e.recipe;
-
                       return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.only(bottom: 16),
                         child: _ArchiveRecipeCard(
-                          title: r.title,
-                          subtitle: '${r.timeLabel} • ${r.appliancesLabel}',
+                          // ✅ 修正点：之前这里传了 title/subtitle，现在直接传 recipe 对象
+                          recipe: r,
                           addedAt: e.addedAt,
                           onOpen: () {
                             Navigator.push(
@@ -587,873 +525,7 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
   }
 }
 
-
-class _ArchiveRecipeCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final DateTime addedAt;
-  final VoidCallback onOpen;
-  final VoidCallback onRemove;
-
-  const _ArchiveRecipeCard({
-    required this.title,
-    required this.subtitle,
-    required this.addedAt,
-    required this.onOpen,
-    required this.onRemove,
-  });
-
-  String _fmt(DateTime t) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${t.year}-${two(t.month)}-${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.05)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.04),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.fastfood),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w900),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Added: ${_fmt(addedAt)}',
-                    style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton(
-              onPressed: onRemove,
-              icon: const Icon(Icons.close),
-              tooltip: 'Remove',
-            ),
-            IconButton(
-              onPressed: onOpen,
-              icon: const Icon(Icons.chevron_right),
-              tooltip: 'Open',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ================== 通用 entry tile ==================
-
-class _EntryTile extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  const _EntryTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.black.withOpacity(0.03),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: Theme.of(context).colorScheme.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Icon(Icons.chevron_right, color: Colors.grey[700]),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ================== 通用 Section 卡片 ==================
-
-class _SectionCard extends StatelessWidget {
-  final String title;
-  final String? subtitle;
-  final Widget child;
-
-  const _SectionCard({
-    required this.title,
-    this.subtitle,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.05)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 14,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (subtitle != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                subtitle!,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.grey[600],
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ================== 顶部 Hero 卡 ==================
-
-class _HeroCard extends StatelessWidget {
-  final int selectedCount;
-  final int preselectedCount;
-
-  const _HeroCard({
-    required this.selectedCount,
-    required this.preselectedCount,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 140,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
-        gradient: const LinearGradient(
-          colors: [Color(0xFF003B66), Color(0xFF0A6BA8)],
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x22000000),
-            blurRadius: 16,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -40,
-              top: -30,
-              child: _GlassCircle(size: 150),
-            ),
-            Positioned(
-              left: 120,
-              bottom: -60,
-              child: _GlassCircle(size: 180),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.14),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withOpacity(0.18),
-                      ),
-                    ),
-                    child: const Icon(
-                      Icons.restaurant_menu,
-                      color: Colors.white,
-                      size: 34,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'AI will prioritize expiring items',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.75),
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(
-                              '$selectedCount',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 44,
-                                height: 1.0,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            const Padding(
-                              padding: EdgeInsets.only(bottom: 6),
-                              child: Text(
-                                'selected',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          preselectedCount == 0
-                              ? 'Select items to generate recipes.'
-                              : '$preselectedCount items were pre-selected.',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.75),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GlassCircle extends StatelessWidget {
-  final double size;
-  const _GlassCircle({required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.08),
-        border: Border.all(color: Colors.white.withOpacity(0.10)),
-      ),
-    );
-  }
-}
-
-// ================== Inventory pick tile（更清晰） ==================
-
-enum _Urgency { high, medium, low, neutral }
-
-class _InventoryPickTile extends StatelessWidget {
-  final String name;
-  final String qtyText;
-  final String expiryText;
-  final _Urgency urgency;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _InventoryPickTile({
-    required this.name,
-    required this.qtyText,
-    required this.expiryText,
-    required this.urgency,
-    required this.selected,
-    required this.onTap,
-  });
-
-  Color _badgeBg() {
-    switch (urgency) {
-      case _Urgency.high:
-        return Colors.red.withOpacity(0.10);
-      case _Urgency.medium:
-        return Colors.orange.withOpacity(0.12);
-      case _Urgency.low:
-        return Colors.green.withOpacity(0.12);
-      case _Urgency.neutral:
-        return Colors.black.withOpacity(0.06);
-    }
-  }
-
-  Color _badgeFg() {
-    switch (urgency) {
-      case _Urgency.high:
-        return Colors.redAccent;
-      case _Urgency.medium:
-        return Colors.deepOrange;
-      case _Urgency.low:
-        return Colors.green.shade700;
-      case _Urgency.neutral:
-        return Colors.grey.shade700;
-    }
-  }
-
-  IconData _leadIcon() {
-    switch (urgency) {
-      case _Urgency.high:
-        return Icons.warning_amber_rounded;
-      case _Urgency.medium:
-        return Icons.schedule;
-      case _Urgency.low:
-        return Icons.eco;
-      case _Urgency.neutral:
-        return Icons.inventory_2_outlined;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final border = selected
-        ? Border.all(
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.35),
-            width: 1.2,
-          )
-        : Border.all(color: Colors.black.withOpacity(0.06));
-
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            border: border,
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0D000000),
-                blurRadius: 10,
-                offset: Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: _badgeBg(),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  _leadIcon(),
-                  color: _badgeFg(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '$qtyText • $expiryText',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[700],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: selected ? Theme.of(context).colorScheme.primary : Colors.black.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  selected ? Icons.check : Icons.add,
-                  size: 18,
-                  color: selected ? Colors.white : Colors.grey[700],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ================== Extra input row ==================
-
-class _InputRow extends StatelessWidget {
-  final TextEditingController controller;
-  final String hintText;
-  final VoidCallback onAdd;
-  final VoidCallback onSubmit;
-
-  const _InputRow({
-    required this.controller,
-    required this.hintText,
-    required this.onAdd,
-    required this.onSubmit,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: hintText,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              filled: true,
-              fillColor: Colors.white,
-            ),
-            onSubmitted: (_) => onSubmit(),
-          ),
-        ),
-        const SizedBox(width: 10),
-        SizedBox(
-          height: 48,
-          width: 48,
-          child: FilledButton(
-            style: FilledButton.styleFrom(
-              padding: EdgeInsets.zero,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            onPressed: onAdd,
-            child: const Icon(Icons.add),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ================== Toggle row ==================
-
-class _ToggleRow extends StatelessWidget {
-  final bool value;
-  final String title;
-  final String subtitle;
-  final ValueChanged<bool> onChanged;
-
-  const _ToggleRow({
-    required this.value,
-    required this.title,
-    required this.subtitle,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Switch(
-            value: value,
-            onChanged: onChanged,
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ================== Empty hint ==================
-
-class _EmptyHint extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _EmptyHint({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.03),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.grey[700]),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w800)),
-                const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(color: Colors.grey[700])),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ================== Gradient primary button ==================
-
-class _GradientPrimaryButton extends StatelessWidget {
-  final VoidCallback onTap;
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool enabled;
-
-  const _GradientPrimaryButton({
-    required this.onTap,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.enabled,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final gradient = const LinearGradient(
-      colors: [Color(0xFF003B66), Color(0xFF0A6BA8)],
-    );
-
-    return Opacity(
-      opacity: enabled ? 1 : 0.55,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(20),
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(20),
-          child: Ink(
-            height: 58,
-            decoration: BoxDecoration(
-              gradient: gradient,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x22000000),
-                  blurRadius: 14,
-                  offset: Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white.withOpacity(0.18)),
-                    ),
-                    child: Icon(icon, color: Colors.white),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 15,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.75),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ================== Recipe 数据模型 ==================
-
-class RecipeSuggestion {
-  final String id;
-  final String title;
-
-  /// e.g. "20 min"
-  final String timeLabel;
-
-  final int expiringCount;
-
-  final List<String> ingredients;
-  final List<String> steps;
-
-  /// 🆕 厨具/家电（例如 ["Oven","Pan"]），用于 pills & HC actions
-  final List<String> appliances;
-
-  /// 🆕 可选：烤箱预热温度（摄氏度）
-  final int? ovenTempC;
-
-  final String? description;
-  final String? imageUrl;
-
-  RecipeSuggestion({
-    required this.id,
-    required this.title,
-    required this.timeLabel,
-    required this.expiringCount,
-    required this.ingredients,
-    required this.steps,
-    this.appliances = const [],
-    this.ovenTempC,
-    this.description,
-    this.imageUrl,
-  });
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'timeLabel': timeLabel,
-        'expiringCount': expiringCount,
-        'ingredients': ingredients,
-        'steps': steps,
-        'appliances': appliances,
-        'ovenTempC': ovenTempC,
-        'description': description,
-        'imageUrl': imageUrl,
-      };
-
-  static RecipeSuggestion fromJson(Map<String, dynamic> m) {
-    final appliancesRaw = m['appliances'];
-    final appliances = (appliancesRaw is List)
-        ? appliancesRaw.map((x) => x.toString()).toList()
-        : const <String>[];
-
-    int? ovenTempC;
-    final v = m['ovenTempC'];
-    if (v is int) {
-      ovenTempC = v;
-    } else if (v is num) {
-      ovenTempC = v.round();
-    } else if (v != null) {
-      ovenTempC = int.tryParse(v.toString());
-    }
-
-    return RecipeSuggestion(
-      id: m['id']?.toString() ?? const Uuid().v4(),
-      title: (m['title'] ?? 'Untitled').toString(),
-      timeLabel: (m['timeLabel'] ?? '20 min').toString(),
-      expiringCount: (m['expiringCount'] ?? 0) is int
-          ? (m['expiringCount'] ?? 0) as int
-          : int.tryParse((m['expiringCount'] ?? '0').toString()) ?? 0,
-      ingredients: (m['ingredients'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
-      steps: (m['steps'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
-      appliances: appliances,
-      ovenTempC: ovenTempC,
-      description: m['description']?.toString(),
-      imageUrl: m['imageUrl']?.toString(),
-    );
-  }
-
-  bool get usesOven {
-    final a = appliances.map((x) => x.toLowerCase()).toList();
-    if (a.any((x) => x.contains('oven'))) return true;
-
-    // fallback: steps/title heuristic
-    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
-    return text.contains('oven') || text.contains('preheat') || text.contains('bake');
-  }
-
-  int? inferOvenTempFromText() {
-    // try appliances-provided first
-    if (ovenTempC != null) return ovenTempC;
-
-    // Find patterns like "200°C" / "200 C" / "200 degrees"
-    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
-    final reg = RegExp(r'(\d{2,3})\s*(°\s*c|°c|c\b|degrees?\s*c)');
-    final m = reg.firstMatch(text);
-    if (m != null) {
-      final v = int.tryParse(m.group(1) ?? '');
-      if (v != null && v >= 50 && v <= 300) return v;
-    }
-
-    // common fallback: "preheat the oven" without temp
-    return null;
-  }
-
-  String get appliancesLabel {
-    if (appliances.isEmpty) return 'No tools';
-    if (appliances.length == 1) return appliances.first;
-    return '${appliances.first} +${appliances.length - 1}';
-  }
-}
-
-// ================== Recipe Generator 页面 ==================
+// ================== Generator Page ==================
 
 class RecipeGeneratorSheet extends StatefulWidget {
   final InventoryRepository repo;
@@ -1462,14 +534,7 @@ class RecipeGeneratorSheet extends StatefulWidget {
   final String? specialRequest;
   final VoidCallback? onInventoryUpdated;
 
-  const RecipeGeneratorSheet({
-    super.key,
-    required this.repo,
-    required this.items,
-    required this.extraIngredients,
-    this.specialRequest,
-    this.onInventoryUpdated,
-  });
+  const RecipeGeneratorSheet({super.key, required this.repo, required this.items, required this.extraIngredients, this.specialRequest, this.onInventoryUpdated});
 
   @override
   State<RecipeGeneratorSheet> createState() => _RecipeGeneratorSheetState();
@@ -1477,100 +542,26 @@ class RecipeGeneratorSheet extends StatefulWidget {
 
 class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   static const String _backendBase = 'https://project-study-bsh.vercel.app';
-
-  int _state = 0; // 0 配置, 1 loading, 2 结果
+  int _state = 0;
   List<RecipeSuggestion> _recipes = [];
 
   Future<void> _generate() async {
     setState(() => _state = 1);
-
     try {
       final ingredients = widget.items.map((i) => '${i.name} (${i.quantity} ${i.unit})').toList();
-
       final uri = Uri.parse('$_backendBase/api/recipe');
+      final body = <String, dynamic>{'ingredients': ingredients, 'extraIngredients': widget.extraIngredients};
+      if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) body['specialRequest'] = widget.specialRequest!.trim();
 
-      final body = <String, dynamic>{
-        'ingredients': ingredients,
-        'extraIngredients': widget.extraIngredients,
-      };
-
-      if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) {
-        body['specialRequest'] = widget.specialRequest!.trim();
-      }
-
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
-      );
-
-      if (resp.statusCode != 200) {
-        throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
-      }
+      final resp = await http.post(uri, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body));
+      if (resp.statusCode != 200) throw Exception('Server error: ${resp.statusCode} - ${resp.body}');
 
       final root = jsonDecode(resp.body);
-
-      List<dynamic> rawList;
-
-      if (root is Map<String, dynamic>) {
-        final inner = root['recipes'];
-        if (inner is List) {
-          rawList = inner;
-        } else if (inner is Map) {
-          rawList = [inner];
-        } else if (inner == null) {
-          rawList = const [];
-        } else {
-          throw Exception('Unexpected "recipes" type: ${inner.runtimeType}');
-        }
-      } else if (root is List) {
-        rawList = root;
-      } else {
-        throw Exception('Unexpected JSON root type: ${root.runtimeType}');
-      }
+      List<dynamic> rawList = (root is Map<String, dynamic> && root['recipes'] is List) ? root['recipes'] : (root is List ? root : []);
 
       _recipes = rawList.map((e) {
         final m = (e as Map).cast<String, dynamic>();
-
-        final appliancesRaw = m['appliances'];
-        final appliances = (appliancesRaw is List)
-            ? appliancesRaw.map((x) => x.toString()).toList()
-            : const <String>[];
-
-        int? ovenTempC;
-        for (final k in [
-          'ovenTempC',
-          'oven_temp_c',
-          'ovenTemperatureC',
-          'oven_temperature',
-          'temperatureC',
-        ]) {
-          if (m[k] != null) {
-            final v = m[k];
-            if (v is int) {
-              ovenTempC = v;
-            } else if (v is num) {
-              ovenTempC = v.round();
-            } else {
-              ovenTempC = int.tryParse(v.toString());
-            }
-            break;
-          }
-        }
-
-        return RecipeSuggestion(
-          id: m['id']?.toString() ?? const Uuid().v4(),
-          title: m['title'] ?? 'Untitled',
-          timeLabel: m['timeLabel'] ?? '20 min',
-          expiringCount: (m['expiringCount'] ?? 0) is int
-              ? (m['expiringCount'] ?? 0) as int
-              : int.tryParse((m['expiringCount'] ?? '0').toString()) ?? 0,
-          ingredients: (m['ingredients'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
-          steps: (m['steps'] as List<dynamic>? ?? const []).map((x) => x.toString()).toList(),
-          appliances: appliances,
-          ovenTempC: ovenTempC,
-          description: m['description']?.toString(),
-        );
+        return RecipeSuggestion.fromJson(m);
       }).toList();
 
       if (!mounted) return;
@@ -1578,298 +569,285 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _state = 0);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('AI recipe failed: $e')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('AI recipe failed: $e')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFFF6F8FA);
-
     return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        title: const Text('AI recipes'),
-      ),
+      backgroundColor: AppStyle.bg,
+      appBar: AppBar(backgroundColor: AppStyle.bg, title: const Text('AI Chef', style: TextStyle(fontWeight: FontWeight.w700)), centerTitle: false, elevation: 0),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: _state == 0
-              ? _buildConfig()
-              : _state == 1
-                  ? _buildLoading()
-                  : _buildResult(),
+          child: _state == 0 ? _buildConfig() : _state == 1 ? _buildLoading() : _buildResult(),
         ),
       ),
     );
   }
 
   Widget _buildConfig() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionCard(
-          title: 'AI recipe generator',
-          subtitle: 'We prioritize expiring items first, and use extra ingredients to complete dishes.',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Selected items',
-                style: TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 10),
-              if (widget.items.isEmpty)
-                _EmptyHint(
-                  icon: Icons.info_outline,
-                  title: 'Nothing selected',
-                  subtitle: 'Go back and select at least one item.',
-                )
-              else
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: widget.items.map((i) => Chip(label: Text(i.name))).toList(),
-                ),
-              const SizedBox(height: 14),
-              if (widget.extraIngredients.isNotEmpty) ...[
-                const Text(
-                  'Extra ingredients',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  children: widget.extraIngredients.map((e) => Chip(label: Text(e))).toList(),
-                ),
-                const SizedBox(height: 14),
-              ],
-              if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) ...[
-                const Text(
-                  'Special request',
-                  style: TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.03),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Text(
-                    widget.specialRequest!,
-                    style: TextStyle(color: Colors.grey[800]),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        const Spacer(),
-        _GradientPrimaryButton(
-          onTap: _generate,
-          icon: Icons.auto_awesome,
-          title: 'Generate recipes',
-          subtitle: 'AI will use your selection',
-          enabled: true,
-        ),
-      ],
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _SectionCard(title: 'Review Selection', subtitle: 'AI will prioritize these expiring items.', child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (widget.items.isEmpty) _EmptyHint(icon: Icons.info_outline, title: 'No Items', subtitle: 'Please select ingredients first.')
+        else Wrap(spacing: 8, runSpacing: 8, children: widget.items.map((i) => Chip(label: Text(i.name), backgroundColor: Colors.white, side: BorderSide(color: Colors.grey.shade300))).toList()),
+        if (widget.extraIngredients.isNotEmpty) ...[const SizedBox(height: 16), const Text('Extras', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), const SizedBox(height: 8), Wrap(spacing: 8, runSpacing: 8, children: widget.extraIngredients.map((e) => Chip(label: Text(e), backgroundColor: Colors.white, side: BorderSide(color: Colors.grey.shade300))).toList())],
+        if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) ...[const SizedBox(height: 16), Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.amber.withOpacity(0.3))), child: Row(children: [const Icon(Icons.star, color: Colors.orange, size: 18), const SizedBox(width: 8), Expanded(child: Text('Note: ${widget.specialRequest!}', style: TextStyle(color: Colors.brown.shade700)))],),)],
+      ])),
+      const Spacer(),
+      _GradientPrimaryButton(onTap: _generate, icon: Icons.auto_awesome, title: 'Start Generating', subtitle: 'Create personalized recipes', enabled: true),
+    ]);
   }
 
   Widget _buildLoading() {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.black.withOpacity(0.05)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x12000000),
-              blurRadius: 14,
-              offset: Offset(0, 8),
-            )
-          ],
-        ),
-        child: const Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 28,
-              height: 28,
-              child: CircularProgressIndicator(strokeWidth: 3),
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Generating recipes…',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-            SizedBox(height: 6),
-            Text(
-              'Optimizing for expiring items',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _ShimmerBlock(width: 180, height: 24),
+      const SizedBox(height: 16),
+      Expanded(child: GridView.builder(itemCount: 4, gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.75), itemBuilder: (context, index) => const _ShimmerRecipeCard())),
+    ]);
   }
 
   Widget _buildResult() {
-    if (_recipes.isEmpty) {
-      return const Center(child: Text('No recipes generated.'));
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'AI recipes for your fridge',
-          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'We created several ideas using expiring items first.',
-          style: TextStyle(color: Colors.grey[700]),
-        ),
-        const SizedBox(height: 14),
-        Expanded(
-          child: GridView.builder(
-            itemCount: _recipes.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 0.62,
-            ),
-            itemBuilder: (context, index) {
-              final recipe = _recipes[index];
-              return _RecipeCard(
-                recipe: recipe,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => RecipeDetailPage(
-                        recipe: recipe,
-                        repo: widget.repo,
-                        usedItems: widget.items,
-                        onInventoryUpdated: widget.onInventoryUpdated,
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
+    if (_recipes.isEmpty) return const Center(child: Text('No recipes generated.'));
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Suggestions for you', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
+      Expanded(child: GridView.builder(itemCount: _recipes.length, gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.75), itemBuilder: (context, index) {
+        final recipe = _recipes[index];
+        return _RecipeCard(recipe: recipe, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecipeDetailPage(recipe: recipe, repo: widget.repo, usedItems: widget.items, onInventoryUpdated: widget.onInventoryUpdated))));
+      })),
+    ]);
   }
 }
 
-// ================== 网格里的单个菜谱卡片（只展示关键数据，不溢出） ==================
+// ================== Detail Page ==================
 
-class _RecipeCard extends StatelessWidget {
+class RecipeDetailPage extends StatefulWidget {
   final RecipeSuggestion recipe;
-  final VoidCallback onTap;
+  final InventoryRepository repo;
+  final List<FoodItem> usedItems;
+  final VoidCallback? onInventoryUpdated;
+  const RecipeDetailPage({super.key, required this.recipe, required this.repo, required this.usedItems, this.onInventoryUpdated});
+  @override
+  State<RecipeDetailPage> createState() => _RecipeDetailPageState();
+}
 
-  const _RecipeCard({
-    required this.recipe,
-    required this.onTap,
-  });
+class _RecipeDetailPageState extends State<RecipeDetailPage> {
+  static const String _backendBase = 'https://project-study-bsh.vercel.app';
+  bool _hcActionLoading = false;
+  bool _archiving = false;
+  Future<String?> _getSupabaseAccessTokenOrNull() async {
+    final client = Supabase.instance.client;
+    final session = client.auth.currentSession;
+    return session?.accessToken;
+  }
+  
+  Future<void> _addToArchive() async {
+    setState(() => _archiving = true);
+    try {
+      await RecipeArchiveStore.add(widget.recipe);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added to archive ✅')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Add to archive failed: $e')));
+    } finally {
+      if (mounted) setState(() => _archiving = false);
+    }
+  }
+
+  Future<int?> _askTempC(BuildContext context, {int? initial}) async {
+    final c = TextEditingController(text: initial != null ? initial.toString() : '');
+    return showDialog<int?>(context: context, builder: (ctx) => AlertDialog(title: const Text('Oven temperature'), content: TextField(controller: c, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: 'e.g. 200', suffixText: '°C')), actions: [TextButton(onPressed: () => Navigator.pop(ctx, null), child: const Text('Cancel')), TextButton(onPressed: () {final n = int.tryParse(c.text.trim()); Navigator.pop(ctx, n);}, child: const Text('OK'))]));
+  }
+
+  Future<String> _findOvenHaId(String token) async {
+    final r = await http.get(Uri.parse('$_backendBase/api/hc/appliances'), headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'});
+    if (r.statusCode != 200) throw Exception('Fetch appliances failed: ${r.statusCode} ${r.body}');
+    final obj = jsonDecode(r.body) as Map<String, dynamic>;
+    final list = (obj['homeappliances'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
+    for (final a in list) { if ((a['type'] ?? '').toString().toLowerCase() == 'oven' || (a['name'] ?? '').toString().toLowerCase().contains('oven')) return a['haId'].toString(); }
+    throw Exception('No oven appliance found');
+  }
+
+  Future<void> _preheatOven() async {
+    final ok = await requireLogin(context); if (!ok) return;
+    final token = await _getSupabaseAccessTokenOrNull(); if (token == null) return;
+    int? temp = widget.recipe.ovenTempC ?? widget.recipe.inferOvenTempFromText();
+    if (temp == null) { temp = await _askTempC(context); if (temp == null) return; }
+    setState(() => _hcActionLoading = true);
+    try {
+      final haId = await _findOvenHaId(token);
+      final r = await http.post(Uri.parse('$_backendBase/api/hc/oven/preheat'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}, body: jsonEncode({'haId': haId, 'temperatureC': temp, 'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating'}));
+      if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Oven preheating to $temp°C ✅')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preheat failed: $e')));
+    } finally {
+      if (mounted) setState(() => _hcActionLoading = false);
+    }
+  }
 
   IconData _toolIcon(String label) {
-    final t = label.toLowerCase();
-    if (t.contains('oven')) return Icons.local_fire_department;
-    if (t.contains('pan') || t.contains('wok')) return Icons.soup_kitchen;
-    if (t.contains('pot')) return Icons.outdoor_grill;
+    if (label.toLowerCase().contains('oven')) return Icons.local_fire_department_rounded;
     return Icons.handyman_outlined;
   }
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final recipe = widget.recipe;
+    return Scaffold(
+      backgroundColor: AppStyle.bg,
+      appBar: AppBar(title: const Text('Recipe Details', style: TextStyle(fontWeight: FontWeight.w700)), backgroundColor: AppStyle.bg, elevation: 0, actions: [IconButton(onPressed: _archiving ? null : _addToArchive, icon: const Icon(Icons.bookmark_outline))]),
+      body: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 32), children: [
+        Hero(
+          tag: 'recipe_img_${recipe.id}', 
+          child: Container(
+            height: 180, width: double.infinity,
+            decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(24)),
+            child: const Center(child: Icon(Icons.fastfood_rounded, size: 64, color: AppStyle.primary)),
+          ),
+        ),
+        const SizedBox(height: 20),
+        Text(recipe.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, height: 1.2)),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [_InfoPill(icon: Icons.schedule, text: recipe.timeLabel, bg: Colors.grey.shade200, fg: Colors.black87), _InfoPill(icon: _toolIcon(recipe.appliancesLabel), text: recipe.appliancesLabel, bg: Colors.grey.shade200, fg: Colors.black87)]),
+        const SizedBox(height: 24),
+        if (recipe.description != null) ...[Text(recipe.description!, style: TextStyle(color: Colors.grey[700], height: 1.5, fontSize: 15)), const SizedBox(height: 24)],
+        if (recipe.usesOven) ...[Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.orange.shade100)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Row(children: [Icon(Icons.smart_toy_outlined, color: Colors.deepOrange), SizedBox(width: 8), Text('Smart Kitchen', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange))]), const SizedBox(height: 12), _ActionTile(icon: Icons.local_fire_department_rounded, title: 'Preheat Oven', subtitle: 'Tap to start', loading: _hcActionLoading, onTap: _hcActionLoading ? null : _preheatOven, bgColor: Colors.white)]))],
+        const SizedBox(height: 24),
+        _SectionCard(title: 'Ingredients', child: Column(children: recipe.ingredients.map((ing) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.only(top: 6), child: Icon(Icons.circle, size: 6, color: AppStyle.primary)), const SizedBox(width: 12), Expanded(child: Text(ing, style: const TextStyle(fontSize: 15, height: 1.4)))]))).toList())),
+        const SizedBox(height: 24),
+        _SectionCard(title: 'Instructions', child: Column(children: recipe.steps.asMap().entries.map((e) => Container(margin: const EdgeInsets.only(bottom: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: 28, height: 28, alignment: Alignment.center, decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), shape: BoxShape.circle), child: Text('${e.key + 1}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppStyle.primary))), const SizedBox(width: 12), Expanded(child: Text(e.value, style: const TextStyle(height: 1.5, fontSize: 15)))]))).toList())),
+        const SizedBox(height: 32),
+        if (widget.usedItems.isNotEmpty) SizedBox(width: double.infinity, height: 56, child: FilledButton.icon(onPressed: () async {
+          final shouldUpdate = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('Finished Cooking?'), content: const Text('Update inventory?'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Update'))]));
+          if (shouldUpdate == true) {
+            for (final item in widget.usedItems) { await widget.repo.recordImpactForAction(item, 'eat'); await widget.repo.updateStatus(item.id, FoodStatus.consumed); }
+            widget.onInventoryUpdated?.call();
+            if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Inventory updated ✅'))); Navigator.pop(context); }
+          }
+        }, icon: const Icon(Icons.check_circle_outline), label: const Text('I Cooked This'), style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))))),
+      ]),
+    );
+  }
+}
 
+// ================== Helper Widgets & Models ==================
+
+// ✅ 修正：_ArchiveRecipeCard 现在接受 RecipeSuggestion 对象而不是 title/subtitle
+class _ArchiveRecipeCard extends StatelessWidget {
+  final RecipeSuggestion recipe;
+  final DateTime addedAt;
+  final VoidCallback onOpen;
+  final VoidCallback onRemove;
+
+  const _ArchiveRecipeCard({
+    required this.recipe,
+    required this.addedAt,
+    required this.onOpen,
+    required this.onRemove,
+  });
+
+  String _fmt(DateTime t) {
+    return '${t.year}-${t.month}-${t.day}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: AppStyle.softShadow,
+      ),
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Hero(
+                tag: 'recipe_icon_${recipe.id}',
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: AppStyle.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.restaurant_menu_rounded, color: AppStyle.primary),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      recipe.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${recipe.timeLabel} • ${recipe.appliancesLabel}',
+                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Saved on ${_fmt(addedAt)}',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                onPressed: onRemove,
+                icon: Icon(Icons.close_rounded, size: 20, color: Colors.grey.shade400),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RecipeCard extends StatelessWidget {
+  final RecipeSuggestion recipe;
+  final VoidCallback onTap;
+  const _RecipeCard({required this.recipe, required this.onTap});
+  
+  @override
+  Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Card(
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
-              child: Stack(
-                children: [
-                  Container(
-                    height: 92,
-                    width: double.infinity,
-                    color: scheme.primaryContainer.withOpacity(0.35),
-                    alignment: Alignment.center,
-                    child: const Icon(Icons.fastfood, size: 42),
-                  ),
-                  Positioned(
-                    right: 10,
-                    top: 10,
-                    child: _BadgePill(
-                      icon: Icons.recycling,
-                      text: '${recipe.expiringCount}',
-                      bg: scheme.primary.withOpacity(0.12),
-                      fg: scheme.primary,
-                    ),
-                  ),
-                ],
-              ),
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Hero(
+            tag: 'recipe_img_${recipe.id}', 
+            child: Container(
+              height: 100, width: double.infinity, 
+              decoration: const BoxDecoration(borderRadius: BorderRadius.vertical(top: Radius.circular(20)), color: Color(0xFFF0F5FF)),
+              child: Stack(children: [
+                Center(child: Icon(Icons.fastfood_rounded, size: 40, color: AppStyle.primary.withOpacity(0.3))),
+                if (recipe.expiringCount > 0) Positioned(top: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.eco, color: Colors.white, size: 10), const SizedBox(width: 4), Text('Uses ${recipe.expiringCount}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))]))),
+              ]),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    recipe.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 14,
-                      height: 1.15,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      _InfoPill(
-                        icon: Icons.schedule,
-                        text: recipe.timeLabel,
-                        bg: Colors.black.withOpacity(0.06),
-                        fg: Colors.grey.shade800,
-                      ),
-                      _InfoPill(
-                        icon: _toolIcon(recipe.appliancesLabel),
-                        text: recipe.appliancesLabel,
-                        bg: Colors.black.withOpacity(0.06),
-                        fg: Colors.grey.shade800,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+          Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(recipe.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, height: 1.2)),
+            const SizedBox(height: 8),
+            Row(children: [Icon(Icons.schedule, size: 14, color: Colors.grey.shade500), const SizedBox(width: 4), Text(recipe.timeLabel, style: TextStyle(fontSize: 12, color: Colors.grey.shade600))]),
+          ])),
+        ]),
       ),
     );
   }
@@ -1880,703 +858,110 @@ class _InfoPill extends StatelessWidget {
   final String text;
   final Color bg;
   final Color fg;
-
-  const _InfoPill({
-    required this.icon,
-    required this.text,
-    required this.bg,
-    required this.fg,
-  });
-
+  const _InfoPill({required this.icon, required this.text, required this.bg, required this.fg});
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 12,
-                color: fg,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    return Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: fg), const SizedBox(width: 6), Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 12, color: fg, fontWeight: FontWeight.w600)))]));
   }
 }
 
-class _BadgePill extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color bg;
-  final Color fg;
+class _ShimmerRecipeCard extends StatefulWidget { const _ShimmerRecipeCard(); @override State<_ShimmerRecipeCard> createState() => _ShimmerRecipeCardState(); }
+class _ShimmerRecipeCardState extends State<_ShimmerRecipeCard> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[200], Colors.grey[100], _controller.value); return Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(height: 100, width: double.infinity, decoration: BoxDecoration(borderRadius: const BorderRadius.vertical(top: Radius.circular(20)), color: color)), Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 6), Container(width: 100, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 12), Row(children: [Container(width: 14, height: 14, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 6), Container(width: 60, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)))]),],),),],),); },); } }
+class _ShimmerArchiveCard extends StatefulWidget { const _ShimmerArchiveCard(); @override State<_ShimmerArchiveCard> createState() => _ShimmerArchiveCardState(); }
+class _ShimmerArchiveCardState extends State<_ShimmerArchiveCard> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[200], Colors.grey[100], _controller.value); return Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow), padding: const EdgeInsets.all(16), child: Row(children: [Container(width: 50, height: 50, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(16))), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: double.infinity, height: 16, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 8), Container(width: 120, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)))]))])); },); } }
+class _ShimmerBlock extends StatefulWidget { final double width; final double height; const _ShimmerBlock({required this.width, required this.height}); @override State<_ShimmerBlock> createState() => _ShimmerBlockState(); }
+class _ShimmerBlockState extends State<_ShimmerBlock> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[300], Colors.grey[100], _controller.value); return Container(width: widget.width, height: widget.height, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6))); },); } }
 
-  const _BadgePill({
-    required this.icon,
-    required this.text,
-    required this.bg,
-    required this.fg,
-  });
-
+class _InputRow extends StatelessWidget {
+  final TextEditingController controller;
+  final String hintText;
+  final VoidCallback onAdd;
+  final VoidCallback onSubmit;
+  const _InputRow({required this.controller, required this.hintText, required this.onAdd, required this.onSubmit});
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: fg.withOpacity(0.18)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: fg),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-              color: fg,
-            ),
-          ),
-        ],
-      ),
-    );
+    return Row(children: [
+      Expanded(child: SizedBox(height: 48, child: TextField(
+        controller: controller,
+        textInputAction: TextInputAction.done, 
+        onSubmitted: (_) => onSubmit(),
+        decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14), contentPadding: const EdgeInsets.symmetric(horizontal: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppStyle.primary)), filled: true, fillColor: Colors.white),
+      ))),
+      const SizedBox(width: 8),
+      SizedBox(height: 48, width: 48, child: FilledButton(style: FilledButton.styleFrom(padding: EdgeInsets.zero, backgroundColor: AppStyle.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), onPressed: onAdd, child: const Icon(Icons.add_rounded))),
+    ]);
   }
 }
 
-// ================== 详情页（更清晰、更可读） ==================
+class _ToggleRow extends StatelessWidget { final bool value; final String title; final String subtitle; final ValueChanged<bool> onChanged; const _ToggleRow({required this.value, required this.title, required this.subtitle, required this.onChanged}); @override Widget build(BuildContext context) { return InkWell(onTap: () => onChanged(!value), borderRadius: BorderRadius.circular(12), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: value ? AppStyle.primary.withOpacity(0.05) : Colors.transparent, borderRadius: BorderRadius.circular(12), border: Border.all(color: value ? AppStyle.primary.withOpacity(0.2) : Colors.transparent)), child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: value ? AppStyle.primary : Colors.black87)), Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600]))])), Switch.adaptive(value: value, onChanged: onChanged, activeColor: AppStyle.primary)]))); } }
+class _EmptyHint extends StatelessWidget { final IconData icon; final String title; final String subtitle; const _EmptyHint({required this.icon, required this.title, required this.subtitle}); @override Widget build(BuildContext context) { return Container(padding: const EdgeInsets.all(20), alignment: Alignment.center, decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200, width: 1, style: BorderStyle.solid)), child: Column(children: [Icon(icon, color: Colors.grey.shade400, size: 32), const SizedBox(height: 8), Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)), const SizedBox(height: 4), Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade500, fontSize: 13))])); } }
+class _GradientPrimaryButton extends StatelessWidget { final VoidCallback onTap; final IconData icon; final String title; final String subtitle; final bool enabled; const _GradientPrimaryButton({required this.onTap, required this.icon, required this.title, required this.subtitle, required this.enabled}); @override Widget build(BuildContext context) { return AnimatedOpacity(duration: const Duration(milliseconds: 200), opacity: enabled ? 1 : 0.6, child: Material(color: Colors.transparent, child: InkWell(onTap: enabled ? onTap : null, borderRadius: BorderRadius.circular(16), child: Container(height: 60, decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF005F87), Color(0xFF0079AD)]), borderRadius: BorderRadius.circular(16), boxShadow: [if (enabled) const BoxShadow(color: Color(0x40005F87), blurRadius: 12, offset: Offset(0, 4))]), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: Colors.white, size: 22), const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)), Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12, fontWeight: FontWeight.w500))])]))))); } }
+class _EntryTile extends StatelessWidget { final IconData icon; final String title; final String subtitle; final VoidCallback onTap; const _EntryTile({required this.icon, required this.title, required this.subtitle, required this.onTap}); @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(AppStyle.cardRadius), child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFFF0F5FF), borderRadius: BorderRadius.circular(14)), child: Icon(icon, color: AppStyle.primary)), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)), const SizedBox(height: 2), Text(subtitle, style: TextStyle(fontSize: 13, color: Colors.grey[600]))])), Icon(Icons.chevron_right_rounded, color: Colors.grey[400])]))); } }
+class _SectionCard extends StatelessWidget { final String title; final String? subtitle; final Widget child; const _SectionCard({required this.title, this.subtitle, required this.child}); @override Widget build(BuildContext context) { return Container(decoration: BoxDecoration(color: AppStyle.cardColor, borderRadius: BorderRadius.circular(AppStyle.cardRadius), boxShadow: AppStyle.softShadow), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), if (subtitle != null) ...[const SizedBox(height: 4), Text(subtitle!, style: TextStyle(fontSize: 13, color: Colors.grey[500], height: 1.3))]])), const SizedBox(height: 12), Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: child)])); } }
+class _HeroCard extends StatelessWidget { final int selectedCount; final int preselectedCount; const _HeroCard({required this.selectedCount, required this.preselectedCount}); @override Widget build(BuildContext context) { return Container(height: 150, decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF005F87), Color(0xFF0082B8)]), boxShadow: const [BoxShadow(color: Color(0x33005F87), blurRadius: 20, offset: Offset(0, 10))]), child: Stack(children: [Positioned(right: -20, top: -20, child: Icon(Icons.restaurant_menu, size: 140, color: Colors.white.withOpacity(0.1))), Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [Text('$selectedCount', style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w800, height: 1.0)), const SizedBox(width: 8), const Text('items selected', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))]), const SizedBox(height: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 14, color: Colors.white), const SizedBox(width: 6), Text(preselectedCount > 0 ? '$preselectedCount items expiring soon' : 'Pick items to cook', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))]))]))])); } }
+enum _Urgency { high, medium, low, neutral }
+class _InventoryPickTile extends StatelessWidget { final String name; final String qtyText; final String expiryText; final _Urgency urgency; final bool selected; final VoidCallback onTap; const _InventoryPickTile({required this.name, required this.qtyText, required this.expiryText, required this.urgency, required this.selected, required this.onTap}); Color _badgeColor() { switch (urgency) { case _Urgency.high: return Colors.red; case _Urgency.medium: return Colors.orange; case _Urgency.low: return Colors.green; case _Urgency.neutral: return Colors.grey; } } @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: selected ? AppStyle.primary.withOpacity(0.04) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade200, width: selected ? 1.5 : 1)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: _badgeColor(), shape: BoxShape.circle)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: selected ? AppStyle.primary : Colors.black87)), const SizedBox(height: 2), Text('$qtyText • $expiryText', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))])), Container(width: 24, height: 24, decoration: BoxDecoration(color: selected ? AppStyle.primary : Colors.transparent, shape: BoxShape.circle, border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade300, width: 1.5)), child: selected ? const Icon(Icons.check, size: 16, color: Colors.white) : null)]))); } }
+class _ActionTile extends StatelessWidget { final IconData icon; final String title; final String subtitle; final bool loading; final VoidCallback? onTap; final Color bgColor; const _ActionTile({required this.icon, required this.title, required this.subtitle, required this.loading, required this.onTap, this.bgColor = const Color(0xFFF5F7FA)}); @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)), child: Row(children: [Container(width: 44, height: 44, decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: AppStyle.primary)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)), const SizedBox(height: 2), Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600]))])), if (loading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) else Icon(Icons.chevron_right, color: Colors.grey[400])]))); } }
 
-class RecipeDetailPage extends StatefulWidget {
-  final RecipeSuggestion recipe;
-  final InventoryRepository repo;
-  final List<FoodItem> usedItems;
-  final VoidCallback? onInventoryUpdated;
-
-  const RecipeDetailPage({
-    super.key,
-    required this.recipe,
-    required this.repo,
-    required this.usedItems,
-    this.onInventoryUpdated,
-  });
-
-  @override
-  State<RecipeDetailPage> createState() => _RecipeDetailPageState();
-}
-
-class _RecipeDetailPageState extends State<RecipeDetailPage> {
-  static const String _backendBase = 'https://project-study-bsh.vercel.app';
-
-  bool _hcActionLoading = false;
-  bool _archiving = false;
-
-  Future<String?> _getSupabaseAccessTokenOrNull() async {
-    final client = Supabase.instance.client;
-    final session = client.auth.currentSession;
-    return session?.accessToken;
-  }
-
-  Future<void> _addToArchive() async {
-    setState(() => _archiving = true);
-    try {
-      await RecipeArchiveStore.add(widget.recipe);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Added to archive ✅')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Add to archive failed: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _archiving = false);
-    }
-  }
-
-  Future<int?> _askTempC(BuildContext context, {int? initial}) async {
-    final c = TextEditingController(
-      text: initial != null ? initial.toString() : '',
-    );
-    final v = await showDialog<int?>(
-      context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Oven temperature'),
-          content: TextField(
-            controller: c,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              hintText: 'e.g. 200',
-              suffixText: '°C',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, null),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                final n = int.tryParse(c.text.trim());
-                Navigator.pop(ctx, n);
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-    return v;
-  }
-
-  Future<String> _findOvenHaId(String token) async {
-    final r = await http.get(
-      Uri.parse('$_backendBase/api/hc/appliances'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Accept': 'application/json',
-      },
-    );
-    final text = r.body;
-    if (r.statusCode != 200) {
-      throw Exception('Fetch appliances failed: ${r.statusCode} $text');
-    }
-    final obj = jsonDecode(text) as Map<String, dynamic>;
-    final list = (obj['homeappliances'] as List<dynamic>? ?? const [])
-        .map((e) => (e as Map).cast<String, dynamic>())
-        .toList();
-
-    Map<String, dynamic>? oven;
-    for (final a in list) {
-      final t = (a['type'] ?? '').toString().toLowerCase();
-      final name = (a['name'] ?? '').toString().toLowerCase();
-      if (t == 'oven' || name.contains('oven')) {
-        oven = a;
-        break;
-      }
-    }
-    if (oven == null) {
-      throw Exception('No oven appliance found in Home Connect.');
-    }
-    final haId = oven['haId']?.toString();
-    if (haId == null || haId.isEmpty) {
-      throw Exception('Oven haId missing.');
-    }
-    return haId;
-  }
-
-  Future<void> _preheatOven() async {
-    // ✅ HC action 前也要求登录
-    final ok = await requireLogin(context);
-    if (!ok) return;
-
-    final token = await _getSupabaseAccessTokenOrNull();
-    if (token == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Not logged in.')),
-      );
-      return;
-    }
-
-    int? temp = widget.recipe.ovenTempC ?? widget.recipe.inferOvenTempFromText();
-    if (temp == null) {
-      temp = await _askTempC(context);
-      if (temp == null) return;
-    }
-
-    setState(() => _hcActionLoading = true);
-    try {
-      final haId = await _findOvenHaId(token);
-
-      final r = await http.post(
-        Uri.parse('$_backendBase/api/hc/oven/preheat'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'haId': haId,
-          'temperatureC': temp,
-          'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating',
-        }),
-      );
-
-      if (r.statusCode != 200) {
-        throw Exception('Preheat failed: ${r.statusCode} ${r.body}');
-      }
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Oven preheating to $temp°C ✅')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Preheat oven failed: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _hcActionLoading = false);
-    }
-  }
-
-  IconData _toolIcon(String label) {
-    final t = label.toLowerCase();
-    if (t.contains('oven')) return Icons.local_fire_department;
-    if (t.contains('pan') || t.contains('wok')) return Icons.soup_kitchen;
-    if (t.contains('pot')) return Icons.outdoor_grill;
-    return Icons.handyman_outlined;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = const Color(0xFFF6F8FA);
-    final recipe = widget.recipe;
-
-    return Scaffold(
-      backgroundColor: bg,
-      appBar: AppBar(
-        title: Text(recipe.title),
-        actions: [
-          IconButton(
-            onPressed: _archiving ? null : _addToArchive,
-            icon: _archiving
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5))
-                : const Icon(Icons.archive_outlined),
-            tooltip: 'Add to archive',
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(22),
-            child: Container(
-              height: 190,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    scheme.primaryContainer.withOpacity(0.55),
-                    scheme.secondaryContainer.withOpacity(0.35),
-                  ],
-                ),
-              ),
-              child: const Center(
-                child: Icon(Icons.fastfood, size: 72),
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            recipe.title,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _Pill(
-                icon: Icons.schedule,
-                text: recipe.timeLabel,
-                color: Colors.black.withOpacity(0.06),
-                textColor: Colors.grey[800]!,
-                iconColor: Colors.grey[700]!,
-              ),
-              _Pill(
-                icon: _toolIcon(recipe.appliancesLabel),
-                text: recipe.appliancesLabel,
-                color: Colors.black.withOpacity(0.06),
-                textColor: Colors.grey[800]!,
-                iconColor: Colors.grey[700]!,
-              ),
-              _Pill(
-                icon: Icons.recycling,
-                text: '${recipe.expiringCount} expiring items',
-                color: scheme.primary.withOpacity(0.12),
-                textColor: scheme.primary,
-                iconColor: scheme.primary,
-              ),
-              _Pill(
-                icon: Icons.list_alt,
-                text: '${recipe.ingredients.length} ingredients',
-                color: Colors.black.withOpacity(0.06),
-                textColor: Colors.grey[800]!,
-                iconColor: Colors.grey[700]!,
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 14),
-
-          if (recipe.description != null) ...[
-            _InfoCard(
-              title: 'Overview',
-              icon: Icons.info_outline,
-              child: Text(
-                recipe.description!,
-                style: TextStyle(color: Colors.grey[800], height: 1.25),
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          if (recipe.usesOven) ...[
-            _InfoCard(
-              title: 'Cook with this',
-              icon: Icons.electrical_services_outlined,
-              child: Column(
-                children: [
-                  _ActionTile(
-                    icon: Icons.local_fire_department,
-                    title: 'Preheat oven',
-                    subtitle: (recipe.ovenTempC ?? recipe.inferOvenTempFromText()) != null
-                        ? 'Preheat to ${(recipe.ovenTempC ?? recipe.inferOvenTempFromText())}°C'
-                        : 'Choose a temperature and start preheating',
-                    loading: _hcActionLoading,
-                    onTap: _hcActionLoading ? null : _preheatOven,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Requires Home Connect binding.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-          ],
-
-          _InfoCard(
-            title: 'Archive',
-            icon: Icons.archive_outlined,
-            child: _ActionTile(
-              icon: Icons.archive_outlined,
-              title: 'Add to archive',
-              subtitle: 'Save this recipe for later',
-              loading: _archiving,
-              onTap: _archiving ? null : _addToArchive,
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _InfoCard(
-            title: 'Ingredients',
-            icon: Icons.shopping_basket_outlined,
-            child: Column(
-              children: recipe.ingredients
-                  .map(
-                    (ing) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            margin: const EdgeInsets.only(top: 7),
-                            decoration: BoxDecoration(
-                              color: scheme.primary,
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(child: Text(ing)),
-                        ],
-                      ),
-                    ),
-                  )
-                  .toList(),
-            ),
-          ),
-
-          const SizedBox(height: 12),
-
-          _InfoCard(
-            title: 'Steps',
-            icon: Icons.format_list_numbered,
-            child: Column(
-              children: recipe.steps.asMap().entries.map((e) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.03),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 26,
-                        height: 26,
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(9),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          '${e.key + 1}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w900,
-                            color: scheme.primary,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          e.value,
-                          style: const TextStyle(height: 1.25),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-          ),
-
-          const SizedBox(height: 18),
-
-          if (widget.usedItems.isNotEmpty)
-            _GradientPrimaryButton(
-              onTap: () async {
-                final shouldUpdate = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) {
-                    return AlertDialog(
-                      title: const Text('Update inventory?'),
-                      content: const Text(
-                        'Did you use up the selected ingredients from your fridge for this recipe?\n'
-                        'If yes, we will mark them as cooked and remove them from your inventory.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, false),
-                          child: const Text('Skip'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(ctx, true),
-                          child: const Text('Update'),
-                        ),
-                      ],
-                    );
-                  },
-                );
-
-                if (shouldUpdate == true) {
-                  for (final item in widget.usedItems) {
-                    await widget.repo.recordImpactForAction(item, 'eat');
-                    await widget.repo.updateStatus(item.id, FoodStatus.consumed);
-                  }
-                  widget.onInventoryUpdated?.call();
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Inventory updated ✅')),
-                    );
-                  }
-                }
-
-                if (context.mounted) {
-                  Navigator.pop(context);
-                }
-              },
-              icon: Icons.check,
-              title: 'I cooked this',
-              subtitle: 'Mark selected items as used',
-              enabled: true,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionTile extends StatelessWidget {
-  final IconData icon;
+class RecipeSuggestion {
+  final String id;
   final String title;
-  final String subtitle;
-  final bool loading;
-  final VoidCallback? onTap;
+  final String timeLabel;
+  final int expiringCount;
+  final List<String> ingredients;
+  final List<String> steps;
+  final List<String> appliances;
+  final int? ovenTempC;
+  final String? description;
+  final String? imageUrl;
 
-  const _ActionTile({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.loading,
-    required this.onTap,
-  });
+  RecipeSuggestion({required this.id, required this.title, required this.timeLabel, required this.expiringCount, required this.ingredients, required this.steps, this.appliances = const [], this.ovenTempC, this.description, this.imageUrl});
 
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'timeLabel': timeLabel, 'expiringCount': expiringCount, 'ingredients': ingredients, 'steps': steps, 'appliances': appliances, 'ovenTempC': ovenTempC, 'description': description, 'imageUrl': imageUrl};
 
-    return Material(
-      color: Colors.black.withOpacity(0.03),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: scheme.primary.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: scheme.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              if (loading)
-                const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2.5),
-                )
-              else
-                Icon(Icons.chevron_right, color: Colors.grey[700]),
-            ],
-          ),
-        ),
-      ),
+  static RecipeSuggestion fromJson(Map<String, dynamic> m) {
+    final appliancesRaw = m['appliances'];
+    final appliances = (appliancesRaw is List) ? appliancesRaw.map((x) => x.toString()).toList() : const <String>[];
+    int? ovenTempC;
+    final v = m['ovenTempC'];
+    if (v is int) ovenTempC = v; else if (v is num) ovenTempC = v.round(); else if (v != null) ovenTempC = int.tryParse(v.toString());
+
+    return RecipeSuggestion(
+      id: m['id']?.toString() ?? const Uuid().v4(),
+      title: (m['title'] ?? 'Untitled').toString(),
+      timeLabel: (m['timeLabel'] ?? '20 min').toString(),
+      expiringCount: int.tryParse(m['expiringCount']?.toString() ?? '0') ?? 0,
+      ingredients: (m['ingredients'] as List? ?? []).map((x) => x.toString()).toList(),
+      steps: (m['steps'] as List? ?? []).map((x) => x.toString()).toList(),
+      appliances: appliances,
+      ovenTempC: ovenTempC,
+      description: m['description']?.toString(),
+      imageUrl: m['imageUrl']?.toString(),
     );
   }
-}
 
-class _Pill extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  final Color color;
-  final Color textColor;
-  final Color iconColor;
-
-  const _Pill({
-    required this.icon,
-    required this.text,
-    required this.color,
-    required this.textColor,
-    required this.iconColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: iconColor),
-          const SizedBox(width: 6),
-          Text(
-            text,
-            style: TextStyle(
-              fontSize: 12,
-              color: textColor,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
+  bool get usesOven {
+    final a = appliances.map((x) => x.toLowerCase()).toList();
+    if (a.any((x) => x.contains('oven'))) return true;
+    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
+    return text.contains('oven') || text.contains('preheat') || text.contains('bake');
   }
-}
 
-class _InfoCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Widget child;
+  int? inferOvenTempFromText() {
+    if (ovenTempC != null) return ovenTempC;
+    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
+    final reg = RegExp(r'(\d{2,3})\s*(°\s*c|°c|c\b|degrees?\s*c)');
+    final m = reg.firstMatch(text);
+    if (m != null) {
+      final v = int.tryParse(m.group(1) ?? '');
+      if (v != null && v >= 50 && v <= 300) return v;
+    }
+    return null;
+  }
 
-  const _InfoCard({
-    required this.title,
-    required this.icon,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.05)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x10000000),
-            blurRadius: 12,
-            offset: Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 18, color: Colors.grey[800]),
-              const SizedBox(width: 8),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          child,
-        ],
-      ),
-    );
+  String get appliancesLabel {
+    if (appliances.isEmpty) return 'No tools';
+    if (appliances.length == 1) return appliances.first;
+    return '${appliances.first} +${appliances.length - 1}';
   }
 }

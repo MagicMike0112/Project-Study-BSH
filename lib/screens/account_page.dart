@@ -25,7 +25,7 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  // 你的 Vercel backend（跑 Home Connect OAuth 的那套）
+  // 你的 Vercel backend
   static const String _backendBase = 'https://project-study-bsh.vercel.app';
 
   bool _hcLoading = false;
@@ -33,14 +33,14 @@ class _AccountPageState extends State<AccountPage> {
   Map<String, dynamic>? _hcInfo;
   String? _hcError;
 
-  // appliances（debug/后续找 oven haId）
+  // appliances
   List<Map<String, dynamic>> _hcAppliances = const [];
+
+  // ================== 逻辑部分保持不变 ==================
 
   @override
   void initState() {
     super.initState();
-
-    // 如果用户从 callback 302 回到前端并带了 ?hc=connected，自动刷新一次状态并提示
     final qp = Uri.base.queryParameters;
     if (qp['hc'] == 'connected') {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -51,7 +51,6 @@ class _AccountPageState extends State<AccountPage> {
         );
       });
     } else {
-      // 正常进页面也尝试拉一次状态（仅登录时）
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _refreshHomeConnectStatus();
       });
@@ -62,7 +61,6 @@ class _AccountPageState extends State<AccountPage> {
     final client = Supabase.instance.client;
     final session = client.auth.currentSession;
 
-    // 未登录：直接清空状态
     if (!(widget.isLoggedIn && session != null && client.auth.currentUser != null)) {
       if (!mounted) return;
       setState(() {
@@ -141,11 +139,9 @@ class _AccountPageState extends State<AccountPage> {
         }),
       );
 
-      // ✅ 关键：无论成功失败都把原始 body 打出来
       debugPrint('[HC] /api/hc/connect status=${r.statusCode}');
       debugPrint('[HC] /api/hc/connect body=${r.body}');
 
-      // 尝试解析 JSON（失败也不要直接崩）
       Map<String, dynamic>? data;
       try {
         final decoded = jsonDecode(r.body);
@@ -154,7 +150,6 @@ class _AccountPageState extends State<AccountPage> {
         data = null;
       }
 
-      // 非 200：优先把后端返回的 step/error/stack 展示出来
       if (r.statusCode != 200) {
         final step = data?['step'];
         final err = data?['error'] ?? r.body;
@@ -170,7 +165,6 @@ class _AccountPageState extends State<AccountPage> {
         );
       }
 
-      // 200 但 ok != true
       if (data == null || data['ok'] != true) {
         throw Exception('Invalid response: ${r.body}');
       }
@@ -181,7 +175,6 @@ class _AccountPageState extends State<AccountPage> {
       }
 
       final uri = Uri.parse(authorizeUrl);
-
       final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
       if (!ok) {
         throw Exception('Could not open Home Connect authorization page');
@@ -310,87 +303,109 @@ class _AccountPageState extends State<AccountPage> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: Colors.white,
       builder: (_) {
         final items = _hcAppliances;
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.list_alt),
-                    const SizedBox(width: 10),
+                    const Icon(Icons.kitchen_rounded, color: Color(0xFF005F87)),
+                    const SizedBox(width: 12),
                     const Expanded(
                       child: Text(
-                        'Home Connect appliances',
-                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                        'Simulator Appliances',
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
                       ),
                     ),
-                    Text(
-                      '${items.length}',
-                      style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w800),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey[100],
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${items.length}',
+                        style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
                 if (items.isEmpty)
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      'No appliances returned by simulator.',
-                      style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600),
+                    padding: const EdgeInsets.symmetric(vertical: 30),
+                    child: Column(
+                      children: [
+                        Icon(Icons.device_unknown_outlined, size: 48, color: Colors.grey[300]),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No appliances found in simulator.',
+                          style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w500),
+                        ),
+                      ],
                     ),
                   )
                 else
                   ConstrainedBox(
                     constraints: BoxConstraints(
-                      maxHeight: MediaQuery.of(context).size.height * 0.55,
+                      maxHeight: MediaQuery.of(context).size.height * 0.6,
                     ),
                     child: ListView.separated(
                       shrinkWrap: true,
                       itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      separatorBuilder: (_, __) => const SizedBox(height: 12),
                       itemBuilder: (_, i) {
                         final a = items[i];
                         final name = (a['name'] ?? a['brand'] ?? a['type'] ?? 'Appliance').toString();
                         final type = (a['type'] ?? a['encryption'] ?? '').toString();
                         final haId = (a['haId'] ?? a['id'] ?? '').toString();
 
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                          title: Text(
-                            name,
-                            style: const TextStyle(fontWeight: FontWeight.w800),
+                        return Container(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey.shade200),
+                            borderRadius: BorderRadius.circular(16),
                           ),
-                          subtitle: Text(
-                            'type: ${type.isEmpty ? '-' : type}\nhaId: ${haId.isEmpty ? '-' : haId}',
-                            style: TextStyle(color: Colors.grey[700], fontWeight: FontWeight.w600, height: 1.2),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                            title: Text(
+                              name,
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            subtitle: Text(
+                              'Type: $type\nID: $haId',
+                              style: TextStyle(fontSize: 12, color: Colors.grey[600], height: 1.4),
+                            ),
+                            trailing: haId.isEmpty
+                                ? null
+                                : IconButton(
+                                    icon: const Icon(Icons.copy_rounded, size: 20),
+                                    onPressed: () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('ID Copied: $haId')),
+                                      );
+                                    },
+                                  ),
                           ),
-                          trailing: haId.isEmpty
-                              ? null
-                              : IconButton(
-                                  icon: const Icon(Icons.copy),
-                                  onPressed: () {
-                                    // 不引入 clipboard 依赖，先用 snackbar 提示你自己复制/截图
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('haId: $haId')),
-                                    );
-                                  },
-                                ),
                         );
                       },
                     ),
                   ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity,
-                  height: 44,
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.close),
+                  height: 50,
+                  child: OutlinedButton(
                     onPressed: () => Navigator.pop(context),
-                    label: const Text('Close', style: TextStyle(fontWeight: FontWeight.w800)),
+                    style: OutlinedButton.styleFrom(
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      side: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    child: const Text('Close', style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
                 ),
               ],
@@ -401,11 +416,13 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
+  // ================== UI 构建部分 ==================
+
+  // 统一的背景色，保持和其他页面一致
+  static const Color _backgroundColor = Color(0xFFF8F9FC);
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final bg = const Color(0xFFF6F8FA);
-
     final client = Supabase.instance.client;
     final user = client.auth.currentUser;
 
@@ -413,686 +430,482 @@ class _AccountPageState extends State<AccountPage> {
     final email = user?.email ?? '';
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: _backgroundColor,
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: const Text(
+          'Settings',
+          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
+        ),
+        backgroundColor: _backgroundColor,
+        elevation: 0,
+        centerTitle: false,
       ),
-      body: Stack(
+      body: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         children: [
-          // 科技感背景装饰
-          Positioned(
-            right: -90,
-            top: -120,
-            child: _GlowOrb(
-              size: 260,
-              color: scheme.primary.withOpacity(0.18),
-            ),
-          ),
-          Positioned(
-            left: -90,
-            bottom: -120,
-            child: _GlowOrb(
-              size: 280,
-              color: scheme.secondary.withOpacity(0.14),
-            ),
+          // 1. Profile Section (Level 1)
+          _buildProfileCard(context, loggedIn, email),
+
+          const SizedBox(height: 32),
+
+          // 2. Integration Section (Level 2 - High Priority)
+          _buildSectionTitle(context, 'Integrations'),
+          const SizedBox(height: 12),
+          _buildHomeConnectCard(context, loggedIn),
+          
+          const SizedBox(height: 32),
+
+          // 3. General Settings (Level 3)
+          _buildSectionTitle(context, 'Preferences'),
+          const SizedBox(height: 12),
+          _SettingsContainer(
+            children: [
+              _SettingsTile(
+                icon: Icons.notifications_rounded,
+                iconColor: Colors.orange,
+                title: 'Notifications',
+                subtitle: 'Expiry alerts & reminders',
+                onTap: () {
+                   Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const NotificationSettingsPage(),
+                    ),
+                  );
+                },
+              ),
+              _Divider(),
+              _SettingsTile(
+                icon: Icons.card_giftcard_rounded,
+                iconColor: Colors.purple,
+                title: 'Loyalty Cards',
+                subtitle: 'Connect PAYBACK (Coming soon)',
+                onTap: null, // Disabled
+              ),
+            ],
           ),
 
-          ListView(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+          const SizedBox(height: 32),
+
+          // 4. Legal & Privacy
+          _buildSectionTitle(context, 'About'),
+          const SizedBox(height: 12),
+          _SettingsContainer(
             children: [
-              // 顶部：账号状态（更“产品化”）
-              _GlassCard(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                  child: loggedIn
-                      ? _buildLoggedInHeader(context, email)
-                      : _buildLoggedOutHeader(context),
+              _SettingsTile(
+                icon: Icons.privacy_tip_rounded,
+                iconColor: Colors.blueGrey,
+                title: 'Privacy Policy',
+                onTap: null,
+              ),
+              _Divider(),
+              _SettingsTile(
+                icon: Icons.description_rounded,
+                iconColor: Colors.blueGrey,
+                title: 'Terms of Service',
+                onTap: null,
+              ),
+              _Divider(),
+              _SettingsTile(
+                icon: Icons.info_outline_rounded,
+                iconColor: Colors.blueGrey,
+                title: 'Version',
+                trailing: Text(
+                  '1.0.0 (Beta)',
+                  style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                ),
+                onTap: null,
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 40),
+
+          // 5. Logout Action
+          if (loggedIn)
+            Center(
+              child: TextButton.icon(
+                onPressed: widget.onLogout,
+                icon: Icon(Icons.logout_rounded, size: 20, color: Colors.grey[600]),
+                label: Text(
+                  'Log Out',
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+            ),
+          
+          const SizedBox(height: 40),
+        ],
+      ),
+    );
+  }
 
-              const SizedBox(height: 18),
+  // --- Components ---
 
-              _SectionHeader(
-                title: 'Partners',
-                subtitle: 'Appliances and rewards (coming soon)',
-                icon: Icons.hub_outlined,
-                color: scheme.primary,
+  Widget _buildSectionTitle(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: Colors.grey[500],
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileCard(BuildContext context, bool loggedIn, String email) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: loggedIn ? const Color(0xFFE3F2FD) : const Color(0xFFF5F5F5),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              loggedIn ? Icons.person_rounded : Icons.person_off_rounded,
+              color: loggedIn ? const Color(0xFF1565C0) : Colors.grey[400],
+              size: 30,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  loggedIn ? 'Welcome back' : 'Guest Account',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  loggedIn ? email : 'Sign in to sync',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (!loggedIn)
+            FilledButton(
+              onPressed: widget.onLogin,
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
               ),
-              const SizedBox(height: 10),
+              child: const Text('Log In'),
+            ),
+        ],
+      ),
+    );
+  }
 
-              _GlassCard(
-                child: Column(
+  // 专门优化的 Home Connect 卡片，因为它是核心功能
+  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn) {
+    final Color brandColor = const Color(0xFF005F87); // BSH Blue
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: loggedIn && _hcConnected ? brandColor.withOpacity(0.1) : Colors.transparent),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () async {
+            if (!loggedIn) {
+              widget.onLogin();
+              return;
+            }
+            if (_hcConnected) {
+              // 显示管理菜单
+              await showModalBottomSheet(
+                context: context,
+                showDragHandle: true,
+                backgroundColor: Colors.white,
+                builder: (_) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.refresh_rounded),
+                        title: const Text('Refresh Status'),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await _refreshHomeConnectStatus();
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.kitchen_rounded),
+                        title: const Text('View Appliances & IDs'),
+                        subtitle: const Text('For simulation & debugging'),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await _fetchHomeConnectAppliances();
+                        },
+                      ),
+                      const Divider(),
+                      ListTile(
+                        leading: Icon(Icons.link_off_rounded, color: Colors.red[400]),
+                        title: Text('Disconnect', style: TextStyle(color: Colors.red[700])),
+                        onTap: () async {
+                          Navigator.pop(context);
+                          await _disconnectHomeConnect();
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+              );
+            } else {
+              await _startHomeConnectBind();
+            }
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    ListTile(
-                      leading: const _SquareIconStatic(
-                        icon: Icons.kitchen_outlined,
-                        color: Color(0xFF0A6BA8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: brandColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      title: const Text(
-                        'BSH Home Connect',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text(
-                        !loggedIn
-                            ? 'Log in to connect your Home Connect account'
-                            : _hcLoading
-                                ? 'Checking connection...'
-                                : _hcConnected
-                                    ? 'Connected ✅'
-                                    : 'Connect to control appliances (simulator)',
-                      ),
-                      trailing: _hcLoading
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Icon(_hcConnected ? Icons.check_circle : Icons.chevron_right),
-                      enabled: true,
-                      onTap: () async {
-                        if (!loggedIn) {
-                          widget.onLogin();
-                          return;
-                        }
-                        if (_hcConnected) {
-                          await showModalBottomSheet(
-                            context: context,
-                            showDragHandle: true,
-                            builder: (_) {
-                              return SafeArea(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    ListTile(
-                                      leading: const Icon(Icons.refresh),
-                                      title: const Text('Refresh status'),
-                                      onTap: () async {
-                                        Navigator.pop(context);
-                                        await _refreshHomeConnectStatus();
-                                      },
-                                    ),
-                                    ListTile(
-                                      leading: const Icon(Icons.list_alt),
-                                      title: const Text('Fetch appliances (get oven haId)'),
-                                      onTap: () async {
-                                        Navigator.pop(context);
-                                        await _fetchHomeConnectAppliances();
-                                      },
-                                    ),
-                                    ListTile(
-                                      leading: const Icon(Icons.link_off),
-                                      title: const Text('Disconnect'),
-                                      onTap: () async {
-                                        Navigator.pop(context);
-                                        await _disconnectHomeConnect();
-                                      },
-                                    ),
-                                    if (_hcInfo != null)
-                                      Padding(
-                                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                                        child: Text(
-                                          'Host: ${_hcInfo?['hc_host'] ?? '-'}\n'
-                                          'Scope: ${_hcInfo?['scope'] ?? '-'}\n'
-                                          'Expires: ${_hcInfo?['expires_at'] ?? '-'}\n'
-                                          'Updated: ${_hcInfo?['updated_at'] ?? '-'}',
-                                          style: TextStyle(
-                                            color: Colors.grey[700],
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
-                          );
-                        } else {
-                          await _startHomeConnectBind();
-                        }
-                      },
+                      child: Icon(Icons.home_outlined, color: brandColor, size: 24), // 使用更相关的图标
                     ),
-                    const _SoftDividerStatic(),
-                    const ListTile(
-                      leading: _SquareIconStatic(
-                        icon: Icons.card_giftcard_outlined,
-                        color: Color(0xFF3B6AF0),
-                      ),
-                      title: Text(
-                        'PAYBACK / loyalty cards',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text('Explore rewards for reducing food waste'),
-                      trailing: Icon(Icons.chevron_right),
-                      enabled: false,
-                    ),
-                    if (_hcError != null) ...[
-                      const _SoftDividerStatic(),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-                        child: Text(
-                          _hcError!,
-                          style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 12,
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'BSH Home Connect',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
                           ),
+                          const SizedBox(height: 2),
+                          if (_hcLoading)
+                            const Text(
+                              'Connecting...',
+                              style: TextStyle(fontSize: 13, color: Colors.grey),
+                            )
+                          else if (_hcConnected)
+                             Text(
+                              'Active & Synced',
+                              style: TextStyle(fontSize: 13, color: Colors.green[600], fontWeight: FontWeight.w600),
+                            )
+                          else
+                            const Text(
+                              'Tap to connect simulator',
+                              style: TextStyle(fontSize: 13, color: Colors.grey),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (_hcLoading)
+                      const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                    else
+                      Icon(
+                        _hcConnected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded,
+                        color: _hcConnected ? Colors.green : Colors.grey[300],
+                        size: _hcConnected ? 28 : 16,
+                      ),
+                  ],
+                ),
+                // 错误信息展示
+                if (_hcError != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.red.withOpacity(0.1)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline_rounded, size: 16, color: Colors.red[700]),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              _hcError!,
+                              style: TextStyle(color: Colors.red[900], fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                
+                // 连接后的详细信息 (Optional)
+                if (_hcConnected && _hcInfo != null)
+                   Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_done_outlined, size: 14, color: Colors.grey[500]),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Host: ${_hcInfo?['hc_host'] ?? 'Unknown'}',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                         ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 统一的圆角容器，用于包裹列表
+class _SettingsContainer extends StatelessWidget {
+  final List<Widget> children;
+  const _SettingsContainer({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(children: children),
+    );
+  }
+}
+
+class _SettingsTile extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String? subtitle;
+  final Widget? trailing;
+  final VoidCallback? onTap;
+
+  const _SettingsTile({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    this.subtitle,
+    this.trailing,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(24), // 确保水波纹不溢出
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: onTap != null ? Colors.black87 : Colors.grey[400],
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        style: TextStyle(fontSize: 12, color: Colors.grey[500]),
                       ),
                     ],
                   ],
                 ),
               ),
-
-              const SizedBox(height: 18),
-
-              _SectionHeader(
-                title: 'Preferences',
-                subtitle: 'Personalize the experience',
-                icon: Icons.tune_rounded,
-                color: scheme.secondary,
-              ),
-              const SizedBox(height: 10),
-
-              _GlassCard(
-                child: Column(
-                  children: [
-                    _SettingTile(
-                      title: 'Notifications',
-                      subtitle: 'Reminders for items close to expiry',
-                      icon: Icons.notifications_none_rounded,
-                      color: scheme.primary,
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const NotificationSettingsPage(),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 18),
-
-              _SectionHeader(
-                title: 'Privacy & legal',
-                subtitle: 'Transparency and terms',
-                icon: Icons.verified_outlined,
-                color: Colors.grey.shade800,
-              ),
-              const SizedBox(height: 10),
-
-              _GlassCard(
-                child: Column(
-                  children: const [
-                    ListTile(
-                      leading: _SquareIconStatic(
-                        icon: Icons.insights_outlined,
-                        color: Color(0xFF55606A),
-                      ),
-                      title: Text(
-                        'App data usage',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text('How we use your feedback and behaviour'),
-                      enabled: false,
-                    ),
-                    _SoftDividerStatic(),
-                    ListTile(
-                      leading: _SquareIconStatic(
-                        icon: Icons.description_outlined,
-                        color: Color(0xFF55606A),
-                      ),
-                      title: Text(
-                        'Legal information',
-                        style: TextStyle(fontWeight: FontWeight.w800),
-                      ),
-                      subtitle: Text('Terms of use, privacy policy'),
-                      enabled: false,
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 18),
-
-              Center(
-                child: SizedBox(
-                  width: 280,
-                  height: 48,
-                  child: loggedIn
-                      ? OutlinedButton.icon(
-                          icon: const Icon(Icons.logout),
-                          onPressed: widget.onLogout,
-                          label: const Text(
-                            'Log out',
-                            style: TextStyle(fontWeight: FontWeight.w800),
-                          ),
-                        )
-                      : _GradientButton(
-                          text: 'Log in / Sign up',
-                          onPressed: widget.onLogin,
-                        ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoggedOutHeader(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            color: scheme.primary.withOpacity(0.10),
-            border: Border.all(color: scheme.primary.withOpacity(0.16)),
-          ),
-          child: Icon(Icons.person_outline_rounded, color: scheme.primary),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Start using Smart Food Home',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.grey[900],
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Log in to enable AI features!',
-                style: TextStyle(
-                  color: Colors.grey[700],
-                  height: 1.25,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                height: 44,
-                child: FilledButton.tonal(
-                  onPressed: widget.onLogin,
-                  child: const Text(
-                    'Log in / Sign up',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ),
+              if (trailing != null)
+                trailing!
+              else if (onTap != null)
+                Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey[300]),
             ],
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _buildLoggedInHeader(BuildContext context, String email) {
-    return Row(
-      children: [
-        Container(
-          width: 52,
-          height: 52,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            color: Colors.green.withOpacity(0.10),
-            border: Border.all(color: Colors.green.withOpacity(0.16)),
-          ),
-          child: Icon(Icons.verified_user_outlined, color: Colors.green.shade700),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Logged in',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.grey[900],
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                email,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.grey[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ===================== UI components (no logic changes) =====================
-
-class _SectionHeader extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-
-  const _SectionHeader({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _SquareIcon(icon: icon, color: color),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.grey[900],
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                subtitle,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[700],
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _GlassCard extends StatelessWidget {
-  final Widget child;
-  const _GlassCard({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Colors.white.withOpacity(0.92),
-        border: Border.all(color: Colors.black.withOpacity(0.06)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 16,
-            offset: Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -40,
-              top: -40,
-              child: _GlowOrb(
-                size: 140,
-                color: scheme.primary.withOpacity(0.10),
-              ),
-            ),
-            child,
-          ],
-        ),
       ),
     );
   }
 }
 
-class _SettingTile extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-  final Widget trailing;
-
-  const _SettingTile({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-    required this.trailing,
-  });
-
+class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        child: Row(
-          children: [
-            _SquareIcon(icon: icon, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    subtitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.2,
-                      color: Colors.grey[700],
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            trailing,
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SquareIcon extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-
-  const _SquareIcon({required this.icon, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: color.withOpacity(0.10),
-        border: Border.all(color: color.withOpacity(0.16)),
-      ),
-      child: Icon(icon, size: 20, color: color),
-    );
-  }
-}
-
-// 用于 const ListTile（不能用 Theme.of）
-class _SquareIconStatic extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-
-  const _SquareIconStatic({required this.icon, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 42,
-      height: 42,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        color: color.withOpacity(0.10),
-        border: Border.all(color: color.withOpacity(0.16)),
-      ),
-      child: Icon(icon, size: 20, color: color),
-    );
-  }
-}
-
-class _PillChip extends StatelessWidget {
-  final String text;
-  final Color color;
-
-  const _PillChip({required this.text, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.18)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
-          color: color,
-        ),
-      ),
-    );
-  }
-}
-
-class _GradientButton extends StatelessWidget {
-  final String text;
-  final VoidCallback onPressed;
-
-  const _GradientButton({required this.text, required this.onPressed});
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            scheme.primary,
-            scheme.primary.withOpacity(0.78),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: scheme.primary.withOpacity(0.20),
-            blurRadius: 16,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-        onPressed: onPressed,
-        child: Text(
-          text,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            letterSpacing: 0.2,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _GlowOrb extends StatelessWidget {
-  final double size;
-  final Color color;
-
-  const _GlowOrb({required this.size, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: RadialGradient(
-          colors: [
-            color,
-            color.withOpacity(0.0),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SoftDividerStatic extends StatelessWidget {
-  const _SoftDividerStatic();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(height: 1, color: Color(0x11000000));
+    return Divider(height: 1, thickness: 1, color: Colors.grey.withOpacity(0.05), indent: 70);
   }
 }
