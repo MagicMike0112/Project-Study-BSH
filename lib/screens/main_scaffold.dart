@@ -1,10 +1,13 @@
+// lib/screens/main_scaffold.dart
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../repositories/inventory_repository.dart';
 import 'today_page.dart';
 import 'inventory_page.dart';
 import 'impact_page.dart';
 import 'add_food_page.dart';
-import 'account_page.dart';
+import 'shopping_list_page.dart'; 
 
 class MainScaffold extends StatefulWidget {
   final bool isLoggedIn;
@@ -29,7 +32,6 @@ class _MainScaffoldState extends State<MainScaffold> {
   late Future<InventoryRepository> _repoFuture;
   late PageController _pageController;
 
-  // 定义主色调，方便统一管理 UI
   static const Color _primaryColor = Color(0xFF005F87);
 
   @override
@@ -49,27 +51,28 @@ class _MainScaffoldState extends State<MainScaffold> {
     setState(() {});
   }
 
+  void _closeFabMenu() {
+    if (_showFabMenu) {
+      setState(() => _showFabMenu = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.dark,
+    ));
+
     return FutureBuilder<InventoryRepository>(
       future: _repoFuture,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
-          return Scaffold(
-            body: Center(
-              child: Text(
-                'Init error:\n${snapshot.error}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.red),
-              ),
-            ),
-          );
+          return Scaffold(body: Center(child: Text('Init error:\n${snapshot.error}')));
         }
 
         if (!snapshot.hasData) {
-          return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
-          );
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
 
         final repo = snapshot.data!;
@@ -77,51 +80,69 @@ class _MainScaffoldState extends State<MainScaffold> {
         final pages = [
           TodayPage(repo: repo, onRefresh: () => _refresh(repo)),
           InventoryPage(repo: repo, onRefresh: () => _refresh(repo)),
+          // ✅ 传入 repo，实现闭环
+          ShoppingListPage(repo: repo), 
           ImpactPage(repo: repo),
-          AccountPage(
-            isLoggedIn: widget.isLoggedIn,
-            onLogin: widget.onLoginRequested,
-            onLogout: widget.onLogoutRequested,
-          ),
         ];
 
-        // 只在 Today / Inventory 显示 FAB
+        // ✅ FAB 显示逻辑：
+        // 0 (Today) & 1 (Inventory) -> 显示 FAB
+        // 2 (Shopping) & 3 (Impact) -> 隐藏 FAB
         final bool fabEnabled = _currentIndex <= 1;
 
         return Scaffold(
-          body: PageView(
-            controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(), // 建议禁止滑动切换，避免手势冲突
-            onPageChanged: (idx) {
-              setState(() {
-                _currentIndex = idx;
-                _showFabMenu = false;
-              });
-            },
-            children: pages,
+          body: Stack(
+            children: [
+              PageView(
+                controller: _pageController,
+                physics: const BouncingScrollPhysics(),
+                onPageChanged: (idx) {
+                  setState(() {
+                    _currentIndex = idx;
+                    _showFabMenu = false;
+                  });
+                },
+                children: pages,
+              ),
+              // 遮罩层
+              if (fabEnabled)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    ignoring: !_showFabMenu,
+                    child: GestureDetector(
+                      onTap: _closeFabMenu,
+                      child: AnimatedOpacity(
+                        duration: const Duration(milliseconds: 200),
+                        opacity: _showFabMenu ? 1.0 : 0.0,
+                        curve: Curves.easeInOut,
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                          child: Container(color: Colors.black.withOpacity(0.2)),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
-
-          // 使用 Theme 优化 NavigationBar 的视觉体验
           bottomNavigationBar: NavigationBarTheme(
             data: NavigationBarThemeData(
-              indicatorColor: _primaryColor.withOpacity(0.15), // 选中时的浅色背景胶囊
+              indicatorColor: _primaryColor.withOpacity(0.15),
               labelTextStyle: MaterialStateProperty.all(
                 const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
               ),
               iconTheme: MaterialStateProperty.resolveWith((states) {
                 if (states.contains(MaterialState.selected)) {
-                  return const IconThemeData(color: _primaryColor); // 选中图标颜色
+                  return const IconThemeData(color: _primaryColor);
                 }
-                return IconThemeData(color: Colors.grey.shade600); // 未选中图标颜色
+                return IconThemeData(color: Colors.grey.shade600);
               }),
             ),
             child: NavigationBar(
               selectedIndex: _currentIndex,
               onDestinationSelected: (idx) {
-                setState(() {
-                  _currentIndex = idx;
-                  _showFabMenu = false;
-                });
+                _closeFabMenu();
+                setState(() => _currentIndex = idx);
                 _pageController.animateToPage(
                   idx,
                   duration: const Duration(milliseconds: 300),
@@ -143,19 +164,18 @@ class _MainScaffoldState extends State<MainScaffold> {
                   label: 'Inventory',
                 ),
                 NavigationDestination(
+                  icon: Icon(Icons.shopping_cart_outlined),
+                  selectedIcon: Icon(Icons.shopping_cart),
+                  label: 'Shopping',
+                ),
+                NavigationDestination(
                   icon: Icon(Icons.eco_outlined),
                   selectedIcon: Icon(Icons.eco),
                   label: 'Impact',
                 ),
-                NavigationDestination(
-                  icon: Icon(Icons.settings_outlined),
-                  selectedIcon: Icon(Icons.settings),
-                  label: 'Settings',
-                ),
               ],
             ),
           ),
-
           floatingActionButton: _buildExpandableFab(repo, fabEnabled),
           floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         );
@@ -164,24 +184,18 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   Widget _buildExpandableFab(InventoryRepository repo, bool enabled) {
-    // FAB 展开时的高度
-    const double expandedHeight = 280;
-
     return IgnorePointer(
       ignoring: !enabled,
       child: AnimatedOpacity(
         opacity: enabled ? 1.0 : 0.0,
         duration: const Duration(milliseconds: 200),
         child: SizedBox(
-          width: 140, // 稍微加宽一点，防止 Label 换行
-          height: expandedHeight,
+          width: 140,
+          height: 280,
           child: Stack(
             alignment: Alignment.bottomRight,
             clipBehavior: Clip.none,
             children: [
-              // 点击遮罩 (可选：如果想点击空白处关闭菜单，可以在这里加一个全屏透明 GestureDetector，但由于是在 Fab 区域内，这里省略)
-              
-              // 菜单项 1
               _FabActionButton(
                 index: 0,
                 icon: Icons.edit_note_rounded,
@@ -189,7 +203,6 @@ class _MainScaffoldState extends State<MainScaffold> {
                 visible: _showFabMenu,
                 onTap: () => _navigateToAdd(repo, 0),
               ),
-              // 菜单项 2
               _FabActionButton(
                 index: 1,
                 icon: Icons.camera_alt_rounded,
@@ -197,7 +210,6 @@ class _MainScaffoldState extends State<MainScaffold> {
                 visible: _showFabMenu,
                 onTap: () => _navigateToAdd(repo, 1),
               ),
-              // 菜单项 3
               _FabActionButton(
                 index: 2,
                 icon: Icons.mic_rounded,
@@ -205,20 +217,18 @@ class _MainScaffoldState extends State<MainScaffold> {
                 visible: _showFabMenu,
                 onTap: () => _navigateToAdd(repo, 2),
               ),
-
-              // 主 FAB 按钮
               FloatingActionButton(
                 heroTag: 'main_fab',
                 onPressed: !enabled
                     ? null
                     : () => setState(() => _showFabMenu = !_showFabMenu),
                 backgroundColor: _primaryColor,
-                elevation: _showFabMenu ? 2 : 4, // 展开时降低一点阴影
+                elevation: _showFabMenu ? 0 : 4,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16), // 方圆形看起来更现代
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: AnimatedRotation(
-                  turns: _showFabMenu ? 0.125 : 0, // 旋转 45度 (0.125 * 360)
+                  turns: _showFabMenu ? 0.125 : 0,
                   duration: const Duration(milliseconds: 250),
                   curve: Curves.easeOutBack,
                   child: const Icon(
@@ -236,7 +246,7 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   Future<void> _navigateToAdd(InventoryRepository repo, int tabIndex) async {
-    setState(() => _showFabMenu = false);
+    _closeFabMenu();
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -267,9 +277,9 @@ class _FabActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const double fabSize = 56.0; // 标准 FAB 高度
-    const double gap = 16.0; // 按钮间距
-    final double bottomOffset = fabSize + gap + (index * (50 + gap)); // 动态计算位置
+    const double fabSize = 56.0;
+    const double gap = 16.0;
+    final double bottomOffset = fabSize + gap + (index * (50 + gap));
 
     final duration = Duration(milliseconds: 200 + (index * 50));
     final curve = Curves.easeOutCubic;
@@ -277,7 +287,7 @@ class _FabActionButton extends StatelessWidget {
     return AnimatedPositioned(
       duration: duration,
       curve: curve,
-      right: 0, // 稍微靠右对齐
+      right: 0,
       bottom: visible ? bottomOffset : 0,
       child: AnimatedOpacity(
         duration: Duration(milliseconds: 150 + (index * 50)),
@@ -285,12 +295,11 @@ class _FabActionButton extends StatelessWidget {
         child: AnimatedSlide(
           duration: duration,
           curve: curve,
-          offset: visible ? Offset.zero : const Offset(0, 0.2), // 稍微带点向上滑动的效果
+          offset: visible ? Offset.zero : const Offset(0, 0.2),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              // 文本标签
               GestureDetector(
                 onTap: onTap,
                 child: Container(
@@ -299,6 +308,7 @@ class _FabActionButton extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(8),
+                    // ✅ 修复：boxShadow 放在了 decoration 内部
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.1),
@@ -319,7 +329,6 @@ class _FabActionButton extends StatelessWidget {
                   ),
                 ),
               ),
-              // 小圆按钮
               SizedBox(
                 width: 48,
                 height: 48,

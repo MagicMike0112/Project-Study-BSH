@@ -15,7 +15,6 @@ class InventoryPage extends StatelessWidget {
     required this.onRefresh,
   });
 
-  // 统一的背景色
   static const Color _backgroundColor = Color(0xFFF8F9FC);
 
   @override
@@ -23,7 +22,6 @@ class InventoryPage extends StatelessWidget {
     final theme = Theme.of(context);
     final allItems = repo.getActiveItems();
 
-    // 排序逻辑保持不变
     List<FoodItem> sortByExpiry(List<FoodItem> list) {
       final copy = [...list];
       copy.sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
@@ -53,13 +51,13 @@ class InventoryPage extends StatelessWidget {
         ),
         backgroundColor: _backgroundColor,
         elevation: 0,
-        centerTitle: false, // 保持左对齐的一致性
+        centerTitle: false,
+        // 🔴 确保这里没有 actions
       ),
       body: hasAnyItems
           ? ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               children: [
-                // 1. Dashboard Hero Card
                 _InventoryHeroCard(
                   total: allItems.length,
                   fridge: fridgeItems.length,
@@ -91,7 +89,7 @@ class InventoryPage extends StatelessWidget {
                     context,
                     icon: Icons.ac_unit_rounded,
                     label: 'Freezer',
-                    color: const Color(0xFF3F51B5), // Indigo
+                    color: const Color(0xFF3F51B5),
                     count: freezerItems.length,
                   ),
                   const SizedBox(height: 12),
@@ -107,7 +105,7 @@ class InventoryPage extends StatelessWidget {
                 if (pantryItems.isNotEmpty) ...[
                   _buildSectionHeader(
                     context,
-                    icon: Icons.shelves, // Material Symbols 风格
+                    icon: Icons.shelves,
                     label: 'Pantry',
                     color: Colors.brown,
                     count: pantryItems.length,
@@ -119,7 +117,7 @@ class InventoryPage extends StatelessWidget {
                       child: _buildDismissibleItem(context, item, theme),
                     ),
                   ),
-                  const SizedBox(height: 40), // 底部留白
+                  const SizedBox(height: 40),
                 ],
               ],
             )
@@ -222,7 +220,7 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
- Widget _buildDismissibleItem(
+  Widget _buildDismissibleItem(
     BuildContext context,
     FoodItem item,
     ThemeData theme,
@@ -250,9 +248,9 @@ class InventoryPage extends StatelessWidget {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
-              // 🔴 修改点：改为 fixed，去掉 margin，它就会乖乖贴在底部 Tab 上方
-              behavior: SnackBarBehavior.fixed, 
-              backgroundColor: const Color(0xFF323232), // 深灰色背景，看起来更像原生
+              // 🔴 关键修改：fixed 样式，紧贴底部 Tab
+              behavior: SnackBarBehavior.fixed,
+              backgroundColor: const Color(0xFF323232),
               duration: const Duration(seconds: 3),
               content: Text(
                 'Deleted "${deletedItem.name}"',
@@ -260,7 +258,7 @@ class InventoryPage extends StatelessWidget {
               ),
               action: SnackBarAction(
                 label: 'UNDO',
-                textColor: const Color(0xFF81D4FA), // 浅蓝色按钮，对比度高
+                textColor: const Color(0xFF81D4FA),
                 onPressed: () async {
                   await repo.addItem(deletedItem);
                   onRefresh();
@@ -273,13 +271,11 @@ class InventoryPage extends StatelessWidget {
     );
   }
 
-  // ✅ 核心卡片优化：去除冗余线条，强调层级
   Widget _buildItemCard(BuildContext context, FoodItem item) {
     final days = item.daysToExpiry;
     final qtyText =
         '${item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1)} ${item.unit}';
 
-    // 999d => Expiry not set
     final daysLabel = days >= 999
         ? 'No Expiry'
         : days == 0
@@ -313,7 +309,6 @@ class InventoryPage extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                // 1. Icon (Squircle shape consistent with AccountPage)
                 Container(
                   width: 48,
                   height: 48,
@@ -324,13 +319,10 @@ class InventoryPage extends StatelessWidget {
                   child: Icon(leading.icon, color: leading.color, size: 24),
                 ),
                 const SizedBox(width: 16),
-
-                // 2. Info Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Name & Pill Row
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -351,7 +343,6 @@ class InventoryPage extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      // Quantity
                       Text(
                         qtyText,
                         style: TextStyle(
@@ -385,24 +376,24 @@ class InventoryPage extends StatelessWidget {
 
     switch (u) {
       case _Urgency.expired:
-        bg = const Color(0xFFFFEBEE); // Red 50
-        fg = const Color(0xFFD32F2F); // Red 700
+        bg = const Color(0xFFFFEBEE);
+        fg = const Color(0xFFD32F2F);
         break;
       case _Urgency.today:
-        bg = const Color(0xFFFFF3E0); // Orange 50
-        fg = const Color(0xFFE65100); // Orange 900
+        bg = const Color(0xFFFFF3E0);
+        fg = const Color(0xFFE65100);
         break;
       case _Urgency.soon:
-        bg = const Color(0xFFFFF8E1); // Amber 50
-        fg = const Color(0xFFF57F17); // Amber 900
+        bg = const Color(0xFFFFF8E1);
+        fg = const Color(0xFFF57F17);
         break;
       case _Urgency.ok:
-        bg = const Color(0xFFE8F5E9); // Green 50
-        fg = const Color(0xFF2E7D32); // Green 800
+        bg = const Color(0xFFE8F5E9);
+        fg = const Color(0xFF2E7D32);
         break;
       case _Urgency.none:
-        bg = const Color(0xFFF5F5F5); // Grey 100
-        fg = const Color(0xFF616161); // Grey 700
+        bg = const Color(0xFFF5F5F5);
+        fg = const Color(0xFF616161);
         break;
     }
 
@@ -446,8 +437,6 @@ class InventoryPage extends StatelessWidget {
     );
     onRefresh();
   }
-
-  // ================== Action Sheet ==================
 
   Future<void> _showItemActionsSheet(BuildContext context, FoodItem item) async {
     await showModalBottomSheet(
@@ -522,12 +511,16 @@ class InventoryPage extends StatelessWidget {
                       ..hideCurrentSnackBar()
                       ..showSnackBar(
                         SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
-                          content: Text('Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}'),
+                          behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                          backgroundColor: const Color(0xFF323232),
+                          duration: const Duration(seconds: 3),
+                          content: Text(
+                            'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
+                            style: const TextStyle(color: Colors.white),
+                          ),
                           action: SnackBarAction(
                             label: 'UNDO',
-                            textColor: Colors.white,
+                            textColor: const Color(0xFF81D4FA),
                             onPressed: () async {
                               await repo.updateItem(oldItem);
                               onRefresh();
@@ -553,6 +546,7 @@ class InventoryPage extends StatelessWidget {
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
+                          behavior: SnackBarBehavior.fixed, // 🔴 关键修改
                           content: Text('Please make sure the food is safe for your pet!'),
                           duration: Duration(seconds: 4),
                         ),
@@ -565,12 +559,16 @@ class InventoryPage extends StatelessWidget {
                       ..hideCurrentSnackBar()
                       ..showSnackBar(
                         SnackBar(
-                          behavior: SnackBarBehavior.floating,
-                          margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
-                          content: Text('Fed ${item.name} to pet'),
+                          behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                          backgroundColor: const Color(0xFF323232),
+                          duration: const Duration(seconds: 3),
+                          content: Text(
+                            'Fed ${item.name} to pet',
+                            style: const TextStyle(color: Colors.white),
+                          ),
                           action: SnackBarAction(
                             label: 'UNDO',
-                            textColor: Colors.white,
+                            textColor: const Color(0xFF81D4FA),
                             onPressed: () async {
                               await repo.updateItem(oldItem);
                               onRefresh();
@@ -597,12 +595,16 @@ class InventoryPage extends StatelessWidget {
                         ..hideCurrentSnackBar()
                         ..showSnackBar(
                           SnackBar(
-                            behavior: SnackBarBehavior.floating,
-                            margin: const EdgeInsets.only(bottom: 12, left: 16, right: 16),
-                            content: Text('Deleted "${deletedItem.name}"'),
+                            behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                            backgroundColor: const Color(0xFF323232),
+                            duration: const Duration(seconds: 3),
+                            content: Text(
+                              'Deleted "${deletedItem.name}"',
+                              style: const TextStyle(color: Colors.white),
+                            ),
                             action: SnackBarAction(
                               label: 'UNDO',
-                              textColor: Colors.white,
+                              textColor: const Color(0xFF81D4FA),
                               onPressed: () async {
                                 await repo.addItem(deletedItem);
                                 onRefresh();
@@ -756,8 +758,6 @@ class InventoryPage extends StatelessWidget {
   }
 }
 
-// ================== New Inventory Hero Card ==================
-
 class _InventoryHeroCard extends StatelessWidget {
   final int total;
   final int fridge;
@@ -780,8 +780,8 @@ class _InventoryHeroCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF003B66), // Dark Blue
-            Color(0xFF0E7AA8), // BSH Blue
+            Color(0xFF003B66),
+            Color(0xFF0E7AA8),
           ],
         ),
         boxShadow: [
@@ -800,7 +800,6 @@ class _InventoryHeroCard extends StatelessWidget {
             padding: const EdgeInsets.all(24),
             child: Column(
               children: [
-                // Top Row: Total Count
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -827,7 +826,6 @@ class _InventoryHeroCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 24),
-                // Bottom Row: Stats Columns
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [

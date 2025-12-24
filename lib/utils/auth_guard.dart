@@ -20,96 +20,103 @@ Future<bool> requireLogin(BuildContext context) async {
   final goLogin = await showDialog<bool>(
     context: context,
     builder: (ctx) {
-      final theme = Theme.of(ctx);
-      final primary = theme.colorScheme.primary;
+      // 定义我们统一的主色调
+      const primaryColor = Color(0xFF005F87);
 
       return AlertDialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(24), // 更圆润的角
         ),
-        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white, // 防止 Material 3 的默认紫色
+        titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+        
+        // 标题区域：图标 + 文字
         title: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: primary.withOpacity(0.08),
+                color: primaryColor.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
+              child: const Icon(
                 Icons.auto_awesome,
-                color: primary,
-                size: 22,
+                color: primaryColor,
+                size: 24,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 16),
             const Expanded(
               child: Text(
-                'Log in to unlock AI',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                'Unlock AI Chef',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: Colors.black87,
+                ),
               ),
             ),
           ],
         ),
+        
+        // 内容区域：说明文案 + 权益列表
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 8),
             Text(
-              'AI recipes and smart expiry predictions are only available for logged-in users.',
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[800],
+              'Sign in to enable AI features and keep your data safe.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey[600],
+                height: 1.5,
               ),
             ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Icon(
-                  Icons.check_circle,
-                  size: 18,
-                  color: primary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Save your fridge data securely',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[700],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Icon(
-                  Icons.check_circle,
-                  size: 18,
-                  color: primary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  'Access AI features on any device',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey[700],
-                  ),
-                ),
-              ],
-            ),
+            const SizedBox(height: 16),
+            _BenefitRow(icon: Icons.cloud_sync_outlined, text: 'Sync across all devices'),
             const SizedBox(height: 8),
+            _BenefitRow(icon: Icons.psychology_outlined, text: 'Smart expiry predictions'),
+            const SizedBox(height: 8),
+            _BenefitRow(icon: Icons.restaurant_menu_rounded, text: 'Personalized AI recipes'),
           ],
         ),
-        actionsAlignment: MainAxisAlignment.spaceBetween,
+        
+        // 按钮区域
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Maybe later'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Log in'),
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey[600],
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('Maybe Later'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () => Navigator.of(ctx).pop(true),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: primaryColor,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Log In',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       );
@@ -120,7 +127,8 @@ Future<bool> requireLogin(BuildContext context) async {
     return false;
   }
 
-  // 跳到登录页（LoginPage 登录成功时应当 Navigator.pop(context, true);）
+  // 跳到登录页
+  if (!context.mounted) return false;
   final loggedIn = await Navigator.push<bool>(
     context,
     MaterialPageRoute(
@@ -129,4 +137,33 @@ Future<bool> requireLogin(BuildContext context) async {
   );
 
   return loggedIn == true;
+}
+
+// 辅助组件：权益行
+class _BenefitRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _BenefitRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    const primaryColor = Color(0xFF005F87);
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: primaryColor.withOpacity(0.8)),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

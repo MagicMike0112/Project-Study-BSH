@@ -1,8 +1,10 @@
 // lib/screens/impact_page.dart
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:math' as math;
 
 import '../repositories/inventory_repository.dart';
+import '../widgets/profile_avatar_button.dart';
 
 enum ImpactRange { week, month, year }
 
@@ -17,7 +19,6 @@ class ImpactPage extends StatefulWidget {
 class _ImpactPageState extends State<ImpactPage> {
   ImpactRange _range = ImpactRange.week;
 
-  // --- 保持原有逻辑不变 ---
   DateTime _rangeStart() {
     final now = DateTime.now();
     switch (_range) {
@@ -30,38 +31,23 @@ class _ImpactPageState extends State<ImpactPage> {
     }
   }
 
-  String _rangeLabel(ImpactRange r) {
-    switch (r) {
-      case ImpactRange.week:
-        return '7 Days'; // 稍微调整大小写，看起来更工整
-      case ImpactRange.month:
-        return '30 Days';
-      case ImpactRange.year:
-        return '1 Year';
-    }
-  }
-
   String _shortDate(DateTime d) => '${d.month}/${d.day}';
-  // --- 逻辑结束 ---
 
-  // 统一的背景色
   static const Color _backgroundColor = Color(0xFFF8F9FC);
 
   @override
   Widget build(BuildContext context) {
     final start = _rangeStart();
-
-    // 逻辑：数据过滤与聚合
+    
     final events = widget.repo.impactEvents
         .where((e) => !e.date.isBefore(start))
         .toList();
 
     final streak = widget.repo.getCurrentStreakDays();
-
-    final moneyTotal =
-        events.fold<double>(0, (sum, e) => sum + e.moneySaved);
-    final co2Total =
-        events.fold<double>(0, (sum, e) => sum + e.co2Saved);
+    final savedCount = widget.repo.getSavedCount();
+    
+    final moneyTotal = events.fold<double>(0, (sum, e) => sum + e.moneySaved);
+    final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
 
     final petEvents = events.where((e) => e.type == ImpactType.fedToPet).toList();
     final petQty = petEvents.fold<double>(0, (sum, e) => sum + e.quantity);
@@ -77,10 +63,7 @@ class _ImpactPageState extends State<ImpactPage> {
       dailyCo2[d] = (dailyCo2[d] ?? 0) + e.co2Saved;
     }
 
-    final allDates = <DateTime>{
-      ...dailyMoney.keys,
-      ...dailyCo2.keys,
-    }.toList()
+    final allDates = <DateTime>{...dailyMoney.keys, ...dailyCo2.keys}.toList()
       ..sort((a, b) => a.compareTo(b));
 
     final moneySpots = <FlSpot>[];
@@ -94,8 +77,9 @@ class _ImpactPageState extends State<ImpactPage> {
       co2Spots.add(FlSpot(x, dailyCo2[d] ?? 0));
       labels[i] = _shortDate(d);
     }
-
-    final scheme = Theme.of(context).colorScheme;
+    
+    int ecoScore = (savedCount * 2 + streak * 5).clamp(0, 100);
+    if (events.isEmpty) ecoScore = 0;
 
     return Scaffold(
       backgroundColor: _backgroundColor,
@@ -107,58 +91,56 @@ class _ImpactPageState extends State<ImpactPage> {
         backgroundColor: _backgroundColor,
         elevation: 0,
         centerTitle: false,
+        actions: const [
+          ProfileAvatarButton(),
+        ],
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         children: [
-          // 1. 顶部 Hero Card：强调 Streak，这是用户最直接的成就感来源
-          _ImpactHeroCard(
-            streak: streak,
-            rangeLabel: _rangeLabel(_range),
+          _ImpactHeroCard(score: ecoScore, streak: streak),
+          const SizedBox(height: 24),
+          _SlidingRangeSelector(
+            currentRange: _range,
+            onChanged: (r) => setState(() => _range = r),
           ),
-
           const SizedBox(height: 24),
-
-          // 2. 时间范围选择器：放在这里作为“控制器”，控制下方的数据显示
-          _buildRangeSelector(),
-
-          const SizedBox(height: 24),
-
-          // 3. 核心指标概览：Money & CO2
           Row(
             children: [
               Expanded(
                 child: _MetricCard(
                   icon: Icons.savings_rounded,
                   title: 'Money Saved',
-                  value: '€${moneyTotal.toStringAsFixed(2)}',
-                  tint: const Color(0xFF0E7AA8), // 品牌蓝
+                  value: '€${moneyTotal.toStringAsFixed(1)}',
+                  tint: const Color(0xFF0E7AA8),
                 ),
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: _MetricCard(
-                  icon: Icons.eco_rounded,
+                  icon: Icons.cloud_off_rounded,
                   title: 'CO₂ Avoided',
                   value: '${co2Total.toStringAsFixed(1)} kg',
-                  tint: const Color(0xFF43A047), // 生态绿
+                  tint: const Color(0xFF43A047),
                 ),
               ),
             ],
           ),
-
           const SizedBox(height: 24),
+          
+          // 🆕 New Section: Equivalents
+          if (moneyTotal > 0 || co2Total > 0)
+            _ImpactEquivalentsSection(money: moneyTotal, co2: co2Total),
+          
+          if (moneyTotal > 0 || co2Total > 0)
+            const SizedBox(height: 24),
 
-          // 4. Streak 进度详情 (Gamification)
-          _StreakMilestoneCard(streak: streak),
-
+          _BadgesSection(savedCount: savedCount),
           const SizedBox(height: 32),
-
-          // 5. 图表区：如果没数据则显示空状态
           if (events.isEmpty)
             _EmptyImpactCard()
           else ...[
-             Text(
+            Text(
               'Trends',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 fontWeight: FontWeight.w800,
@@ -166,108 +148,154 @@ class _ImpactPageState extends State<ImpactPage> {
               ),
             ),
             const SizedBox(height: 16),
-            _LineChartCard(
-              title: 'Money Savings',
-              color: const Color(0xFF0E7AA8),
-              spots: moneySpots,
-              labels: labels,
-              valueSuffix: '€',
-            ),
-            const SizedBox(height: 20),
-            _LineChartCard(
-              title: 'Carbon Footprint',
-              color: const Color(0xFF43A047),
-              spots: co2Spots,
-              labels: labels,
-              valueSuffix: 'kg',
-            ),
+            if (allDates.length < 2)
+               _InsufficientDataCard()
+            else ...[
+              _LineChartCard(
+                title: 'Money Savings',
+                color: const Color(0xFF0E7AA8),
+                spots: moneySpots,
+                labels: labels,
+                valueSuffix: '€',
+              ),
+              const SizedBox(height: 20),
+              _LineChartCard(
+                title: 'Carbon Footprint',
+                color: const Color(0xFF43A047),
+                spots: co2Spots,
+                labels: labels,
+                valueSuffix: 'kg',
+              ),
+            ],
           ],
-
           const SizedBox(height: 32),
-
-          // 6. 宠物专属卡片 (Personalization)
           _GuineaPigCard(
             petQty: petQty,
             totalQty: totalQty,
             petShare: petShare,
           ),
-          
           const SizedBox(height: 40),
         ],
       ),
     );
   }
+}
 
-  // 构建更现代的 Segment Control 风格选择器
-  Widget _buildRangeSelector() {
+// ===================== UI Components =====================
+
+// 🆕 New Component: Equivalents Section
+class _ImpactEquivalentsSection extends StatelessWidget {
+  final double money;
+  final double co2;
+
+  const _ImpactEquivalentsSection({required this.money, required this.co2});
+
+  @override
+  Widget build(BuildContext context) {
+    // Estimations: 
+    // 1 Coffee ~ €3.00
+    // 1 km Driving ~ 0.2 kg CO2
+    final coffees = (money / 3.0).toStringAsFixed(1);
+    final kmDriven = (co2 / 0.2).toStringAsFixed(0);
+
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black.withOpacity(0.04)),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.black.withOpacity(0.03)),
       ),
-      child: Row(
-        children: ImpactRange.values.map((r) {
-          final selected = r == _range;
-          return Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _range = r),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: selected ? const Color(0xFF0E7AA8) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  _rangeLabel(r),
-                  style: TextStyle(
-                    color: selected ? Colors.white : Colors.grey[600],
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
-                  ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'That\'s equivalent to...',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.brown.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('☕️', style: TextStyle(fontSize: 20)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(coffees, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                          const Text('coffees earned', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-          );
-        }).toList(),
+              Container(width: 1, height: 40, color: Colors.grey[200]),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blueGrey.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('🚗', style: TextStyle(fontSize: 20)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('$kmDriven km', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+                          const Text('driving avoided', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 }
 
-// ===================== UI Components (UX Optimized) =====================
-
 class _ImpactHeroCard extends StatelessWidget {
+  final int score;
   final int streak;
-  final String rangeLabel;
 
-  const _ImpactHeroCard({
-    required this.streak,
-    required this.rangeLabel,
-  });
+  const _ImpactHeroCard({required this.score, required this.streak});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 160,
+      height: 180,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(32),
-        // 使用更深邃、更有质感的渐变
+        borderRadius: BorderRadius.circular(24),
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF0F2027), 
-            Color(0xFF203A43), 
-            Color(0xFF2C5364),
+            Color(0xFF2E7D32), // Forest Green
+            Color(0xFF005F87), // BSH Blue
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2C5364).withOpacity(0.3),
+            color: const Color(0xFF2E7D32).withOpacity(0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -275,90 +303,95 @@ class _ImpactHeroCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(
-            right: -20,
-            top: -20,
-            child: _GlassCircle(size: 140, opacity: 0.05),
-          ),
-          Positioned(
-            left: 20,
-            bottom: -40,
-            child: _GlassCircle(size: 180, opacity: 0.05),
-          ),
+          Positioned(right: -40, top: -40, child: _GlassCircle(size: 160)),
+          Positioned(left: -20, bottom: -60, child: _GlassCircle(size: 140)),
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            child: Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withOpacity(0.1)),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'ECO SCORE',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.0,
+                        ),
                       ),
-                      child: Row(
+                      const SizedBox(height: 4),
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.baseline,
+                        textBaseline: TextBaseline.alphabetic,
                         children: [
-                          const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFFB74D), size: 16),
-                          const SizedBox(width: 4),
                           Text(
-                            'Current Streak',
+                            '$score',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 56,
+                              fontWeight: FontWeight.w900,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            '/100',
                             style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 12,
+                              color: Colors.white60,
+                              fontSize: 20,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    Icon(Icons.emoji_events_rounded, color: Colors.white.withOpacity(0.2), size: 32),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          '$streak',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 48,
-                            fontWeight: FontWeight.w800,
-                            height: 1.0,
-                          ),
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(20),
                         ),
-                        const SizedBox(width: 8),
-                        const Padding(
-                          padding: EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            'days',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFFB74D), size: 16),
+                            const SizedBox(width: 4),
+                            Text(
+                              '$streak day streak!',
+                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(
+                  width: 110,
+                  height: 110,
+                  child: CustomPaint(
+                    painter: _ArcPainter(
+                      percent: score / 100,
+                      color: Colors.white,
+                      bgColor: Colors.white.withOpacity(0.15),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      streak == 0
-                          ? 'Save one item today to start!'
-                          : 'Consistency is key. Great job!',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
-                        fontSize: 13,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            score > 80 ? Icons.emoji_events : Icons.eco, 
+                            color: Colors.white, 
+                            size: 32
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ],
             ),
@@ -369,37 +402,96 @@ class _ImpactHeroCard extends StatelessWidget {
   }
 }
 
-class _GlassCircle extends StatelessWidget {
-  final double size;
-  final double opacity;
-  const _GlassCircle({required this.size, required this.opacity});
+class _SlidingRangeSelector extends StatelessWidget {
+  final ImpactRange currentRange;
+  final ValueChanged<ImpactRange> onChanged;
+
+  const _SlidingRangeSelector({required this.currentRange, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: size,
-      height: size,
+      height: 46,
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white.withOpacity(opacity),
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final itemWidth = width / 3;
+          return Stack(
+            children: [
+              AnimatedAlign(
+                alignment: _getAlign(currentRange),
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.easeOutCubic,
+                child: Container(
+                  width: itemWidth,
+                  height: double.infinity,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 2)),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: ImpactRange.values.map((r) {
+                  final isSelected = r == currentRange;
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: () => onChanged(r),
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 200),
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: isSelected ? Colors.black87 : Colors.grey[600],
+                          ),
+                          child: Text(_label(r)),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
+
+  Alignment _getAlign(ImpactRange r) {
+    switch(r) {
+      case ImpactRange.week: return Alignment.centerLeft;
+      case ImpactRange.month: return Alignment.center;
+      case ImpactRange.year: return Alignment.centerRight;
+    }
+  }
+
+  String _label(ImpactRange r) {
+    switch(r) {
+      case ImpactRange.week: return '7 Days';
+      case ImpactRange.month: return '30 Days';
+      case ImpactRange.year: return '1 Year';
+    }
+  }
 }
 
-// 极简风格的指标卡片，去掉 subtitle 减少视觉干扰
 class _MetricCard extends StatelessWidget {
   final IconData icon;
   final String title;
   final String value;
   final Color tint;
 
-  const _MetricCard({
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.tint,
-  });
+  const _MetricCard({required this.icon, required this.title, required this.value, required this.tint});
 
   @override
   Widget build(BuildContext context) {
@@ -431,7 +523,7 @@ class _MetricCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             value,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 22,
               fontWeight: FontWeight.w800,
               color: Colors.black87,
@@ -453,19 +545,12 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-class _StreakMilestoneCard extends StatelessWidget {
-  final int streak;
-  const _StreakMilestoneCard({required this.streak});
+class _BadgesSection extends StatelessWidget {
+  final int savedCount;
+  const _BadgesSection({required this.savedCount});
 
   @override
   Widget build(BuildContext context) {
-    const milestones = [3, 7, 14, 30];
-    final nextMilestone = milestones.firstWhere(
-      (m) => m > streak,
-      orElse: () => streak == 0 ? 3 : streak,
-    );
-    final progress = nextMilestone <= 0 ? 0.0 : (streak / nextMilestone).clamp(0.0, 1.0);
-
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -476,35 +561,19 @@ class _StreakMilestoneCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(
+            'Achievements',
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          ),
+          const SizedBox(height: 20),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              const Text(
-                'Next Milestone',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-              ),
-              Text(
-                '${(progress * 100).toInt()}%',
-                style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[400]),
-              ),
+              _BadgeItem(icon: Icons.egg_alt_outlined, label: 'Starter', isUnlocked: savedCount >= 1, color: Colors.blue),
+              _BadgeItem(icon: Icons.eco, label: 'Saver', isUnlocked: savedCount >= 10, color: Colors.green),
+              _BadgeItem(icon: Icons.volunteer_activism, label: 'Hero', isUnlocked: savedCount >= 50, color: Colors.red),
+              _BadgeItem(icon: Icons.diamond_outlined, label: 'Legend', isUnlocked: savedCount >= 100, color: Colors.purple),
             ],
-          ),
-          const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(99),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 10,
-              backgroundColor: Colors.grey[100],
-              color: const Color(0xFFFFB74D), // 更有活力的橙色
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            streak >= nextMilestone
-                ? '🔥 Amazing! You hit a $streak-day streak!'
-                : 'Just ${nextMilestone - streak} more days to hit $nextMilestone days.',
-            style: TextStyle(fontSize: 13, color: Colors.grey[600]),
           ),
         ],
       ),
@@ -512,30 +581,148 @@ class _StreakMilestoneCard extends StatelessWidget {
   }
 }
 
-class _EmptyImpactCard extends StatelessWidget {
+class _BadgeItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool isUnlocked;
+  final Color color;
+
+  const _BadgeItem({required this.icon, required this.label, required this.isUnlocked, required this.color});
+
   @override
   Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 56, height: 56,
+          decoration: BoxDecoration(
+            color: isUnlocked ? color.withOpacity(0.1) : Colors.grey[100],
+            shape: BoxShape.circle,
+            border: Border.all(color: isUnlocked ? color.withOpacity(0.5) : Colors.transparent, width: 2),
+          ),
+          child: Icon(icon, color: isUnlocked ? color : Colors.grey[300], size: 28),
+        ),
+        const SizedBox(height: 8),
+        Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isUnlocked ? Colors.black87 : Colors.grey[400])),
+      ],
+    );
+  }
+}
+
+class _LineChartCard extends StatelessWidget {
+  final String title;
+  final Color color;
+  final List<FlSpot> spots;
+  final Map<int, String> labels;
+  final String valueSuffix;
+
+  const _LineChartCard({
+    required this.title,
+    required this.color,
+    required this.spots,
+    required this.labels,
+    required this.valueSuffix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double maxY = spots.isEmpty ? 5.0 : spots.fold(0.0, (m, s) => s.y > m ? s.y : m) * 1.2;
+    final safeMaxY = maxY <= 0 ? 5.0 : maxY;
+
     return Container(
-      padding: const EdgeInsets.all(32),
-      alignment: Alignment.center,
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, 4))],
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(
-            "No data yet",
-            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[800]),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24),
+            child: Row(
+              children: [
+                Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2))])),
+                const SizedBox(width: 10),
+                Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87)),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            "Start cooking or feeding your pets to see your impact charts.",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[500], height: 1.5, fontSize: 13),
+          SizedBox(
+            height: 180,
+            child: LineChart(
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: safeMaxY / 3,
+                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[100], strokeWidth: 1, dashArray: [4, 4]),
+                ),
+                borderData: FlBorderData(show: false),
+                minX: 0.0,
+                maxX: spots.isEmpty ? 1.0 : (spots.length - 1).toDouble(),
+                minY: 0.0,
+                maxY: safeMaxY,
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((ts) {
+                        return LineTooltipItem(
+                          '${ts.y.toStringAsFixed(1)} $valueSuffix',
+                          const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                        );
+                      }).toList();
+                    },
+                    tooltipRoundedRadius: 12,
+                    tooltipPadding: const EdgeInsets.all(12),
+                    tooltipMargin: 10,
+                  ),
+                  handleBuiltInTouches: true,
+                ),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 24,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        final idx = value.toInt();
+                        if (idx == 0 || idx == labels.length - 1 || (labels.length > 4 && idx == labels.length ~/ 2)) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(labels[idx] ?? '', style: TextStyle(fontSize: 10, color: Colors.grey[400], fontWeight: FontWeight.w500)),
+                          );
+                        }
+                        return const SizedBox.shrink();
+                      },
+                    ),
+                  ),
+                ),
+                lineBarsData: [
+                  LineChartBarData(
+                    isCurved: true,
+                    curveSmoothness: 0.35,
+                    spots: spots,
+                    barWidth: 3,
+                    color: color,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: false),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [color.withOpacity(0.15), color.withOpacity(0.0)],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
@@ -543,24 +730,18 @@ class _EmptyImpactCard extends StatelessWidget {
   }
 }
 
-// 豚鼠卡片：使用更温暖的色调，强调名字
 class _GuineaPigCard extends StatelessWidget {
   final double petQty;
   final double totalQty;
   final double petShare;
-
-  const _GuineaPigCard({
-    required this.petQty,
-    required this.totalQty,
-    required this.petShare,
-  });
+  const _GuineaPigCard({required this.petQty, required this.totalQty, required this.petShare});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1), // 暖黄色背景，更温馨
+        color: const Color(0xFFFFF8E1), // 暖黄色背景
         borderRadius: BorderRadius.circular(24),
       ),
       child: Column(
@@ -582,7 +763,7 @@ class _GuineaPigCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Little Shi & Little Yuan', // 用户个性化名字
+                      'Little Shi & Little Yuan', // 🐹 名字
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,
@@ -616,44 +797,26 @@ class _GuineaPigCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Items Snacked',
-                        style: TextStyle(fontSize: 11, color: Colors.brown[300]),
-                      ),
+                      Text('Items Snacked', style: TextStyle(fontSize: 11, color: Colors.brown[300])),
                       const SizedBox(height: 4),
                       Text(
                         petQty.toStringAsFixed(0),
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF5D4037),
-                        ),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF5D4037)),
                       ),
                     ],
                   ),
                 ),
-                Container(
-                  width: 1,
-                  height: 30,
-                  color: Colors.brown.withOpacity(0.1),
-                ),
+                Container(width: 1, height: 30, color: Colors.brown.withOpacity(0.1)),
                 const SizedBox(width: 20),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Diet Share',
-                        style: TextStyle(fontSize: 11, color: Colors.brown[300]),
-                      ),
+                      Text('Diet Share', style: TextStyle(fontSize: 11, color: Colors.brown[300])),
                       const SizedBox(height: 4),
                       Text(
                         '${(petShare * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF5D4037),
-                        ),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF5D4037)),
                       ),
                     ],
                   ),
@@ -667,188 +830,60 @@ class _GuineaPigCard extends StatelessWidget {
   }
 }
 
-// 图表卡片：更干净，去掉了外部边框和多余线条
-class _LineChartCard extends StatelessWidget {
-  final String title;
-  final Color color;
-  final List<FlSpot> spots;
-  final Map<int, String> labels;
-  final String valueSuffix;
-
-  const _LineChartCard({
-    required this.title,
-    required this.color,
-    required this.spots,
-    required this.labels,
-    required this.valueSuffix,
-  });
-
-  double _maxY(List<FlSpot> spots) {
-    if (spots.isEmpty) return 1.0;
-    double m = 0;
-    for (final s in spots) {
-      if (s.y > m) m = s.y;
-    }
-    return m <= 0 ? 1.0 : (m * 1.2);
-  }
-
+class _EmptyImpactCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final double maxX = spots.isEmpty ? 0.0 : (spots.length > 1 ? (spots.length - 1).toDouble() : 1.0);
-    final double maxY = _maxY(spots);
-
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Row(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: color,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2)),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 180,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: maxY / 3,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: Colors.grey[100], // 极淡的网格线
-                      strokeWidth: 1,
-                      dashArray: [4, 4], // 虚线
-                    );
-                  },
-                ),
-                borderData: FlBorderData(show: false),
-                minX: 0.0,
-                maxX: maxX,
-                minY: 0.0,
-                maxY: maxY,
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((ts) {
-                        final idx = ts.x.toInt();
-                        final label = labels[idx] ?? '';
-                        final v = ts.y.toStringAsFixed(1);
-                        return LineTooltipItem(
-                          '$v $valueSuffix\n',
-                          const TextStyle(
-                            color: Colors.black87,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                          ),
-                          children: [
-                            TextSpan(
-                              text: label,
-                              style: TextStyle(
-                                color: Colors.grey[500],
-                                fontSize: 10,
-                                fontWeight: FontWeight.normal,
-                              ),
-                            ),
-                          ],
-                        );
-                      }).toList();
-                    },
-                    tooltipRoundedRadius: 12,
-                    tooltipPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                ),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), // 隐藏Y轴标签，保持干净，依赖点击查看数值
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 24,
-                      interval: 1,
-                      getTitlesWidget: (value, meta) {
-                        final idx = value.toInt();
-                        // 逻辑：只显示首尾，或者少量标签
-                        if (idx == 0 || idx == labels.length - 1 || (labels.length > 4 && idx == labels.length ~/ 2)) {
-                           final label = labels[idx];
-                           if (label != null) {
-                             return Padding(
-                               padding: const EdgeInsets.only(top: 8),
-                               child: Text(
-                                 label,
-                                 style: TextStyle(fontSize: 11, color: Colors.grey[400], fontWeight: FontWeight.w500),
-                               ),
-                             );
-                           }
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                  ),
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    isCurved: true,
-                    curveSmoothness: 0.35, // 更平滑
-                    spots: spots,
-                    barWidth: 3,
-                    color: color,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: false), // 默认不显示点，点击才有
-                    belowBarData: BarAreaData(
-                      show: true,
-                      // 渐变填充，让图表看起来“落地”了
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          color.withOpacity(0.15),
-                          color.withOpacity(0.0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(32),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.black.withOpacity(0.03))),
+      child: Column(children: [Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]), const SizedBox(height: 16), Text("No data yet", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[800])), const SizedBox(height: 8), Text("Start cooking or feeding your pets to see your impact charts.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], height: 1.5, fontSize: 13))]),
     );
   }
+}
+
+class _InsufficientDataCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.black.withOpacity(0.03))),
+      child: Column(children: [Icon(Icons.timeline_rounded, size: 40, color: Colors.grey[300]), const SizedBox(height: 12), Text("Collecting data...", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[700])), const SizedBox(height: 4), Text("We need at least 2 days of activity to show trends.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], fontSize: 12))]),
+    );
+  }
+}
+
+class _GlassCircle extends StatelessWidget {
+  final double size;
+  const _GlassCircle({required this.size});
+  @override
+  Widget build(BuildContext context) {
+    return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.05)));
+  }
+}
+
+class _ArcPainter extends CustomPainter {
+  final double percent;
+  final Color color;
+  final Color bgColor;
+
+  _ArcPainter({required this.percent, required this.color, required this.bgColor});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    const strokeWidth = 8.0;
+
+    final bgPaint = Paint()..color = bgColor..strokeWidth = strokeWidth..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
+    final fgPaint = Paint()..color = color..strokeWidth = strokeWidth..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
+
+    canvas.drawCircle(center, radius - strokeWidth / 2, bgPaint);
+    const startAngle = -math.pi / 2;
+    final sweepAngle = 2 * math.pi * percent;
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius - strokeWidth / 2), startAngle, sweepAngle, false, fgPaint);
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }

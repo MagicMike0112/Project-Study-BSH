@@ -1,6 +1,5 @@
 // lib/screens/today_page.dart
 import 'package:flutter/material.dart';
-
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import '../widgets/food_card.dart';
@@ -16,7 +15,6 @@ class TodayPage extends StatelessWidget {
     required this.onRefresh,
   });
 
-  // 定义页面级的主题颜色，保持一致性
   static const Color _primaryBlue = Color(0xFF0E7AA8);
   static const Color _surfaceColor = Color(0xFFF8F9FC);
 
@@ -25,52 +23,41 @@ class TodayPage extends StatelessWidget {
     final expiring = repo.getExpiringItems(3);
 
     return Scaffold(
-      backgroundColor: _surfaceColor, // 更柔和的背景色
+      backgroundColor: _surfaceColor,
       appBar: AppBar(
         title: const Text(
           'Smart Food Home',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
         ),
-        centerTitle: false, // 现代设计通常靠左，更符合阅读习惯
+        centerTitle: false,
         backgroundColor: _surfaceColor,
         elevation: 0,
         scrolledUnderElevation: 0,
         foregroundColor: Colors.black87,
+        // 🔴 已移除 actions (刷新按钮)，保持纯净
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         children: [
-          // 1. 情感化激励 (Impact Summary) - 视觉降噪，作为 Header 存在
           _buildImpactSummary(context),
-          
           const SizedBox(height: 24),
-
-          // 2. 核心行动入口 (AI Button) - 视觉增强，鼓励点击
           _buildAiButton(
             context,
             onTap: () => _showAiRecipeFlow(context, expiring),
           ),
-
           const SizedBox(height: 32),
-
-          // 3. 紧急事项标题
           _buildSectionHeader(context, expiring.length),
-
           const SizedBox(height: 16),
-
-          // 4. 列表内容
           if (expiring.isEmpty)
             _buildEmptyState(context)
           else
             ...expiring.map(
               (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 12), // 卡片间距增加
+                padding: const EdgeInsets.only(bottom: 12),
                 child: FoodCard(
                   item: item,
-                  // 优化后的 Leading 图标，减少视觉干扰
                   leading: _buildInventoryStyleLeading(item),
                   onAction: (action) async {
-                    // --- 保持原有业务逻辑不变 ---
                     final oldStatus = item.status;
                     await repo.recordImpactForAction(item, action);
 
@@ -87,61 +74,54 @@ class TodayPage extends StatelessWidget {
 
                     if (action == 'pet' && !repo.hasShownPetWarning) {
                       await repo.markPetWarningShown();
-                      // ignore: use_build_context_synchronously
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Please ensure the food is safe for your pet!'),
-                          duration: Duration(seconds: 4),
-                        ),
-                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            behavior: SnackBarBehavior.fixed,
+                            content: Text('Please ensure the food is safe for your pet!'),
+                            duration: Duration(seconds: 4),
+                          ),
+                        );
+                      }
                     }
 
                     if (newStatus != null) {
-                      // ignore: use_build_context_synchronously
-                      ScaffoldMessenger.of(context)
-                        ..hideCurrentSnackBar()
-                        ..showSnackBar(
-                          SnackBar(
-                            // 🔴 修改点：改为 fixed，去掉 margin，让它紧贴底部 Tab
-                            behavior: SnackBarBehavior.fixed,
-                            backgroundColor: const Color(0xFF323232), // 深灰色背景
-                            duration: const Duration(seconds: 3),
-                            content: Text(
-                              _undoLabelForAction(action, item.name),
-                              style: const TextStyle(color: Colors.white),
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context)
+                          ..hideCurrentSnackBar()
+                          ..showSnackBar(
+                            SnackBar(
+                              behavior: SnackBarBehavior.fixed,
+                              backgroundColor: const Color(0xFF323232),
+                              duration: const Duration(seconds: 3),
+                              content: Text(
+                                _undoLabelForAction(action, item.name),
+                                style: const TextStyle(color: Colors.white),
+                              ),
+                              action: SnackBarAction(
+                                label: 'UNDO',
+                                textColor: const Color(0xFF81D4FA),
+                                onPressed: () async {
+                                  await repo.updateStatus(item.id, oldStatus);
+                                  onRefresh();
+                                },
+                              ),
                             ),
-                            action: SnackBarAction(
-                              label: 'UNDO',
-                              textColor: const Color(0xFF81D4FA), // 浅蓝色按钮，对比度高
-                              onPressed: () async {
-                                await repo.updateStatus(item.id, oldStatus);
-                                onRefresh();
-                              },
-                            ),
-                          ),
-                        );
+                          );
+                      }
                     }
                     onRefresh();
-                    // --- 业务逻辑结束 ---
                   },
                 ),
               ),
             ),
-          
-          // 底部留白，防止内容贴底
           const SizedBox(height: 40),
         ],
       ),
     );
   }
 
-// ================== AI Flow 跳转逻辑 ==================
-
-  Future<void> _showAiRecipeFlow(
-    BuildContext context,
-    List<FoodItem> expiringItems,
-  ) async {
-    // 确保你的文件头部引用了 select_ingredients_page.dart
+  Future<void> _showAiRecipeFlow(BuildContext context, List<FoodItem> expiringItems) async {
     final changed = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
@@ -151,22 +131,17 @@ class TodayPage extends StatelessWidget {
         ),
       ),
     );
-
-    // 如果在下一个页面做了修改（比如消耗了食材），返回后刷新页面
     if (changed == true) onRefresh();
   }
 
-  // ================== ✅ 优化后的 Inventory Style Leading ==================
-  // 去掉了边框，改用更轻盈的底色，减少列表的“格子感”
   Widget _buildInventoryStyleLeading(FoodItem item) {
     final leading = _leadingIcon(item);
-
     return Container(
       width: 48,
       height: 48,
       decoration: BoxDecoration(
-        color: leading.color.withOpacity(0.08), // 更淡的背景
-        borderRadius: BorderRadius.circular(14), // 更圆润
+        color: leading.color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
       ),
       child: Icon(leading.icon, color: leading.color, size: 22),
     );
@@ -183,17 +158,14 @@ class TodayPage extends StatelessWidget {
     }
   }
 
-  // ================== ✅ 优化后的 Impact Summary ==================
-  // 此时它不再是一个巨大的色块，而是一个清爽的数据展示区
   Widget _buildImpactSummary(BuildContext context) {
     final saved = repo.getSavedCount();
-
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)), // 极淡的边框
+        border: Border.all(color: Colors.black.withOpacity(0.03)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.04),
@@ -204,12 +176,11 @@ class TodayPage extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // 左侧：Icon 和 激励语
           Container(
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: const Color(0xFFE3F2FD), // 浅蓝色背景
+              color: const Color(0xFFE3F2FD),
               borderRadius: BorderRadius.circular(16),
             ),
             child: const Icon(Icons.eco_rounded, color: _primaryBlue, size: 26),
@@ -226,7 +197,6 @@ class TodayPage extends StatelessWidget {
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 0.5,
-                    textBaseline: TextBaseline.alphabetic,
                   ),
                 ),
                 const SizedBox(height: 2),
@@ -241,7 +211,6 @@ class TodayPage extends StatelessWidget {
               ],
             ),
           ),
-          // 右侧：巨大的数字，强调成就感
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -269,8 +238,6 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // ================== ✅ 优化后的 AI Button ==================
-  // 更加突出，使用深色背景吸引点击，暗示这是解决问题的“魔法”
   Widget _buildAiButton(BuildContext context, {required VoidCallback onTap}) {
     return Container(
       decoration: BoxDecoration(
@@ -289,23 +256,20 @@ class TodayPage extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(24),
           child: Ink(
-            height: 72, //稍微加高一点，增加点击区域
+            height: 72,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(24),
               gradient: const LinearGradient(
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
-                colors: [
-                  Color(0xFF1E293B), // 深岩石蓝
-                  Color(0xFF0F172A), // 近乎黑的蓝
-                ],
+                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
               ),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
               child: Row(
                 children: [
-                  const Icon(Icons.auto_awesome, color: Color(0xFF60A5FA), size: 24), // 亮蓝色图标
+                  const Icon(Icons.auto_awesome, color: Color(0xFF60A5FA), size: 24),
                   const SizedBox(width: 16),
                   Expanded(
                     child: Column(
@@ -337,11 +301,7 @@ class TodayPage extends StatelessWidget {
                       color: Colors.white.withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: Colors.white,
-                      size: 14,
-                    ),
+                    child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
                   ),
                 ],
               ),
@@ -352,8 +312,6 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // ================== ✅ 优化后的 Section Header ==================
-  // 极简主义，去掉了多余的边框和文字
   Widget _buildSectionHeader(BuildContext context, int count) {
     return Row(
       children: [
@@ -371,7 +329,7 @@ class TodayPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFEAEA), // 非常浅的红色背景，示警但不刺眼
+              color: const Color(0xFFFFEAEA),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -387,12 +345,10 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // ================== ✅ 优化后的 Empty State ==================
-  // 更加平面化，融入背景
   Widget _buildEmptyState(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
-      alignment: Alignment.center, 
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
@@ -408,11 +364,7 @@ class TodayPage extends StatelessWidget {
               color: Colors.green.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.check_rounded,
-              color: Colors.green,
-              size: 32,
-            ),
+            child: const Icon(Icons.check_rounded, color: Colors.green, size: 32),
           ),
           const SizedBox(height: 16),
           const Text(
@@ -426,10 +378,7 @@ class TodayPage extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             'Your fridge is fresh and organized.',
-            style: TextStyle(
-              color: Colors.grey[500],
-              fontSize: 13,
-            ),
+            style: TextStyle(color: Colors.grey[500], fontSize: 13),
           ),
         ],
       ),

@@ -739,6 +739,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
 
 // ✅ 修正：_ArchiveRecipeCard 现在接受 RecipeSuggestion 对象而不是 title/subtitle
 class _ArchiveRecipeCard extends StatelessWidget {
+  // 🔴 修复点：移除了 title/subtitle，改为接收完整的 recipe 对象
   final RecipeSuggestion recipe;
   final DateTime addedAt;
   final VoidCallback onOpen;
@@ -771,6 +772,7 @@ class _ArchiveRecipeCard extends StatelessWidget {
           child: Row(
             children: [
               Hero(
+                // 🔴 修复点：确保 recipe.id 可访问
                 tag: 'recipe_icon_${recipe.id}',
                 child: Container(
                   width: 50,
