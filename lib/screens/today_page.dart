@@ -1,5 +1,6 @@
 // lib/screens/today_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 🟢 Added for Haptics
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import '../widgets/food_card.dart';
@@ -34,84 +35,112 @@ class TodayPage extends StatelessWidget {
         elevation: 0,
         scrolledUnderElevation: 0,
         foregroundColor: Colors.black87,
-        // 🔴 已移除 actions (刷新按钮)，保持纯净
+        systemOverlayStyle: SystemUiOverlayStyle.dark, // 🟢 状态栏适配
       ),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         children: [
-          _buildImpactSummary(context),
+          // 1. Impact Summary - 0ms Delay
+          FadeInSlide(
+            index: 0,
+            child: _buildImpactSummary(context),
+          ),
           const SizedBox(height: 24),
-          _buildAiButton(
-            context,
-            onTap: () => _showAiRecipeFlow(context, expiring),
+
+          // 2. AI Chef Button - 100ms Delay
+          // 🟢 这是一个重要的 CTA，加上 BouncingButton
+          FadeInSlide(
+            index: 1,
+            child: BouncingButton(
+              onTap: () => _showAiRecipeFlow(context, expiring),
+              child: _buildAiButton(context), // onTap 移交给 BouncingButton
+            ),
           ),
           const SizedBox(height: 32),
-          _buildSectionHeader(context, expiring.length),
+
+          // 3. Expiring Header - 150ms Delay
+          FadeInSlide(
+            index: 2,
+            child: _buildSectionHeader(context, expiring.length),
+          ),
           const SizedBox(height: 16),
+
+          // 4. Expiring List - 200ms+ Staggered
           if (expiring.isEmpty)
-            _buildEmptyState(context)
+            FadeInSlide(
+              index: 3,
+              child: _buildEmptyState(context),
+            )
           else
-            ...expiring.map(
-              (item) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: FoodCard(
-                  item: item,
-                  leading: _buildInventoryStyleLeading(item),
-                  onAction: (action) async {
-                    final oldStatus = item.status;
-                    await repo.recordImpactForAction(item, action);
+            ...expiring.asMap().entries.map(
+              (entry) => FadeInSlide(
+                index: 3 + entry.key, // 错峰
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: FoodCard(
+                    item: entry.value,
+                    leading: _buildInventoryStyleLeading(entry.value),
+                    onAction: (action) async {
+                      // 🟢 操作时的触感反馈
+                      HapticFeedback.mediumImpact();
+                      
+                      final item = entry.value;
+                      final oldStatus = item.status;
+                      await repo.recordImpactForAction(item, action);
 
-                    FoodStatus? newStatus;
-                    if (action == 'eat' || action == 'pet') {
-                      newStatus = FoodStatus.consumed;
-                    } else if (action == 'trash') {
-                      newStatus = FoodStatus.discarded;
-                    }
-
-                    if (newStatus != null) {
-                      await repo.updateStatus(item.id, newStatus);
-                    }
-
-                    if (action == 'pet' && !repo.hasShownPetWarning) {
-                      await repo.markPetWarningShown();
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            behavior: SnackBarBehavior.fixed,
-                            content: Text('Please ensure the food is safe for your pet!'),
-                            duration: Duration(seconds: 4),
-                          ),
-                        );
+                      FoodStatus? newStatus;
+                      if (action == 'eat' || action == 'pet') {
+                        newStatus = FoodStatus.consumed;
+                      } else if (action == 'trash') {
+                        newStatus = FoodStatus.discarded;
                       }
-                    }
 
-                    if (newStatus != null) {
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context)
-                          ..hideCurrentSnackBar()
-                          ..showSnackBar(
-                            SnackBar(
+                      if (newStatus != null) {
+                        await repo.updateStatus(item.id, newStatus);
+                      }
+
+                      if (action == 'pet' && !repo.hasShownPetWarning) {
+                        await repo.markPetWarningShown();
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
                               behavior: SnackBarBehavior.fixed,
-                              backgroundColor: const Color(0xFF323232),
-                              duration: const Duration(seconds: 3),
-                              content: Text(
-                                _undoLabelForAction(action, item.name),
-                                style: const TextStyle(color: Colors.white),
-                              ),
-                              action: SnackBarAction(
-                                label: 'UNDO',
-                                textColor: const Color(0xFF81D4FA),
-                                onPressed: () async {
-                                  await repo.updateStatus(item.id, oldStatus);
-                                  onRefresh();
-                                },
-                              ),
+                              content: Text('Please ensure the food is safe for your pet!'),
+                              duration: Duration(seconds: 4),
                             ),
                           );
+                        }
                       }
-                    }
-                    onRefresh();
-                  },
+
+                      if (newStatus != null) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context)
+                            ..hideCurrentSnackBar()
+                            ..showSnackBar(
+                              SnackBar(
+                                behavior: SnackBarBehavior.fixed,
+                                backgroundColor: const Color(0xFF323232),
+                                duration: const Duration(seconds: 3),
+                                content: Text(
+                                  _undoLabelForAction(action, item.name),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                                action: SnackBarAction(
+                                  label: 'UNDO',
+                                  textColor: const Color(0xFF81D4FA),
+                                  onPressed: () async {
+                                    HapticFeedback.selectionClick();
+                                    await repo.updateStatus(item.id, oldStatus);
+                                    onRefresh();
+                                  },
+                                ),
+                              ),
+                            );
+                        }
+                      }
+                      onRefresh();
+                    },
+                  ),
                 ),
               ),
             ),
@@ -238,7 +267,8 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  Widget _buildAiButton(BuildContext context, {required VoidCallback onTap}) {
+  // 🟢 这里的 onTap 不需要了，因为外层包了 BouncingButton
+  Widget _buildAiButton(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
@@ -250,62 +280,55 @@ class TodayPage extends StatelessWidget {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
+      child: Container(
+        height: 72,
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          child: Ink(
-            height: 72,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-              ),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  const Icon(Icons.auto_awesome, color: Color(0xFF60A5FA), size: 24),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'AI Chef',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        Text(
-                          'Cook with expiring items',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.6),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: Color(0xFF60A5FA), size: 24),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'AI Chef',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                  ),
-                  Container(
-                    width: 32,
-                    height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      shape: BoxShape.circle,
+                    Text(
+                      'Cook with expiring items',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.6),
+                        fontSize: 12,
+                      ),
                     ),
-                    child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+              ),
+            ],
           ),
         ),
       ),
@@ -403,4 +426,126 @@ class _Leading {
   final IconData icon;
   final Color color;
   const _Leading(this.icon, this.color);
+}
+
+// ================== Shared Animation Widgets (Keep these) ==================
+
+class BouncingButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  const BouncingButton({
+    super.key,
+    required this.child,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  State<BouncingButton> createState() => _BouncingButtonState();
+}
+
+class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      lowerBound: 0.0,
+      upperBound: 0.05,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (widget.enabled) {
+          _controller.forward();
+          HapticFeedback.lightImpact();
+        }
+      },
+      onTapUp: (_) {
+        if (widget.enabled) {
+          _controller.reverse();
+          widget.onTap();
+        }
+      },
+      onTapCancel: () {
+        if (widget.enabled) _controller.reverse();
+      },
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Transform.scale(
+          scale: 1.0 - _controller.value,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+class FadeInSlide extends StatefulWidget {
+  final Widget child;
+  final int index; 
+  final Duration duration;
+
+  const FadeInSlide({
+    super.key,
+    required this.child,
+    required this.index,
+    this.duration = const Duration(milliseconds: 500),
+  });
+
+  @override
+  State<FadeInSlide> createState() => _FadeInSlideState();
+}
+
+class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _offsetAnim;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+
+    _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
+    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
+
+    final delay = widget.index * 50; 
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SlideTransition(
+        position: _offsetAnim,
+        child: widget.child,
+      ),
+    );
+  }
 }

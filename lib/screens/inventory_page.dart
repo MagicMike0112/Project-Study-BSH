@@ -1,5 +1,6 @@
 // lib/screens/inventory_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 🟢 Added for Haptics
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
@@ -52,69 +53,95 @@ class InventoryPage extends StatelessWidget {
         backgroundColor: _backgroundColor,
         elevation: 0,
         centerTitle: false,
-        // 🔴 确保这里没有 actions
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
       ),
       body: hasAnyItems
           ? ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               children: [
-                _InventoryHeroCard(
-                  total: allItems.length,
-                  fridge: fridgeItems.length,
-                  freezer: freezerItems.length,
-                  pantry: pantryItems.length,
+                // 1. Hero Card - 0ms Delay
+                FadeInSlide(
+                  index: 0,
+                  child: _InventoryHeroCard(
+                    total: allItems.length,
+                    fridge: fridgeItems.length,
+                    freezer: freezerItems.length,
+                    pantry: pantryItems.length,
+                  ),
                 ),
                 const SizedBox(height: 24),
 
+                // 2. Fridge Section
                 if (fridgeItems.isNotEmpty) ...[
-                  _buildSectionHeader(
-                    context,
-                    icon: Icons.kitchen_rounded,
-                    label: 'Fridge',
-                    color: const Color(0xFF005F87),
-                    count: fridgeItems.length,
+                  FadeInSlide(
+                    index: 1,
+                    child: _buildSectionHeader(
+                      context,
+                      icon: Icons.kitchen_rounded,
+                      label: 'Fridge',
+                      color: const Color(0xFF005F87),
+                      count: fridgeItems.length,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  ...fridgeItems.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildDismissibleItem(context, item, theme),
+                  ...fridgeItems.asMap().entries.map(
+                    (entry) => FadeInSlide(
+                      // 🟢 错峰延迟：每个物品延迟一点点
+                      index: 2 + (entry.key > 5 ? 5 : entry.key), 
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildDismissibleItem(context, entry.value, theme),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
                 ],
 
+                // 3. Freezer Section
                 if (freezerItems.isNotEmpty) ...[
-                  _buildSectionHeader(
-                    context,
-                    icon: Icons.ac_unit_rounded,
-                    label: 'Freezer',
-                    color: const Color(0xFF3F51B5),
-                    count: freezerItems.length,
+                  FadeInSlide(
+                    index: 3, // 稍微晚一点出现
+                    child: _buildSectionHeader(
+                      context,
+                      icon: Icons.ac_unit_rounded,
+                      label: 'Freezer',
+                      color: const Color(0xFF3F51B5),
+                      count: freezerItems.length,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  ...freezerItems.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildDismissibleItem(context, item, theme),
+                  ...freezerItems.asMap().entries.map(
+                    (entry) => FadeInSlide(
+                      index: 4 + (entry.key > 5 ? 5 : entry.key),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildDismissibleItem(context, entry.value, theme),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 20),
                 ],
 
+                // 4. Pantry Section
                 if (pantryItems.isNotEmpty) ...[
-                  _buildSectionHeader(
-                    context,
-                    icon: Icons.shelves,
-                    label: 'Pantry',
-                    color: Colors.brown,
-                    count: pantryItems.length,
+                  FadeInSlide(
+                    index: 5,
+                    child: _buildSectionHeader(
+                      context,
+                      icon: Icons.shelves,
+                      label: 'Pantry',
+                      color: Colors.brown,
+                      count: pantryItems.length,
+                    ),
                   ),
                   const SizedBox(height: 12),
-                  ...pantryItems.map(
-                    (item) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _buildDismissibleItem(context, item, theme),
+                  ...pantryItems.asMap().entries.map(
+                    (entry) => FadeInSlide(
+                      index: 6 + (entry.key > 5 ? 5 : entry.key),
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: _buildDismissibleItem(context, entry.value, theme),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 40),
@@ -169,52 +196,55 @@ class InventoryPage extends StatelessWidget {
 
   Widget _buildEmptyState(BuildContext context) {
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.grey.shade200),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 20,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
+      child: FadeInSlide(
+        index: 0,
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.inventory_2_outlined,
+                  size: 32,
+                  color: Colors.grey.shade400,
+                ),
               ),
-              child: Icon(
-                Icons.inventory_2_outlined,
-                size: 32,
-                color: Colors.grey.shade400,
+              const SizedBox(height: 24),
+              Text(
+                'Your inventory is empty',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.grey.shade800,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Your inventory is empty',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: Colors.grey.shade800,
+              const SizedBox(height: 8),
+              Text(
+                'Tap the + button to add items to your fridge, freezer, or pantry.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade500,
+                  height: 1.5,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap the + button to add items to your fridge, freezer, or pantry.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade500,
-                height: 1.5,
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -238,8 +268,10 @@ class InventoryPage extends StatelessWidget {
         child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 28),
       ),
       onDismissed: (_) async {
+        // 🟢 触感反馈
+        HapticFeedback.mediumImpact();
+        
         final deletedItem = item;
-
         await repo.deleteItem(item.id);
         onRefresh();
 
@@ -248,7 +280,6 @@ class InventoryPage extends StatelessWidget {
           ..hideCurrentSnackBar()
           ..showSnackBar(
             SnackBar(
-              // 🔴 关键修改：fixed 样式，紧贴底部 Tab
               behavior: SnackBarBehavior.fixed,
               backgroundColor: const Color(0xFF323232),
               duration: const Duration(seconds: 3),
@@ -267,7 +298,16 @@ class InventoryPage extends StatelessWidget {
             ),
           );
       },
-      child: _buildItemCard(context, item),
+      child: BouncingButton(
+        // 🟢 整个卡片可点击且有回弹效果
+        onTap: () => _openEditPage(context, item),
+        // 🟢 长按触发 Action Sheet
+        onLongPress: () {
+          HapticFeedback.selectionClick();
+          _showItemActionsSheet(context, item);
+        },
+        child: _buildItemCard(context, item),
+      ),
     );
   }
 
@@ -286,11 +326,13 @@ class InventoryPage extends StatelessWidget {
 
     final urgency = _urgency(days);
     final leading = _leadingIcon(item);
+    final bool isLowStock = item.isLowStock; 
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
+        border: isLowStock ? Border.all(color: Colors.orange.shade300, width: 2) : null,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -299,64 +341,87 @@ class InventoryPage extends StatelessWidget {
           ),
         ],
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => _openEditPage(context, item),
-          onLongPress: () => _showItemActionsSheet(context, item),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: leading.color.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(leading.icon, color: leading.color, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: leading.color.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Icon(leading.icon, color: leading.color, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              item.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 16,
-                                color: Colors.black87,
-                              ),
-                            ),
+                      Flexible(
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 16,
+                            color: Colors.black87,
                           ),
-                          const SizedBox(width: 8),
-                          _expiryPill(context, urgency, daysLabel),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        qtyText,
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                          fontWeight: FontWeight.w500,
                         ),
+                      ),
+                      const SizedBox(width: 8),
+                      
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                            if (isLowStock) ...[
+                                Container(
+                                    margin: const EdgeInsets.only(right: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                    decoration: BoxDecoration(
+                                        color: const Color(0xFFFFF3E0),
+                                        borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: const Row(
+                                        children: [
+                                            Icon(Icons.trending_down_rounded, size: 12, color: Colors.orange),
+                                            SizedBox(width: 4),
+                                            Text('LOW', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.deepOrange)),
+                                        ],
+                                    ),
+                                ),
+                            ],
+                            _expiryPill(context, urgency, daysLabel),
+                        ],
                       ),
                     ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    qtyText,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isLowStock ? Colors.deepOrange : Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (item.minQuantity != null)
+                      Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                              'Keep > ${item.minQuantity!.toStringAsFixed(0)}',
+                              style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+                          ),
+                      ),
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -426,6 +491,8 @@ class InventoryPage extends StatelessWidget {
   }
 
   Future<void> _openEditPage(BuildContext context, FoodItem item) async {
+    // 🟢 触感反馈
+    HapticFeedback.lightImpact();
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -511,7 +578,7 @@ class InventoryPage extends StatelessWidget {
                       ..hideCurrentSnackBar()
                       ..showSnackBar(
                         SnackBar(
-                          behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                          behavior: SnackBarBehavior.fixed,
                           backgroundColor: const Color(0xFF323232),
                           duration: const Duration(seconds: 3),
                           content: Text(
@@ -546,7 +613,7 @@ class InventoryPage extends StatelessWidget {
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                          behavior: SnackBarBehavior.fixed,
                           content: Text('Please make sure the food is safe for your pet!'),
                           duration: Duration(seconds: 4),
                         ),
@@ -559,7 +626,7 @@ class InventoryPage extends StatelessWidget {
                       ..hideCurrentSnackBar()
                       ..showSnackBar(
                         SnackBar(
-                          behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                          behavior: SnackBarBehavior.fixed,
                           backgroundColor: const Color(0xFF323232),
                           duration: const Duration(seconds: 3),
                           content: Text(
@@ -590,12 +657,12 @@ class InventoryPage extends StatelessWidget {
                       final deletedItem = item;
                       await repo.deleteItem(item.id);
                       onRefresh();
-                       if (!context.mounted) return;
-                       ScaffoldMessenger.of(context)
-                        ..hideCurrentSnackBar()
-                        ..showSnackBar(
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context)
+                         ..hideCurrentSnackBar()
+                         ..showSnackBar(
                           SnackBar(
-                            behavior: SnackBarBehavior.fixed, // 🔴 关键修改
+                            behavior: SnackBarBehavior.fixed,
                             backgroundColor: const Color(0xFF323232),
                             duration: const Duration(seconds: 3),
                             content: Text(
@@ -637,6 +704,7 @@ class InventoryPage extends StatelessWidget {
     final title =
         action == 'eat' ? 'How much did you cook?' : 'How much did you feed?';
 
+    String? selectedChip = 'All'; 
     String? errorText;
 
     return showDialog<double>(
@@ -644,6 +712,35 @@ class InventoryPage extends StatelessWidget {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setState) {
+            
+            void updateQty(double val, String chipLabel) {
+              controller.text = val.toStringAsFixed(val.truncateToDouble() == val ? 0 : 2);
+              setState(() {
+                selectedChip = chipLabel;
+                errorText = null;
+              });
+            }
+
+            Widget buildChip(String label, double val) {
+              final isSelected = selectedChip == label;
+              return ActionChip(
+                label: Text(label),
+                onPressed: () => updateQty(val, label),
+                backgroundColor: isSelected ? const Color(0xFF005F87).withOpacity(0.15) : Colors.grey[100],
+                side: BorderSide(
+                  color: isSelected ? const Color(0xFF005F87) : Colors.transparent,
+                  width: 1.5,
+                ),
+                labelStyle: TextStyle(
+                  color: isSelected ? const Color(0xFF005F87) : Colors.grey[700],
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
+                  fontSize: 12,
+                ),
+                padding: EdgeInsets.zero,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              );
+            }
+
             return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(22),
@@ -678,7 +775,21 @@ class InventoryPage extends StatelessWidget {
                       ],
                     ),
                   ),
+                  
                   const SizedBox(height: 16),
+                  
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      buildChip('All', item.quantity),
+                      buildChip('½', item.quantity / 2),
+                      buildChip('¼', item.quantity / 4),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+                  
                   TextField(
                     controller: controller,
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -691,7 +802,19 @@ class InventoryPage extends StatelessWidget {
                       fillColor: Colors.white,
                       errorText: errorText,
                     ),
-                    onChanged: (_) {
+                    onTap: () {
+                      if (selectedChip != null) {
+                        setState(() {
+                          selectedChip = null;
+                        });
+                      }
+                    },
+                    onChanged: (val) {
+                      if (selectedChip != null) {
+                        setState(() {
+                          selectedChip = null;
+                        });
+                      }
                       if (errorText != null) {
                         setState(() => errorText = null);
                       }
@@ -717,7 +840,7 @@ class InventoryPage extends StatelessWidget {
                       return;
                     }
                     if (raw > item.quantity + 1e-9) {
-                       setState(() => errorText = 'Max available: ${item.quantity}');
+                        setState(() => errorText = 'Max available: ${item.quantity}');
                       return;
                     }
 
@@ -943,3 +1066,130 @@ class _Leading {
 }
 
 enum _Urgency { expired, today, soon, ok, none }
+
+// ================== Premium Animation Widgets ==================
+
+/// 1. 弹性按压按钮
+class BouncingButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool enabled;
+
+  const BouncingButton({
+    super.key,
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+    this.enabled = true,
+  });
+
+  @override
+  State<BouncingButton> createState() => _BouncingButtonState();
+}
+
+class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      lowerBound: 0.0,
+      upperBound: 0.05,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (widget.enabled) {
+          _controller.forward();
+          HapticFeedback.lightImpact();
+        }
+      },
+      onTapUp: (_) {
+        if (widget.enabled) {
+          _controller.reverse();
+          widget.onTap?.call();
+        }
+      },
+      onTapCancel: () {
+        if (widget.enabled) _controller.reverse();
+      },
+      onLongPress: widget.onLongPress, // 传递长按事件
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Transform.scale(
+          scale: 1.0 - _controller.value,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+/// 2. 错峰入场动画
+class FadeInSlide extends StatefulWidget {
+  final Widget child;
+  final int index; 
+  final Duration duration;
+
+  const FadeInSlide({
+    super.key,
+    required this.child,
+    required this.index,
+    this.duration = const Duration(milliseconds: 500),
+  });
+
+  @override
+  State<FadeInSlide> createState() => _FadeInSlideState();
+}
+
+class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _offsetAnim;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+
+    _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
+    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
+
+    final delay = widget.index * 50; 
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SlideTransition(
+        position: _offsetAnim,
+        child: widget.child,
+      ),
+    );
+  }
+}

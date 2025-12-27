@@ -92,6 +92,12 @@ class RecipeArchiveStore {
     await sp.setString(_kRecipeArchiveKey, encoded);
   }
 
+  // 🟢 新增：检查是否已收藏
+  static Future<bool> hasRecipe(String recipeId) async {
+    final list = await load();
+    return list.any((e) => e.recipe.id == recipeId);
+  }
+
   static Future<void> clear() async {
     final sp = await SharedPreferences.getInstance();
     await sp.remove(_kRecipeArchiveKey);
@@ -499,7 +505,6 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 16),
                         child: _ArchiveRecipeCard(
-                          // ✅ 修正点：之前这里传了 title/subtitle，现在直接传 recipe 对象
                           recipe: r,
                           addedAt: e.addedAt,
                           onOpen: () {
@@ -513,7 +518,7 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
                                   onInventoryUpdated: null,
                                 ),
                               ),
-                            );
+                            ).then((_) => _reload()); // 🟢 返回时刷新，以防详情页取消了收藏
                           },
                           onRemove: () => _removeOne(r.id),
                         ),
@@ -636,21 +641,42 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   static const String _backendBase = 'https://project-study-bsh.vercel.app';
   bool _hcActionLoading = false;
   bool _archiving = false;
+  bool _isSaved = false;
+  bool _isOvenReady = false; // 🟢 新增：烤箱就绪状态
+
+  @override
+  void initState() {
+    super.initState();
+    _checkSavedStatus();
+  }
+
+  Future<void> _checkSavedStatus() async {
+    final saved = await RecipeArchiveStore.hasRecipe(widget.recipe.id);
+    if (mounted) {
+      setState(() => _isSaved = saved);
+    }
+  }
+
   Future<String?> _getSupabaseAccessTokenOrNull() async {
     final client = Supabase.instance.client;
     final session = client.auth.currentSession;
     return session?.accessToken;
   }
   
-  Future<void> _addToArchive() async {
+  Future<void> _toggleArchive() async {
     setState(() => _archiving = true);
     try {
-      await RecipeArchiveStore.add(widget.recipe);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added to archive ✅')));
+      if (_isSaved) {
+        await RecipeArchiveStore.remove(widget.recipe.id);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Removed from archive')));
+        if (mounted) setState(() => _isSaved = false);
+      } else {
+        await RecipeArchiveStore.add(widget.recipe);
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Saved to archive ✅')));
+        if (mounted) setState(() => _isSaved = true);
+      }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Add to archive failed: $e')));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Operation failed: $e')));
     } finally {
       if (mounted) setState(() => _archiving = false);
     }
@@ -671,17 +697,26 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   }
 
   Future<void> _preheatOven() async {
+    // 如果已经预热成功，点击不再重复发送请求，或者您可以逻辑改为“停止预热”
+    if (_isOvenReady) return; 
+
     final ok = await requireLogin(context); if (!ok) return;
     final token = await _getSupabaseAccessTokenOrNull(); if (token == null) return;
     int? temp = widget.recipe.ovenTempC ?? widget.recipe.inferOvenTempFromText();
     if (temp == null) { temp = await _askTempC(context); if (temp == null) return; }
+    
     setState(() => _hcActionLoading = true);
     try {
       final haId = await _findOvenHaId(token);
       final r = await http.post(Uri.parse('$_backendBase/api/hc/oven/preheat'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}, body: jsonEncode({'haId': haId, 'temperatureC': temp, 'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating'}));
       if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
+      
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Oven preheating to $temp°C ✅')));
+      
+      // 🟢 成功后更新状态
+      setState(() => _isOvenReady = true);
+
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preheat failed: $e')));
@@ -698,9 +733,28 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   @override
   Widget build(BuildContext context) {
     final recipe = widget.recipe;
+    
+    // 🟢 定义预热状态的颜色和图标
+    final ovenColor = _isOvenReady ? Colors.green : Colors.deepOrange;
+    final ovenBgColor = _isOvenReady ? Colors.green.shade50 : Colors.orange.shade50;
+    final ovenBorderColor = _isOvenReady ? Colors.green.shade100 : Colors.orange.shade100;
+
     return Scaffold(
       backgroundColor: AppStyle.bg,
-      appBar: AppBar(title: const Text('Recipe Details', style: TextStyle(fontWeight: FontWeight.w700)), backgroundColor: AppStyle.bg, elevation: 0, actions: [IconButton(onPressed: _archiving ? null : _addToArchive, icon: const Icon(Icons.bookmark_outline))]),
+      appBar: AppBar(
+        title: const Text('Recipe Details', style: TextStyle(fontWeight: FontWeight.w700)), 
+        backgroundColor: AppStyle.bg, 
+        elevation: 0, 
+        actions: [
+          IconButton(
+            onPressed: _archiving ? null : _toggleArchive,
+            icon: Icon(
+              _isSaved ? Icons.bookmark : Icons.bookmark_border,
+              color: _isSaved ? AppStyle.primary : Colors.black87,
+            ),
+          )
+        ]
+      ),
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 32), children: [
         Hero(
           tag: 'recipe_img_${recipe.id}', 
@@ -716,7 +770,39 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
         Wrap(spacing: 8, runSpacing: 8, children: [_InfoPill(icon: Icons.schedule, text: recipe.timeLabel, bg: Colors.grey.shade200, fg: Colors.black87), _InfoPill(icon: _toolIcon(recipe.appliancesLabel), text: recipe.appliancesLabel, bg: Colors.grey.shade200, fg: Colors.black87)]),
         const SizedBox(height: 24),
         if (recipe.description != null) ...[Text(recipe.description!, style: TextStyle(color: Colors.grey[700], height: 1.5, fontSize: 15)), const SizedBox(height: 24)],
-        if (recipe.usesOven) ...[Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.orange.shade100)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Row(children: [Icon(Icons.smart_toy_outlined, color: Colors.deepOrange), SizedBox(width: 8), Text('Smart Kitchen', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.deepOrange))]), const SizedBox(height: 12), _ActionTile(icon: Icons.local_fire_department_rounded, title: 'Preheat Oven', subtitle: 'Tap to start', loading: _hcActionLoading, onTap: _hcActionLoading ? null : _preheatOven, bgColor: Colors.white)]))],
+        
+        if (recipe.usesOven) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: ovenBgColor, // 🟢 动态背景色
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: ovenBorderColor)
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.smart_toy_outlined, color: ovenColor), // 🟢 动态图标色
+                  const SizedBox(width: 8),
+                  Text('Smart Kitchen', style: TextStyle(fontWeight: FontWeight.bold, color: ovenColor))
+                ]),
+                const SizedBox(height: 12),
+                _ActionTile(
+                  // 🟢 状态改变：图标变对号，文字变 Ready
+                  icon: _isOvenReady ? Icons.check_circle_rounded : Icons.local_fire_department_rounded,
+                  iconColor: _isOvenReady ? Colors.green : AppStyle.primary, // 🟢 传入自定义颜色
+                  title: _isOvenReady ? 'Oven is Ready' : 'Preheat Oven',
+                  subtitle: _isOvenReady ? 'Target temperature reached' : 'Tap to start',
+                  loading: _hcActionLoading,
+                  onTap: _hcActionLoading ? null : _preheatOven,
+                  bgColor: Colors.white
+                )
+              ]
+            )
+          )
+        ],
+        
         const SizedBox(height: 24),
         _SectionCard(title: 'Ingredients', child: Column(children: recipe.ingredients.map((ing) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.only(top: 6), child: Icon(Icons.circle, size: 6, color: AppStyle.primary)), const SizedBox(width: 12), Expanded(child: Text(ing, style: const TextStyle(fontSize: 15, height: 1.4)))]))).toList())),
         const SizedBox(height: 24),
@@ -737,9 +823,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
 
 // ================== Helper Widgets & Models ==================
 
-// ✅ 修正：_ArchiveRecipeCard 现在接受 RecipeSuggestion 对象而不是 title/subtitle
 class _ArchiveRecipeCard extends StatelessWidget {
-  // 🔴 修复点：移除了 title/subtitle，改为接收完整的 recipe 对象
   final RecipeSuggestion recipe;
   final DateTime addedAt;
   final VoidCallback onOpen;
@@ -772,7 +856,6 @@ class _ArchiveRecipeCard extends StatelessWidget {
           child: Row(
             children: [
               Hero(
-                // 🔴 修复点：确保 recipe.id 可访问
                 tag: 'recipe_icon_${recipe.id}',
                 child: Container(
                   width: 50,
@@ -903,8 +986,83 @@ class _SectionCard extends StatelessWidget { final String title; final String? s
 class _HeroCard extends StatelessWidget { final int selectedCount; final int preselectedCount; const _HeroCard({required this.selectedCount, required this.preselectedCount}); @override Widget build(BuildContext context) { return Container(height: 150, decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF005F87), Color(0xFF0082B8)]), boxShadow: const [BoxShadow(color: Color(0x33005F87), blurRadius: 20, offset: Offset(0, 10))]), child: Stack(children: [Positioned(right: -20, top: -20, child: Icon(Icons.restaurant_menu, size: 140, color: Colors.white.withOpacity(0.1))), Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [Text('$selectedCount', style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w800, height: 1.0)), const SizedBox(width: 8), const Text('items selected', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))]), const SizedBox(height: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 14, color: Colors.white), const SizedBox(width: 6), Text(preselectedCount > 0 ? '$preselectedCount items expiring soon' : 'Pick items to cook', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))]))]))])); } }
 enum _Urgency { high, medium, low, neutral }
 class _InventoryPickTile extends StatelessWidget { final String name; final String qtyText; final String expiryText; final _Urgency urgency; final bool selected; final VoidCallback onTap; const _InventoryPickTile({required this.name, required this.qtyText, required this.expiryText, required this.urgency, required this.selected, required this.onTap}); Color _badgeColor() { switch (urgency) { case _Urgency.high: return Colors.red; case _Urgency.medium: return Colors.orange; case _Urgency.low: return Colors.green; case _Urgency.neutral: return Colors.grey; } } @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: selected ? AppStyle.primary.withOpacity(0.04) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade200, width: selected ? 1.5 : 1)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: _badgeColor(), shape: BoxShape.circle)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: selected ? AppStyle.primary : Colors.black87)), const SizedBox(height: 2), Text('$qtyText • $expiryText', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))])), Container(width: 24, height: 24, decoration: BoxDecoration(color: selected ? AppStyle.primary : Colors.transparent, shape: BoxShape.circle, border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade300, width: 1.5)), child: selected ? const Icon(Icons.check, size: 16, color: Colors.white) : null)]))); } }
-class _ActionTile extends StatelessWidget { final IconData icon; final String title; final String subtitle; final bool loading; final VoidCallback? onTap; final Color bgColor; const _ActionTile({required this.icon, required this.title, required this.subtitle, required this.loading, required this.onTap, this.bgColor = const Color(0xFFF5F7FA)}); @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)), child: Row(children: [Container(width: 44, height: 44, decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: AppStyle.primary)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)), const SizedBox(height: 2), Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600]))])), if (loading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)) else Icon(Icons.chevron_right, color: Colors.grey[400])]))); } }
+class _ActionTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool loading;
+  final VoidCallback? onTap;
+  final Color bgColor;
+  final Color? iconColor; // 🟢 新增参数
 
+  const _ActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.loading,
+    required this.onTap,
+    this.bgColor = const Color(0xFFF5F7FA),
+    this.iconColor, // 🟢
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                // 🟢 背景色也跟随图标颜色稍微变化一点，或者保持原样
+                color: (iconColor ?? AppStyle.primary).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: iconColor ?? AppStyle.primary), // 🟢 使用传入的颜色
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            if (loading)
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            else
+              // 🟢 如果完成了（不可点击），隐藏箭头或者显示Check
+              onTap == null && !loading
+                  ? Icon(Icons.check, color: Colors.green.shade300)
+                  : Icon(Icons.chevron_right, color: Colors.grey[400]),
+          ],
+        ),
+      ),
+    );
+  }
+}
 class RecipeSuggestion {
   final String id;
   final String title;

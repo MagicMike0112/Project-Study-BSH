@@ -1,5 +1,6 @@
 // lib/screens/impact_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 🟢 Added for Haptics
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:math' as math;
 
@@ -34,6 +35,12 @@ class _ImpactPageState extends State<ImpactPage> {
   String _shortDate(DateTime d) => '${d.month}/${d.day}';
 
   static const Color _backgroundColor = Color(0xFFF8F9FC);
+
+  void _changeRange(ImpactRange r) {
+    // 🟢 触感反馈：切换 Range 时
+    HapticFeedback.selectionClick();
+    setState(() => _range = r);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,6 +98,7 @@ class _ImpactPageState extends State<ImpactPage> {
         backgroundColor: _backgroundColor,
         elevation: 0,
         centerTitle: false,
+        systemOverlayStyle: SystemUiOverlayStyle.dark, // 🟢 状态栏颜色适配
         actions: const [
           ProfileAvatarButton(),
         ],
@@ -98,81 +106,118 @@ class _ImpactPageState extends State<ImpactPage> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         children: [
-          _ImpactHeroCard(score: ecoScore, streak: streak),
-          const SizedBox(height: 24),
-          _SlidingRangeSelector(
-            currentRange: _range,
-            onChanged: (r) => setState(() => _range = r),
+          // 1. Hero Card - 0ms Delay
+          FadeInSlide(
+            index: 0,
+            child: _ImpactHeroCard(score: ecoScore, streak: streak),
           ),
           const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: _MetricCard(
-                  icon: Icons.savings_rounded,
-                  title: 'Money Saved',
-                  value: '€${moneyTotal.toStringAsFixed(1)}',
-                  tint: const Color(0xFF0E7AA8),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _MetricCard(
-                  icon: Icons.cloud_off_rounded,
-                  title: 'CO₂ Avoided',
-                  value: '${co2Total.toStringAsFixed(1)} kg',
-                  tint: const Color(0xFF43A047),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          
-          // 🆕 New Section: Equivalents
-          if (moneyTotal > 0 || co2Total > 0)
-            _ImpactEquivalentsSection(money: moneyTotal, co2: co2Total),
-          
-          if (moneyTotal > 0 || co2Total > 0)
-            const SizedBox(height: 24),
 
-          _BadgesSection(savedCount: savedCount),
+          // 2. Range Selector - 50ms Delay
+          FadeInSlide(
+            index: 1,
+            child: _SlidingRangeSelector(
+              currentRange: _range,
+              onChanged: _changeRange,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // 3. Metrics Row - 100ms Delay
+          FadeInSlide(
+            index: 2,
+            child: Row(
+              children: [
+                Expanded(
+                  child: _MetricCard(
+                    icon: Icons.savings_rounded,
+                    title: 'Money Saved',
+                    value: '€${moneyTotal.toStringAsFixed(1)}',
+                    tint: const Color(0xFF0E7AA8),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _MetricCard(
+                    icon: Icons.cloud_off_rounded,
+                    title: 'CO₂ Avoided',
+                    value: '${co2Total.toStringAsFixed(1)} kg',
+                    tint: const Color(0xFF43A047),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // 4. Equivalents Section - 150ms Delay
+          if (moneyTotal > 0 || co2Total > 0)
+            FadeInSlide(
+              index: 3,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: _ImpactEquivalentsSection(money: moneyTotal, co2: co2Total),
+              ),
+            ),
+          
+          // 5. Badges Section - 200ms Delay
+          FadeInSlide(
+            index: 4,
+            child: _BadgesSection(savedCount: savedCount),
+          ),
           const SizedBox(height: 32),
+
+          // 6. Charts Section - 250ms Delay
           if (events.isEmpty)
-            _EmptyImpactCard()
+            FadeInSlide(index: 5, child: _EmptyImpactCard())
           else ...[
-            Text(
-              'Trends',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
+            FadeInSlide(
+              index: 5,
+              child: Text(
+                'Trends',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                ),
               ),
             ),
             const SizedBox(height: 16),
             if (allDates.length < 2)
-               _InsufficientDataCard()
+               FadeInSlide(index: 6, child: _InsufficientDataCard())
             else ...[
-              _LineChartCard(
-                title: 'Money Savings',
-                color: const Color(0xFF0E7AA8),
-                spots: moneySpots,
-                labels: labels,
-                valueSuffix: '€',
+              FadeInSlide(
+                index: 6,
+                child: _LineChartCard(
+                  title: 'Money Savings',
+                  color: const Color(0xFF0E7AA8),
+                  spots: moneySpots,
+                  labels: labels,
+                  valueSuffix: '€',
+                ),
               ),
               const SizedBox(height: 20),
-              _LineChartCard(
-                title: 'Carbon Footprint',
-                color: const Color(0xFF43A047),
-                spots: co2Spots,
-                labels: labels,
-                valueSuffix: 'kg',
+              FadeInSlide(
+                index: 7,
+                child: _LineChartCard(
+                  title: 'Carbon Footprint',
+                  color: const Color(0xFF43A047),
+                  spots: co2Spots,
+                  labels: labels,
+                  valueSuffix: 'kg',
+                ),
               ),
             ],
           ],
           const SizedBox(height: 32),
-          _GuineaPigCard(
-            petQty: petQty,
-            totalQty: totalQty,
-            petShare: petShare,
+
+          // 7. Pet Card - 300ms Delay
+          FadeInSlide(
+            index: 8,
+            child: _GuineaPigCard(
+              petQty: petQty,
+              totalQty: totalQty,
+              petShare: petShare,
+            ),
           ),
           const SizedBox(height: 40),
         ],
@@ -192,9 +237,6 @@ class _ImpactEquivalentsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Estimations: 
-    // 1 Coffee ~ €3.00
-    // 1 km Driving ~ 0.2 kg CO2
     final coffees = (money / 3.0).toStringAsFixed(1);
     final kmDriven = (co2 / 0.2).toStringAsFixed(0);
 
@@ -204,6 +246,14 @@ class _ImpactEquivalentsSection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.black.withOpacity(0.03)),
+        // 🟢 增加轻微阴影
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -328,14 +378,22 @@ class _ImpactHeroCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
                         children: [
-                          Text(
-                            '$score',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 56,
-                              fontWeight: FontWeight.w900,
-                              height: 1.0,
-                            ),
+                          // 🟢 使用 TweenAnimationBuilder 让分数滚动增加
+                          TweenAnimationBuilder<int>(
+                            tween: IntTween(begin: 0, end: score),
+                            duration: const Duration(seconds: 2),
+                            curve: Curves.easeOutExpo,
+                            builder: (context, value, child) {
+                              return Text(
+                                '$value',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 56,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.0,
+                                ),
+                              );
+                            },
                           ),
                           const SizedBox(width: 6),
                           const Text(
@@ -373,24 +431,31 @@ class _ImpactHeroCard extends StatelessWidget {
                 SizedBox(
                   width: 110,
                   height: 110,
-                  child: CustomPaint(
-                    painter: _ArcPainter(
-                      percent: score / 100,
-                      color: Colors.white,
-                      bgColor: Colors.white.withOpacity(0.15),
-                    ),
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            score > 80 ? Icons.emoji_events : Icons.eco, 
-                            color: Colors.white, 
-                            size: 32
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: score / 100),
+                    duration: const Duration(seconds: 2),
+                    curve: Curves.easeOutExpo,
+                    builder: (context, value, child) {
+                      return CustomPaint(
+                        painter: _ArcPainter(
+                          percent: value,
+                          color: Colors.white,
+                          bgColor: Colors.white.withOpacity(0.15),
+                        ),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                score > 80 ? Icons.emoji_events : Icons.eco, 
+                                color: Colors.white, 
+                                size: 32
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ],
@@ -425,8 +490,9 @@ class _SlidingRangeSelector extends StatelessWidget {
             children: [
               AnimatedAlign(
                 alignment: _getAlign(currentRange),
-                duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
+                // 🟢 优化：使用更有弹性的曲线
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutBack, 
                 child: Container(
                   width: itemWidth,
                   height: double.infinity,
@@ -557,6 +623,14 @@ class _BadgesSection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.black.withOpacity(0.03)),
+        // 🟢 轻微阴影
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -743,6 +817,14 @@ class _GuineaPigCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFFF8E1), // 暖黄色背景
         borderRadius: BorderRadius.circular(24),
+        // 🟢 轻微阴影
+        boxShadow: [
+          BoxShadow(
+            color: Colors.orange.withOpacity(0.1),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -886,4 +968,63 @@ class _ArcPainter extends CustomPainter {
   }
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ================== Shared Animation Widgets (Keep these) ==================
+
+class FadeInSlide extends StatefulWidget {
+  final Widget child;
+  final int index; 
+  final Duration duration;
+
+  const FadeInSlide({
+    super.key,
+    required this.child,
+    required this.index,
+    this.duration = const Duration(milliseconds: 500),
+  });
+
+  @override
+  State<FadeInSlide> createState() => _FadeInSlideState();
+}
+
+class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<Offset> _offsetAnim;
+  late Animation<double> _fadeAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: widget.duration);
+    
+    // 使用 easeOutCubic 曲线，非常柔和自然
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+
+    _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
+    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
+
+    // 错峰进场
+    final delay = widget.index * 50; 
+    Future.delayed(Duration(milliseconds: delay), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _fadeAnim,
+      child: SlideTransition(
+        position: _offsetAnim,
+        child: widget.child,
+      ),
+    );
+  }
 }

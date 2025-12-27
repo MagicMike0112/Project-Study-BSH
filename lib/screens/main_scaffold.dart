@@ -1,7 +1,7 @@
 // lib/screens/main_scaffold.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart'; // 🟢 Added for Haptics
 import '../repositories/inventory_repository.dart';
 import 'today_page.dart';
 import 'inventory_page.dart';
@@ -57,6 +57,12 @@ class _MainScaffoldState extends State<MainScaffold> {
     }
   }
 
+  void _toggleFabMenu() {
+    // 🟢 触感反馈：轻微撞击感
+    HapticFeedback.lightImpact();
+    setState(() => _showFabMenu = !_showFabMenu);
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
@@ -80,14 +86,10 @@ class _MainScaffoldState extends State<MainScaffold> {
         final pages = [
           TodayPage(repo: repo, onRefresh: () => _refresh(repo)),
           InventoryPage(repo: repo, onRefresh: () => _refresh(repo)),
-          // ✅ 传入 repo，实现闭环
           ShoppingListPage(repo: repo), 
           ImpactPage(repo: repo),
         ];
 
-        // ✅ FAB 显示逻辑：
-        // 0 (Today) & 1 (Inventory) -> 显示 FAB
-        // 2 (Shopping) & 3 (Impact) -> 隐藏 FAB
         final bool fabEnabled = _currentIndex <= 1;
 
         return Scaffold(
@@ -95,7 +97,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             children: [
               PageView(
                 controller: _pageController,
-                physics: const BouncingScrollPhysics(),
+                physics: const BouncingScrollPhysics(), // 保持 iOS 风格回弹
                 onPageChanged: (idx) {
                   setState(() {
                     _currentIndex = idx;
@@ -104,19 +106,23 @@ class _MainScaffoldState extends State<MainScaffold> {
                 },
                 children: pages,
               ),
-              // 遮罩层
+              
+              // 遮罩层 (带模糊)
               if (fabEnabled)
                 Positioned.fill(
                   child: IgnorePointer(
                     ignoring: !_showFabMenu,
                     child: GestureDetector(
-                      onTap: _closeFabMenu,
+                      onTap: () {
+                        _closeFabMenu();
+                        HapticFeedback.selectionClick(); // 关闭时的轻微反馈
+                      },
                       child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 200),
-                        opacity: _showFabMenu ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
+                        opacity: _showFabMenu ? 1.0 : 0.0,
                         child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4), // 🟢 稍微增加模糊度，更有质感
                           child: Container(color: Colors.black.withOpacity(0.2)),
                         ),
                       ),
@@ -127,31 +133,36 @@ class _MainScaffoldState extends State<MainScaffold> {
           ),
           bottomNavigationBar: NavigationBarTheme(
             data: NavigationBarThemeData(
-              indicatorColor: _primaryColor.withOpacity(0.15),
+              indicatorColor: _primaryColor.withOpacity(0.1),
               labelTextStyle: MaterialStateProperty.all(
-                const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
               iconTheme: MaterialStateProperty.resolveWith((states) {
                 if (states.contains(MaterialState.selected)) {
-                  return const IconThemeData(color: _primaryColor);
+                  return const IconThemeData(color: _primaryColor, size: 26);
                 }
-                return IconThemeData(color: Colors.grey.shade600);
+                return IconThemeData(color: Colors.grey.shade500, size: 24);
               }),
             ),
             child: NavigationBar(
               selectedIndex: _currentIndex,
+              height: 65, // 🟢 稍微调低高度，显得更紧凑
               onDestinationSelected: (idx) {
-                _closeFabMenu();
-                setState(() => _currentIndex = idx);
-                _pageController.animateToPage(
-                  idx,
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeOutQuart,
-                );
+                if (_currentIndex != idx) {
+                  // 🟢 触感反馈：类似 iOS Tab 切换的手感
+                  HapticFeedback.selectionClick();
+                  _closeFabMenu();
+                  setState(() => _currentIndex = idx);
+                  _pageController.animateToPage(
+                    idx,
+                    duration: const Duration(milliseconds: 400),
+                    curve: Curves.easeOutQuart, // 更平滑的曲线
+                  );
+                }
               },
               backgroundColor: Colors.white,
-              elevation: 2,
-              shadowColor: Colors.black12,
+              elevation: 0, // 去掉默认阴影，使用上方 border
+              shadowColor: Colors.transparent,
               destinations: const [
                 NavigationDestination(
                   icon: Icon(Icons.dashboard_outlined),
@@ -196,6 +207,7 @@ class _MainScaffoldState extends State<MainScaffold> {
             alignment: Alignment.bottomRight,
             clipBehavior: Clip.none,
             children: [
+              // 🟢 菜单项：使用 Spring 曲线和错峰延迟
               _FabActionButton(
                 index: 0,
                 icon: Icons.edit_note_rounded,
@@ -217,24 +229,34 @@ class _MainScaffoldState extends State<MainScaffold> {
                 visible: _showFabMenu,
                 onTap: () => _navigateToAdd(repo, 2),
               ),
-              FloatingActionButton(
-                heroTag: 'main_fab',
-                onPressed: !enabled
-                    ? null
-                    : () => setState(() => _showFabMenu = !_showFabMenu),
-                backgroundColor: _primaryColor,
-                elevation: _showFabMenu ? 0 : 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: AnimatedRotation(
-                  turns: _showFabMenu ? 0.125 : 0,
-                  duration: const Duration(milliseconds: 250),
-                  curve: Curves.easeOutBack,
-                  child: const Icon(
-                    Icons.add,
-                    size: 30,
-                    color: Colors.white,
+              
+              // 主 FAB
+              // 🟢 增加 BouncingButton 包裹，按压有缩放效果
+              BouncingButton(
+                onTap: enabled ? _toggleFabMenu : () {},
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    color: _primaryColor,
+                    borderRadius: BorderRadius.circular(18), // 🟢 方圆形更现代
+                    boxShadow: [
+                      BoxShadow(
+                        color: _primaryColor.withOpacity(0.4),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                      )
+                    ],
+                  ),
+                  child: AnimatedRotation(
+                    turns: _showFabMenu ? 0.125 : 0, // 旋转 45度
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeOutBack, // 🟢 旋转带回弹
+                    child: const Icon(
+                      Icons.add,
+                      size: 32,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -279,73 +301,146 @@ class _FabActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     const double fabSize = 56.0;
     const double gap = 16.0;
+    // 计算底部距离：index 0 是最下面 (Manual)
     final double bottomOffset = fabSize + gap + (index * (50 + gap));
 
-    final duration = Duration(milliseconds: 200 + (index * 50));
-    final curve = Curves.easeOutCubic;
+    // 🟢 动画时长错峰：离手最近的先出来
+    final duration = Duration(milliseconds: 300 + (index * 100));
+    
+    // 🟢 使用 easeOutBack 产生类似弹簧弹出的效果
+    final curve = Curves.easeOutBack;
 
     return AnimatedPositioned(
       duration: duration,
       curve: curve,
-      right: 0,
-      bottom: visible ? bottomOffset : 0,
+      right: 4, // 稍微对其中心
+      bottom: visible ? bottomOffset : 0, // 从 FAB 底部弹出
       child: AnimatedOpacity(
-        duration: Duration(milliseconds: 150 + (index * 50)),
+        duration: Duration(milliseconds: 200 + (index * 50)),
         opacity: visible ? 1 : 0,
-        child: AnimatedSlide(
+        child: AnimatedScale(
+          scale: visible ? 1.0 : 0.5, // 🟢 同时带有缩放效果
           duration: duration,
           curve: curve,
-          offset: visible ? Offset.zero : const Offset(0, 0.2),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  margin: const EdgeInsets.only(right: 12),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    // ✅ 修复：boxShadow 放在了 decoration 内部
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+              // 标签
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                margin: const EdgeInsets.only(right: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
                     ),
+                  ],
+                ),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700, // 加粗一点更清晰
+                    color: Colors.black87,
                   ),
                 ),
               ),
-              SizedBox(
-                width: 48,
-                height: 48,
-                child: FloatingActionButton(
-                  heroTag: '${label}_fab',
-                  onPressed: onTap,
-                  backgroundColor: Colors.white,
-                  foregroundColor: const Color(0xFF005F87),
-                  elevation: 3,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+              
+              // 按钮本体 - 使用 BouncingButton
+              BouncingButton(
+                onTap: onTap,
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14), // 方圆形
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
-                  child: Icon(icon, size: 22),
+                  child: Icon(icon, size: 22, color: const Color(0xFF005F87)),
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ================== Premium Animation Widgets ==================
+// (这里复用之前的 BouncingButton 代码，确保此文件独立可用)
+
+class BouncingButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  const BouncingButton({
+    super.key,
+    required this.child,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  @override
+  State<BouncingButton> createState() => _BouncingButtonState();
+}
+
+class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 100),
+      lowerBound: 0.0,
+      upperBound: 0.08, // 缩放幅度
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) {
+        if (widget.enabled) {
+          _controller.forward();
+          HapticFeedback.lightImpact(); // 🟢 震动反馈
+        }
+      },
+      onTapUp: (_) {
+        if (widget.enabled) {
+          _controller.reverse();
+          widget.onTap();
+        }
+      },
+      onTapCancel: () {
+        if (widget.enabled) _controller.reverse();
+      },
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Transform.scale(
+          scale: 1.0 - _controller.value,
+          child: widget.child,
         ),
       ),
     );

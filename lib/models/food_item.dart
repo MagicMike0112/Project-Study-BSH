@@ -10,6 +10,9 @@ class FoodItem {
   final double quantity;
   final String unit;
 
+  /// 🟢 新增：最低库存阈值 (如果不设置则为 null，表示不关心缺货)
+  final double? minQuantity;
+
   /// 必填：购买日期
   final DateTime purchasedDate;
 
@@ -32,6 +35,7 @@ class FoodItem {
     required this.location,
     required this.quantity,
     required this.unit,
+    this.minQuantity, // 🟢
     required this.purchasedDate,
     this.openDate,
     this.bestBeforeDate,
@@ -54,12 +58,20 @@ class FoodItem {
     return expiry.difference(today).inDays;
   }
 
+  /// 🟢 新增 helper：判断是否紧缺
+  bool get isLowStock {
+    if (minQuantity == null) return false;
+    // 如果还没吃完，且当前数量 <= 设定的阈值，则视为紧缺
+    return status == FoodStatus.good && quantity <= minQuantity!;
+  }
+
   FoodItem copyWith({
     String? id,
     String? name,
     StorageLocation? location,
     double? quantity,
     String? unit,
+    double? minQuantity, // 🟢
     DateTime? purchasedDate,
     DateTime? openDate,
     DateTime? bestBeforeDate,
@@ -74,6 +86,7 @@ class FoodItem {
       location: location ?? this.location,
       quantity: quantity ?? this.quantity,
       unit: unit ?? this.unit,
+      minQuantity: minQuantity ?? this.minQuantity, // 🟢
       purchasedDate: purchasedDate ?? this.purchasedDate,
       openDate: openDate ?? this.openDate,
       bestBeforeDate: bestBeforeDate ?? this.bestBeforeDate,
@@ -93,6 +106,7 @@ class FoodItem {
       'location': location.name, // fridge / freezer / pantry
       'quantity': quantity,
       'unit': unit,
+      'minQuantity': minQuantity, // 🟢
       'purchasedDate': purchasedDate.toIso8601String(),
       'openDate': openDate?.toIso8601String(),
       'bestBeforeDate': bestBeforeDate?.toIso8601String(),
@@ -153,6 +167,13 @@ class FoodItem {
       return 1.0; // 默认 1
     }
 
+    // 🟢 解析 minQuantity
+    double? parseMinQty(dynamic v) {
+      if (v is num) return v.toDouble();
+      if (v is String) return double.tryParse(v);
+      return null;
+    }
+
     // 整体再包一层 try，实在解析不出来就给一个“安全兜底” item
     try {
       final rawId = json['id']?.toString();
@@ -170,6 +191,7 @@ class FoodItem {
         unit: (json['unit']?.toString().isNotEmpty ?? false)
             ? json['unit'].toString()
             : 'pcs',
+        minQuantity: parseMinQty(json['minQuantity']), // 🟢
         purchasedDate: parseDate(json['purchasedDate']) ??
             DateTime.now(), // 没有就用 now，避免崩
         openDate: parseDate(json['openDate']),
@@ -181,7 +203,6 @@ class FoodItem {
       );
     } catch (e) {
       // 万一上面哪一步直接炸了，这里做最后兜底
-      // 只要不 throw，Flutter 就不会在启动阶段直接挂掉
       final fallbackName = json['name']?.toString() ?? 'Unknown item';
       return FoodItem(
         id: 'fallback-${DateTime.now().millisecondsSinceEpoch}',

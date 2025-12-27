@@ -1,5 +1,6 @@
 // lib/screens/add_food_page.dart
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
@@ -41,12 +42,15 @@ class _AddFoodPageState extends State<AddFoodPage>
   late String _name;
   late double _qty;
   late String _unit;
+  double? _minQty; // 🟢 新增：最低库存
   late StorageLocation _location;
 
   // 日期字段
   late DateTime _purchased;
   DateTime? _openDate;
   DateTime? _bestBefore;
+  
+  // _expiry 存储 AI 预测的日期，作为 bestBefore 的后备
   DateTime? _expiry;
 
   // AI 状态
@@ -84,6 +88,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     _name = item?.name ?? '';
     _qty = item?.quantity ?? 1.0;
     _unit = item?.unit ?? 'pcs';
+    _minQty = item?.minQuantity; // 🟢 初始化读取
     _location = item?.location ?? StorageLocation.fridge;
 
     const allowedUnits = [
@@ -109,7 +114,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     super.dispose();
   }
 
-  // ========= Logic Helpers (Kept Original) =========
+  // ========= Logic Helpers =========
 
   String _formatQty(double q) {
     final isInt = (q - q.round()).abs() < 1e-9;
@@ -153,21 +158,27 @@ class _AddFoodPageState extends State<AddFoodPage>
     if (picked != null) onPicked(picked);
   }
 
+  // 重置预测状态
   void _resetPrediction() {
-    _predictedExpiryFromAi = null;
-    _predictionError = null;
+    if (_predictedExpiryFromAi != null) {
+      setState(() {
+        _predictedExpiryFromAi = null;
+        _expiry = null;
+        _predictionError = null;
+      });
+    }
   }
 
   IconData _locationIcon(StorageLocation loc) {
     switch (loc) {
       case StorageLocation.freezer: return Icons.ac_unit_rounded;
-      case StorageLocation.pantry: return Icons.shelves; // Material Symbols style
+      case StorageLocation.pantry: return Icons.shelves;
       case StorageLocation.fridge:
       default: return Icons.kitchen_rounded;
     }
   }
 
-  // ========= Actions (Logic Kept Original) =========
+  // ========= Actions =========
 
   void _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
@@ -176,11 +187,13 @@ class _AddFoodPageState extends State<AddFoodPage>
     final DateTime? effectiveExpiry = _bestBefore ?? _expiry;
 
     final newItem = FoodItem(
+      // 确保这里传入了 ID
       id: widget.itemToEdit?.id ?? const Uuid().v4(),
       name: _name,
       location: _location,
       quantity: _qty,
       unit: _unit,
+      minQuantity: _minQty, // 🟢 保存 Min Stock
       purchasedDate: _purchased,
       openDate: _openDate,
       bestBeforeDate: _bestBefore,
@@ -306,10 +319,21 @@ class _AddFoodPageState extends State<AddFoodPage>
       final iso = data['predictedExpiry'] as String?;
       if (iso == null) throw Exception('No predictedExpiry');
 
+      final predictedDate = DateTime.parse(iso);
       setState(() {
-        _predictedExpiryFromAi = DateTime.parse(iso);
+        _predictedExpiryFromAi = predictedDate;
+        _expiry = predictedDate; 
         _predictionError = null;
       });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Expiry set to ${_formatDate(predictedDate)} ✨'),
+            behavior: SnackBarBehavior.fixed,
+          ),
+        );
+      }
     } catch (e) {
       setState(() => _predictionError = e.toString());
     } finally {
@@ -485,7 +509,7 @@ class _AddFoodPageState extends State<AddFoodPage>
           unselectedLabelColor: Colors.grey,
           indicatorColor: _primaryColor,
           indicatorSize: TabBarIndicatorSize.label,
-          dividerColor: Colors.transparent, // 去掉 Material 3 的默认分割线，更干净
+          dividerColor: Colors.transparent,
           tabs: const [
             Tab(text: 'Manual'),
             Tab(text: 'Scan'),
@@ -510,7 +534,6 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   // --- Manual Tab ---
-
   Widget _buildManualForm() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
@@ -525,10 +548,12 @@ class _AddFoodPageState extends State<AddFoodPage>
                 TextFormField(
                   initialValue: _name,
                   decoration: _inputDecoration('Name', Icons.edit_outlined),
-                  onChanged: (v) => setState(() {
-                    _name = v;
-                    _resetPrediction();
-                  }),
+                  onChanged: (v) {
+                    setState(() {
+                      _name = v;
+                      _resetPrediction();
+                    });
+                  },
                   onSaved: (v) => _name = v ?? '',
                   validator: (v) => v!.isEmpty ? 'Required' : null,
                 ),
@@ -558,6 +583,23 @@ class _AddFoodPageState extends State<AddFoodPage>
                     ),
                   ],
                 ),
+                // 🟢 🟢 🟢 新增：最低库存设置 🟢 🟢 🟢
+                const SizedBox(height: 16),
+                TextFormField(
+                  initialValue: _minQty?.toString() ?? '',
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: _inputDecoration('Min Stock Warning (Optional)', Icons.notifications_active_outlined).copyWith(
+                    hintText: 'e.g. 2 (Notify when below)',
+                    helperText: 'Leave empty for no warnings',
+                  ),
+                  onSaved: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      _minQty = null;
+                    } else {
+                      _minQty = double.tryParse(v);
+                    }
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -567,21 +609,9 @@ class _AddFoodPageState extends State<AddFoodPage>
               children: [
                 SegmentedButton<StorageLocation>(
                   segments: const [
-                    ButtonSegment(
-                        value: StorageLocation.fridge,
-                        // 强制单行显示，超出显示省略号
-                        label: Text('Fridge', maxLines: 1, overflow: TextOverflow.ellipsis),
-                        icon: Icon(Icons.kitchen_outlined)),
-                    ButtonSegment(
-                        value: StorageLocation.freezer,
-                        // 强制单行显示，超出显示省略号
-                        label: Text('Freezer', maxLines: 1, overflow: TextOverflow.ellipsis),
-                        icon: Icon(Icons.ac_unit_rounded)),
-                    ButtonSegment(
-                        value: StorageLocation.pantry,
-                        // 强制单行显示，超出显示省略号
-                        label: Text('Pantry', maxLines: 1, overflow: TextOverflow.ellipsis),
-                        icon: Icon(Icons.shelves)),
+                    ButtonSegment(value: StorageLocation.fridge, label: Text('Fridge', maxLines: 1, overflow: TextOverflow.ellipsis), icon: Icon(Icons.kitchen_outlined)),
+                    ButtonSegment(value: StorageLocation.freezer, label: Text('Freezer', maxLines: 1, overflow: TextOverflow.ellipsis), icon: Icon(Icons.ac_unit_rounded)),
+                    ButtonSegment(value: StorageLocation.pantry, label: Text('Pantry', maxLines: 1, overflow: TextOverflow.ellipsis), icon: Icon(Icons.shelves)),
                   ],
                   selected: {_location},
                   onSelectionChanged: (s) {
@@ -603,23 +633,37 @@ class _AddFoodPageState extends State<AddFoodPage>
             _buildFormCard(
               title: 'Dates',
               children: [
-                _buildDateRow('Purchased', _purchased, (d) => setState(() => _purchased = d!)),
+                _buildDateRow('Purchased', _purchased, (d) {
+                  setState(() {
+                    _purchased = d!;
+                    _resetPrediction();
+                  });
+                }),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 1),
                 ),
-                _buildDateRow('Opened', _openDate, (d) => setState(() => _openDate = d), canClear: true),
+                _buildDateRow('Opened', _openDate, (d) {
+                  setState(() {
+                    _openDate = d;
+                    _resetPrediction();
+                  });
+                }, canClear: true),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Divider(height: 1),
                 ),
-                _buildDateRow('Best Before', _bestBefore, (d) => setState(() => _bestBefore = d), canClear: true),
+                _buildDateRow('Best Before', _bestBefore, (d) {
+                  setState(() {
+                    _bestBefore = d;
+                    _resetPrediction();
+                  });
+                }, canClear: true),
               ],
             ),
             const SizedBox(height: 20),
 
             _buildExpiryAiCard(),
-            
             const SizedBox(height: 40),
 
             SizedBox(
@@ -643,14 +687,12 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   // --- Scan Tab ---
-
   Widget _buildScanTab() {
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          // Mode Selector
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
@@ -660,22 +702,13 @@ class _AddFoodPageState extends State<AddFoodPage>
             ),
             child: Row(
               children: [
-                _buildScanModeOption(
-                  StorageScanMode.receipt,
-                  'Scan Receipt',
-                  Icons.receipt_long_rounded,
-                ),
-                _buildScanModeOption(
-                  StorageScanMode.fridge,
-                  'Snap Fridge',
-                  Icons.kitchen_rounded,
-                ),
+                _buildScanModeOption(StorageScanMode.receipt, 'Scan Receipt', Icons.receipt_long_rounded),
+                _buildScanModeOption(StorageScanMode.fridge, 'Snap Fridge', Icons.kitchen_rounded),
               ],
             ),
           ),
           const SizedBox(height: 40),
 
-          // Main Action
           _buildBigActionButton(
             icon: Icons.camera_alt_rounded,
             label: 'Take Photo',
@@ -707,10 +740,8 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   // --- Voice Tab ---
-
   Widget _buildVoiceTab() {
     final canSend = _voiceController.text.trim().length > 2 && !_isProcessing;
-
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -909,23 +940,34 @@ class _AddFoodPageState extends State<AddFoodPage>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        _formatDate(_predictedExpiryFromAi),
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
+                      Row(
+                        children: [
+                          Text(
+                            _formatDate(_predictedExpiryFromAi),
+                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.green.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                            child: const Text('Auto Applied ✅', style: TextStyle(fontSize: 10, color: Colors.green, fontWeight: FontWeight.bold)),
+                          )
+                        ],
                       ),
                       if (_bestBefore != null)
                         const Text('Manual date will override this', style: TextStyle(fontSize: 10, color: Colors.orange)),
                     ],
                   ),
                 ),
-                FilledButton.tonal(
+                TextButton(
                   onPressed: () {
-                    setState(() => _expiry = _predictedExpiryFromAi);
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Date applied!')));
+                      setState(() {
+                        _expiry = null;
+                        _predictedExpiryFromAi = null;
+                      });
                   },
-                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
-                  child: const Text('Apply'),
-                ),
+                  child: const Text('Undo', style: TextStyle(fontSize: 12)),
+                )
               ],
             )
           else
@@ -1046,7 +1088,6 @@ class _AddFoodPageState extends State<AddFoodPage>
     );
   }
 
-  // Preview & Overlay Widgets (Kept largely the same but styled)
   Widget _buildProcessingOverlay() {
     final isReceipt = _activeProcessingScanMode == StorageScanMode.receipt;
     return Container(
@@ -1084,7 +1125,6 @@ class _AddFoodPageState extends State<AddFoodPage>
     );
   }
 
-  // Scan Preview List Logic (Kept, just ensured styling matches)
   Future<void> _showScannedItemsPreview(List<_ScannedItem> items) async {
     final selected = List<bool>.filled(items.length, true);
 
@@ -1203,11 +1243,10 @@ class _AddFoodPageState extends State<AddFoodPage>
 
     if (confirmed != true) return;
 
-    // Save Logic (Copied from original)
     for (int i = 0; i < items.length; i++) {
       if (!selected[i]) continue;
       final s = items[i];
-      DateTime expiry = s.predictedExpiry ?? s.purchaseDate.add(const Duration(days: 7)); // Simple fallback
+      DateTime expiry = s.predictedExpiry ?? s.purchaseDate.add(const Duration(days: 7));
       
       final foodItem = FoodItem(
         id: const Uuid().v4(),

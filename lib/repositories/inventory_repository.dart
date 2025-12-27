@@ -9,6 +9,36 @@ import '../models/food_item.dart';
 
 // ================== Models ==================
 
+class ShoppingItem {
+  final String id;
+  final String name;
+  final String category; // 'dairy', 'produce', 'meat', 'general', 'pet'
+  bool isChecked;
+
+  ShoppingItem({
+    required this.id,
+    required this.name,
+    this.category = 'general',
+    this.isChecked = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'category': category,
+    'isChecked': isChecked,
+  };
+
+  factory ShoppingItem.fromJson(Map<String, dynamic> json) {
+    return ShoppingItem(
+      id: json['id'],
+      name: json['name'],
+      category: json['category'] ?? 'general',
+      isChecked: json['isChecked'] ?? false,
+    );
+  }
+}
+
 class ShoppingHistoryItem {
   final String name;
   final String category;
@@ -121,18 +151,25 @@ class InventoryRepository extends ChangeNotifier {
   static const _itemsKey = 'inv_items_v1';
   static const _impactKey = 'inv_impact_v1';
   static const _metaKey = 'inv_meta_v1';
-  static const _historyKey = 'shopping_history_v1'; // 🆕
+  static const _historyKey = 'shopping_history_v1';
+  static const _activeShoppingKey = 'shopping_active_v1';
 
   final List<FoodItem> _items;
   final List<ImpactEvent> _impactEvents;
-  final List<ShoppingHistoryItem> _shoppingHistory; // 🆕
+  final List<ShoppingHistoryItem> _shoppingHistory;
+  final List<ShoppingItem> _activeShoppingList;
   final ExpiryService _expiryService = ExpiryService();
 
   bool hasShownPetWarning = false;
   int _streakDays = 0;
   DateTime? _lastConsumedDate;
 
-  InventoryRepository._(this._items, this._impactEvents, this._shoppingHistory);
+  InventoryRepository._(
+    this._items, 
+    this._impactEvents, 
+    this._shoppingHistory, 
+    this._activeShoppingList,
+  );
 
   static Future<InventoryRepository> create() async {
     final prefs = await SharedPreferences.getInstance();
@@ -161,7 +198,7 @@ class InventoryRepository extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // 3. Shopping History (New)
+    // 3. Shopping History
     final historyJson = prefs.getString(_historyKey);
     final List<ShoppingHistoryItem> history = [];
     if (historyJson != null) {
@@ -173,9 +210,21 @@ class InventoryRepository extends ChangeNotifier {
       } catch (_) {}
     }
 
-    final repo = InventoryRepository._(items, impactEvents, history);
+    // 4. Active Shopping List
+    final activeJson = prefs.getString(_activeShoppingKey);
+    final List<ShoppingItem> activeList = [];
+    if (activeJson != null) {
+      try {
+        final decoded = jsonDecode(activeJson) as List<dynamic>;
+        for (final e in decoded) {
+          activeList.add(ShoppingItem.fromJson(e));
+        }
+      } catch (_) {}
+    }
 
-    // 4. Meta
+    final repo = InventoryRepository._(items, impactEvents, history, activeList);
+
+    // 5. Meta
     final metaJson = prefs.getString(_metaKey);
     if (metaJson != null) {
       try {
@@ -204,10 +253,16 @@ class InventoryRepository extends ChangeNotifier {
     await prefs.setString(_impactKey, jsonEncode(list));
   }
 
-  Future<void> _saveHistory() async { // 🆕
+  Future<void> _saveHistory() async {
     final prefs = await _prefs();
     final list = _shoppingHistory.map((e) => e.toJson()).toList();
     await prefs.setString(_historyKey, jsonEncode(list));
+  }
+
+  Future<void> _saveActiveShoppingList() async {
+    final prefs = await _prefs();
+    final list = _activeShoppingList.map((e) => e.toJson()).toList();
+    await prefs.setString(_activeShoppingKey, jsonEncode(list));
   }
 
   Future<void> _saveMeta() async {
@@ -218,6 +273,114 @@ class InventoryRepository extends ChangeNotifier {
       'petWarningShown': hasShownPetWarning,
     };
     await prefs.setString(_metaKey, jsonEncode(meta));
+  }
+
+  // ================== 🟢 Shopping Business Logic (New & Clean) ==================
+
+  /// 1. 切换勾选状态
+  /// 逻辑：勾选 -> 存入历史；取消勾选 -> 从历史撤销
+  Future<void> toggleShoppingItemStatus(ShoppingItem item) async {
+    item.isChecked = !item.isChecked;
+    
+    // 更新本地列表状态
+    final index = _activeShoppingList.indexWhere((i) => i.id == item.id);
+    if (index != -1) {
+      _activeShoppingList[index] = item;
+    }
+    await _saveActiveShoppingList();
+
+    if (item.isChecked) {
+      await archiveShoppingItems([item]); // 自动入库历史
+    } else {
+      await removeRecentHistoryItem(item.name); // 自动撤销历史
+    }
+    notifyListeners();
+  }
+
+  /// 2. 删除物品 (Swipe Delete)
+  /// 逻辑：从清单彻底删除。如果它目前是“已勾选”状态，说明用户不想买了/误操作，
+  /// 必须把之前自动生成的历史记录也删掉，保持数据一致性。
+  Future<void> deleteShoppingItem(ShoppingItem item) async {
+    // A. 从清单数据库移除
+    _activeShoppingList.removeWhere((i) => i.id == item.id);
+    await _saveActiveShoppingList();
+
+    // B. 如果是已勾选状态，视为“反悔”，同步清理历史记录
+    if (item.isChecked) {
+      await removeRecentHistoryItem(item.name);
+    }
+    
+    notifyListeners();
+  }
+
+  /// 3. 结算物品 (Move to Fridge)
+  /// 逻辑：移入库存，从清单移除，但【保留】历史记录（因为真的买了）
+  Future<void> checkoutShoppingItems(List<ShoppingItem> items) async {
+    for (var item in items) {
+      // A. 创建库存物品
+      StorageLocation loc = StorageLocation.fridge;
+      if (item.category == 'pantry') loc = StorageLocation.pantry;
+      if (item.category == 'meat') loc = StorageLocation.freezer;
+      if (item.category == 'pet') loc = StorageLocation.pantry;
+      
+      final newItem = FoodItem(
+        id: const Uuid().v4(),
+        name: item.name,
+        location: loc,
+        quantity: 1,
+        unit: 'pcs',
+        purchasedDate: DateTime.now(),
+        category: item.category,
+      );
+      
+      // B. 加库存
+      _items.add(newItem);
+      
+      // C. 从清单移除
+      _activeShoppingList.removeWhere((i) => i.id == item.id);
+    }
+
+    await _saveItems(); // 保存库存
+    await _saveActiveShoppingList(); // 保存清单
+    notifyListeners();
+  }
+
+  /// 4. 基础保存 (Add/Update)
+  Future<void> saveShoppingItem(ShoppingItem item) async {
+    final index = _activeShoppingList.indexWhere((i) => i.id == item.id);
+    if (index != -1) {
+      _activeShoppingList[index] = item;
+    } else {
+      _activeShoppingList.add(item);
+    }
+    await _saveActiveShoppingList();
+    notifyListeners();
+  }
+
+  /// 5. 获取清单
+  List<ShoppingItem> getShoppingList() => List.unmodifiable(_activeShoppingList);
+
+  // ================== Auto-Restock Logic ==================
+
+  Future<void> _checkAutoRefill(FoodItem item) async {
+    if (item.minQuantity == null) return;
+
+    if (item.quantity <= item.minQuantity!) {
+      final isAlreadyPending = _activeShoppingList.any((s) => 
+        s.name.trim().toLowerCase() == item.name.trim().toLowerCase() && 
+        !s.isChecked
+      );
+
+      if (!isAlreadyPending) {
+        final newItem = ShoppingItem(
+          id: const Uuid().v4(),
+          name: item.name,
+          category: item.category ?? 'general',
+        );
+        await saveShoppingItem(newItem);
+        debugPrint('Auto-added low stock item: ${item.name}');
+      }
+    }
   }
 
   // ================== Items CRUD ==================
@@ -235,6 +398,7 @@ class InventoryRepository extends ChangeNotifier {
   Future<void> addItem(FoodItem item) async {
     _items.add(item);
     await _saveItems();
+    await _checkAutoRefill(item); 
     notifyListeners();
   }
 
@@ -243,6 +407,7 @@ class InventoryRepository extends ChangeNotifier {
     if (index != -1) {
       _items[index] = item;
       await _saveItems();
+      await _checkAutoRefill(item);
       notifyListeners();
     }
   }
@@ -260,7 +425,6 @@ class InventoryRepository extends ChangeNotifier {
       _items[index] = item.copyWith(status: status);
       await _saveItems();
       
-      // Update streak if consumed
       if (status == FoodStatus.consumed) {
         _updateStreakOnConsumed();
         await _saveMeta();
@@ -279,7 +443,7 @@ class InventoryRepository extends ChangeNotifier {
     );
   }
 
-  // ================== Shopping History Logic (New) ==================
+  // ================== Shopping History Logic ==================
 
   List<ShoppingHistoryItem> get shoppingHistory {
     final list = List<ShoppingHistoryItem>.from(_shoppingHistory);
@@ -287,10 +451,9 @@ class InventoryRepository extends ChangeNotifier {
     return list;
   }
 
-  Future<void> archiveShoppingItems(List<dynamic> items) async {
+  Future<void> archiveShoppingItems(List<ShoppingItem> items) async {
     final now = DateTime.now();
     for (var item in items) {
-      // 假设 item 是 ShoppingItem，有 name 和 category 属性
       _shoppingHistory.add(ShoppingHistoryItem(
         name: item.name,
         category: item.category,
@@ -298,13 +461,30 @@ class InventoryRepository extends ChangeNotifier {
       ));
     }
     await _saveHistory();
-    notifyListeners();
+    // notifyListeners called by wrapper
   }
 
   Future<void> clearHistory() async {
     _shoppingHistory.clear();
     await _saveHistory();
     notifyListeners();
+  }
+
+  Future<void> removeRecentHistoryItem(String name) async {
+    final index = _shoppingHistory.lastIndexWhere((e) => e.name == name);
+    
+    if (index != -1) {
+      final item = _shoppingHistory[index];
+      final now = DateTime.now();
+      final diff = now.difference(item.date).inMinutes;
+
+      // 1小时内允许撤销，防止误删历史数据
+      if (diff < 60) {
+        _shoppingHistory.removeAt(index);
+        await _saveHistory();
+        // notifyListeners called by wrapper
+      }
+    }
   }
 
   // ================== Impact Logic ==================
@@ -318,34 +498,41 @@ class InventoryRepository extends ChangeNotifier {
     await recordImpactForAction(item, action, overrideQty: clamped);
 
     final remaining = item.quantity - clamped;
+    FoodItem updatedItem;
+
     if (remaining <= 0.0001) {
-      await updateStatus(item.id, FoodStatus.consumed);
+      updatedItem = item.copyWith(quantity: 0, status: FoodStatus.consumed);
+      final index = _items.indexWhere((i) => i.id == item.id);
+      if (index != -1) _items[index] = updatedItem;
     } else {
       final index = _items.indexWhere((i) => i.id == item.id);
       if (index != -1) {
-        _items[index] = item.copyWith(quantity: remaining);
-        await _saveItems();
-        notifyListeners();
+        updatedItem = item.copyWith(quantity: remaining);
+        _items[index] = updatedItem;
+      } else {
+        updatedItem = item;
       }
     }
+
+    await _saveItems();
+    await _checkAutoRefill(updatedItem);
+    notifyListeners();
   }
 
   Future<void> recordImpactForAction(FoodItem item, String action, {double? overrideQty}) async {
     final qty = overrideQty ?? item.quantity;
     
-    // Estimation logic
     double money = 0;
     double co2 = 0;
     ImpactType type;
 
-    // Simple heuristic for units
     double normalizeQty = qty;
     if (item.unit.toLowerCase() == 'g' || item.unit.toLowerCase() == 'ml') {
-      normalizeQty = qty / 1000.0; // convert to kg/L for price calc
+      normalizeQty = qty / 1000.0;
     }
 
-    const pricePerKg = 4.0; // avg food price
-    const co2PerKg = 2.5;   // avg carbon footprint
+    const pricePerKg = 4.0; 
+    const co2PerKg = 2.5; 
 
     switch (action) {
       case 'eat':
@@ -378,7 +565,6 @@ class InventoryRepository extends ChangeNotifier {
       _updateStreakOnConsumed();
       await _saveImpact();
       await _saveMeta();
-      notifyListeners();
     }
   }
 
