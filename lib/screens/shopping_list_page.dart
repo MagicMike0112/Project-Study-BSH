@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
-import '../models/food_item.dart';
+
 import '../repositories/inventory_repository.dart';
 import 'shopping_archive_page.dart';
 
@@ -17,9 +17,89 @@ class ShoppingListPage extends StatefulWidget {
 
 class _ShoppingListPageState extends State<ShoppingListPage> {
   final TextEditingController _controller = TextEditingController();
-  final List<String> _suggestions = ['Eggs', 'Milk', 'Bread', 'Bananas', 'Timothy Hay', 'Romaine Lettuce', 'Bell Pepper']; 
+  final List<String> _suggestions = ['Eggs', 'Milk', 'Bread', 'Bananas', 'Timothy Hay', 'Romaine Lettuce', 'Bell Pepper'];
+  
+  // 🟢 修复版：使用透明背景+Fixed模式，强制让气泡停在底部
+  void _showAutoDismissSnackBar(String message, {VoidCallback? onUndo}) {
+    if (!mounted) return;
 
-  // 🟢 不需要本地状态了，直接依赖 Repo
+    // 1. 清除旧的
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
+    // 2. 显示新的
+    final controller = ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        // 🟢 关键修改1：使用 fixed，这样它会像地板一样贴在最下面，不会乱飘
+        behavior: SnackBarBehavior.fixed,
+        // 🟢 关键修改2：背景透明，阴影去掉
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        // 系统可能忽略 duration，所以需要手动关闭逻辑
+        duration: const Duration(seconds: 3),
+        
+        // 🟢 关键修改3：内容本身就是一个“悬浮气泡”
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF323232),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          // 🟢 修改点：将底部边距改为 20，让它停靠在屏幕最底部
+          margin: const EdgeInsets.only(bottom: 20), 
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  message, 
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onUndo != null)
+                GestureDetector(
+                  onTap: () {
+                    onUndo();
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 12),
+                    child: Text(
+                      'UNDO',
+                      style: TextStyle(
+                        color: Color(0xFF81D4FA), 
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 3. 强制关闭逻辑
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        try {
+          controller.close();
+        } catch (_) {}
+      }
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+  }
 
   Future<void> _addItem(String name) async {
     if (name.trim().isEmpty) return;
@@ -29,9 +109,9 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
       id: const Uuid().v4(),
       name: name.trim(),
       category: _guessCategory(name),
+      isChecked: false,
     );
 
-    // 🟢 调用 Repo
     await widget.repo.saveShoppingItem(newItem);
     _controller.clear();
   }
@@ -49,72 +129,55 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
   Future<void> _moveCheckedToInventory(BuildContext context, List<ShoppingItem> checkedItems) async {
     HapticFeedback.mediumImpact();
 
-    // 🟢 调用 Repo 的结算方法 (Move Logic)
     await widget.repo.checkoutShoppingItems(checkedItems);
 
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.fixed,
-          backgroundColor: const Color(0xFF323232),
-          content: Text('${checkedItems.length} items moved to Inventory! 🧊', style: const TextStyle(color: Colors.white)),
-        ),
-      );
+      _showAutoDismissSnackBar('${checkedItems.length} items moved to Inventory! 🧊');
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // 🟢 核心：使用 AnimatedBuilder 监听 Repo
-    return AnimatedBuilder(
-      animation: widget.repo,
-      builder: (context, child) {
-        final allItems = widget.repo.getShoppingList();
-        final activeItems = allItems.where((i) => !i.isChecked).toList();
-        final checkedItems = allItems.where((i) => i.isChecked).toList();
-        
-        const bg = Color(0xFFF8F9FC);
-        const primary = Color(0xFF005F87);
+    const bg = Color(0xFFF8F9FC);
+    const primary = Color(0xFF005F87);
 
-        return Scaffold(
-          backgroundColor: bg,
-          appBar: AppBar(
-            title: const Text('Shopping List', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
-            backgroundColor: bg,
-            elevation: 0,
-            centerTitle: false,
-            systemOverlayStyle: SystemUiOverlayStyle.dark,
-            actions: [
-              IconButton(
-                tooltip: 'Purchase History',
-                icon: const Icon(Icons.history_rounded, color: Colors.black87),
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ShoppingArchivePage(
-                        repo: widget.repo,
-                        onAddBack: (name, category) => _addItem(name),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              if (checkedItems.isNotEmpty)
-                IconButton(
-                  tooltip: 'Clear checked items',
-                  icon: const Icon(Icons.delete_sweep_outlined, color: Colors.black54),
-                  onPressed: () {
-                    // 🟢 批量删除 -> Repo 自动处理历史同步
-                    for (var item in checkedItems) {
-                      widget.repo.deleteShoppingItem(item);
-                    }
-                  },
+    return Scaffold(
+      backgroundColor: bg,
+      appBar: AppBar(
+        title: const Text('Shopping List', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+        backgroundColor: bg,
+        elevation: 0,
+        centerTitle: false,
+        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        actions: [
+          IconButton(
+            tooltip: 'Purchase History',
+            icon: const Icon(Icons.history_rounded, color: Colors.black87),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ShoppingArchivePage(
+                    repo: widget.repo,
+                    onAddBack: (name, category) => _addItem(name),
+                  ),
                 ),
-            ],
+              );
+            },
           ),
-          body: Column(
+        ],
+      ),
+      // 使用 ListenableBuilder 监听 Repo
+      body: ListenableBuilder(
+        listenable: widget.repo,
+        builder: (context, child) {
+          final allItems = widget.repo.getShoppingList();
+          final activeItems = allItems.where((i) => !i.isChecked).toList();
+          final checkedItems = allItems.where((i) => i.isChecked).toList();
+
+          return Column(
             children: [
+              // 顶部建议栏
               if (_suggestions.isNotEmpty)
                 FadeInSlide(
                   index: 0,
@@ -128,13 +191,8 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                         final sug = _suggestions[i];
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
-                          // 🟢 修复：BouncingButton 包裹普通的 Chip
                           child: BouncingButton(
-                            onTap: () {
-                              _addItem(sug);
-                              // 这里的 setState 只影响局部建议列表
-                              // setState(() => _suggestions.removeAt(i)); 
-                            },
+                            onTap: () => _addItem(sug),
                             child: Chip(
                               elevation: 0,
                               side: BorderSide(color: primary.withOpacity(0.1)),
@@ -153,17 +211,21 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                   ),
                 ),
               
+              // 列表区域
               Expanded(
                 child: allItems.isEmpty
                     ? FadeInSlide(index: 1, child: _buildEmptyState())
                     : ListView(
                         padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
                         children: [
+                          // 未完成项
                           ...activeItems.asMap().entries.map((entry) => FadeInSlide(
+                            key: ValueKey(entry.value.id),
                             index: 1 + (entry.key > 5 ? 5 : entry.key),
                             child: _buildDismissibleItem(entry.value),
                           )),
                           
+                          // 分割线
                           if (activeItems.isNotEmpty && checkedItems.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -179,17 +241,31 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                               ),
                             ),
 
+                          // 已完成项
                           ...checkedItems.asMap().entries.map((entry) => FadeInSlide(
+                            key: ValueKey(entry.value.id),
                             index: 1 + activeItems.length + (entry.key > 5 ? 5 : entry.key),
                             child: _buildDismissibleItem(entry.value),
                           )),
+                          
+                          // 底部留白给 BottomSheet
+                          if (checkedItems.isNotEmpty) const SizedBox(height: 80), 
                         ],
                       ),
               ),
             ],
-          ),
+          );
+        },
+      ),
 
-          bottomSheet: Container(
+      // 底部输入框和结算按钮
+      bottomSheet: ListenableBuilder(
+        listenable: widget.repo,
+        builder: (context, child) {
+          final items = widget.repo.getShoppingList();
+          final checkedItems = items.where((i) => i.isChecked).toList();
+
+          return Container(
             color: Colors.white,
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
             child: Column(
@@ -238,9 +314,9 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                 ),
               ],
             ),
-          ),
-        );
-      },
+          );
+        }
+      ),
     );
   }
 
@@ -257,28 +333,17 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
       ),
       onDismissed: (_) {
         HapticFeedback.mediumImpact();
-        // 🟢 调用 Repo 的删除方法
         widget.repo.deleteShoppingItem(item);
         
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Deleted "${item.name}"'),
-            action: SnackBarAction(
-              label: 'UNDO',
-              onPressed: () {
-                // 恢复时，saveShoppingItem 会处理基本数据，但我们需要额外检查历史同步
-                widget.repo.saveShoppingItem(item);
-                if (item.isChecked) widget.repo.archiveShoppingItems([item]);
-              },
-            ),
-          ),
+        _showAutoDismissSnackBar(
+          'Deleted "${item.name}"',
+          onUndo: () => widget.repo.saveShoppingItem(item),
         );
       },
       child: _ShoppingTile(
         item: item,
         onToggle: () {
           HapticFeedback.selectionClick();
-          // 🟢 调用 Repo 的切换方法
           widget.repo.toggleShoppingItemStatus(item);
         },
       ),
@@ -301,6 +366,53 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     );
   }
 }
+
+// 🟢 新增：用户头像标签组件
+class _UserAvatarTag extends StatelessWidget {
+  final String name;
+  const _UserAvatarTag({required this.name});
+
+  Color _getNameColor(String name) {
+    if (name.isEmpty) return Colors.grey;
+    final colors = [
+      Colors.blue.shade600,
+      Colors.red.shade600,
+      Colors.green.shade600,
+      Colors.orange.shade600,
+      Colors.purple.shade600,
+      Colors.teal.shade600,
+      Colors.pink.shade600,
+    ];
+    return colors[name.hashCode.abs() % colors.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getNameColor(name);
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        shape: BoxShape.circle,
+        border: Border.all(color: color.withOpacity(0.5), width: 1),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ================== Helper Widgets ==================
 
 class _ShoppingTile extends StatelessWidget {
   final ShoppingItem item;
@@ -385,15 +497,38 @@ class _ShoppingTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    item.name,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: isDone ? Colors.grey[600] : Colors.black87,
-                      decoration: isDone ? TextDecoration.lineThrough : null,
-                      decorationColor: color,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: isDone ? Colors.grey[600] : Colors.black87,
+                          decoration: isDone ? TextDecoration.lineThrough : null,
+                          decorationColor: color,
+                        ),
+                      ),
+                      // 这里显示“谁买的”标签
+                      if (item.ownerName != null) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            _UserAvatarTag(name: item.ownerName!),
+                            const SizedBox(width: 4),
+                            Text(
+                              item.ownerName!,
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey[500],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
@@ -404,8 +539,6 @@ class _ShoppingTile extends StatelessWidget {
     );
   }
 }
-
-// ================== Shared Animation Widgets ==================
 
 class BouncingButton extends StatefulWidget {
   final Widget child;

@@ -1,5 +1,8 @@
 // lib/models/food_item.dart
 
+// 移除：import 'package:supabase_flutter/supabase_flutter.dart'; 
+// Model 类不需要依赖 Supabase 库，保持纯净，避免离线时报错
+
 enum StorageLocation { fridge, freezer, pantry }
 enum FoodStatus { good, consumed, discarded }
 
@@ -9,25 +12,19 @@ class FoodItem {
   final StorageLocation location;
   final double quantity;
   final String unit;
-
-  /// 🟢 新增：最低库存阈值 (如果不设置则为 null，表示不关心缺货)
   final double? minQuantity;
 
-  /// 必填：购买日期
   final DateTime purchasedDate;
-
-  /// 可选：开封日期
   final DateTime? openDate;
-
-  /// 可选：包装上的 Best-before / Use-by
   final DateTime? bestBeforeDate;
-
-  /// 预测的“真正过期日”（可以来自规则或 AI）
   final DateTime? predictedExpiry;
 
   final FoodStatus status;
   final String? category;
   final String? source;
+  
+  // 🟢 新增字段：谁买的/谁添加的
+  final String? ownerName;
 
   FoodItem({
     required this.id,
@@ -35,7 +32,7 @@ class FoodItem {
     required this.location,
     required this.quantity,
     required this.unit,
-    this.minQuantity, // 🟢
+    this.minQuantity,
     required this.purchasedDate,
     this.openDate,
     this.bestBeforeDate,
@@ -43,12 +40,15 @@ class FoodItem {
     this.status = FoodStatus.good,
     this.category,
     this.source,
+    this.ownerName, // 🟢 新增参数
   });
 
-  /// 距离 predictedExpiry 还有几天；如果没有，就给一个大数方便排序
+  // ================== Helper Getters ==================
+
   int get daysToExpiry {
     if (predictedExpiry == null) return 999;
     final now = DateTime.now();
+    // 只比较日期部分，忽略时分秒
     final today = DateTime(now.year, now.month, now.day);
     final expiry = DateTime(
       predictedExpiry!.year,
@@ -58,12 +58,12 @@ class FoodItem {
     return expiry.difference(today).inDays;
   }
 
-  /// 🟢 新增 helper：判断是否紧缺
   bool get isLowStock {
     if (minQuantity == null) return false;
-    // 如果还没吃完，且当前数量 <= 设定的阈值，则视为紧缺
     return status == FoodStatus.good && quantity <= minQuantity!;
   }
+
+  // ================== CopyWith ==================
 
   FoodItem copyWith({
     String? id,
@@ -71,7 +71,7 @@ class FoodItem {
     StorageLocation? location,
     double? quantity,
     String? unit,
-    double? minQuantity, // 🟢
+    double? minQuantity,
     DateTime? purchasedDate,
     DateTime? openDate,
     DateTime? bestBeforeDate,
@@ -79,6 +79,7 @@ class FoodItem {
     FoodStatus? status,
     String? category,
     String? source,
+    String? ownerName, // 🟢 新增参数
   }) {
     return FoodItem(
       id: id ?? this.id,
@@ -86,7 +87,7 @@ class FoodItem {
       location: location ?? this.location,
       quantity: quantity ?? this.quantity,
       unit: unit ?? this.unit,
-      minQuantity: minQuantity ?? this.minQuantity, // 🟢
+      minQuantity: minQuantity ?? this.minQuantity,
       purchasedDate: purchasedDate ?? this.purchasedDate,
       openDate: openDate ?? this.openDate,
       bestBeforeDate: bestBeforeDate ?? this.bestBeforeDate,
@@ -94,125 +95,100 @@ class FoodItem {
       status: status ?? this.status,
       category: category ?? this.category,
       source: source ?? this.source,
+      ownerName: ownerName ?? this.ownerName, // 🟢 赋值
     );
   }
 
-  // ---------------- JSON 序列化 ----------------
+  // ================== JSON Serialization ==================
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      // 'user_id': ... 移除由 Repo 统一处理
       'name': name,
-      'location': location.name, // fridge / freezer / pantry
+      'location': location.name, // 存字符串: "fridge"
       'quantity': quantity,
       'unit': unit,
-      'minQuantity': minQuantity, // 🟢
-      'purchasedDate': purchasedDate.toIso8601String(),
-      'openDate': openDate?.toIso8601String(),
-      'bestBeforeDate': bestBeforeDate?.toIso8601String(),
-      'predictedExpiry': predictedExpiry?.toIso8601String(),
-      'status': status.name, // good / consumed / discarded
+      'min_quantity': minQuantity,
+      'purchased_date': purchasedDate.toIso8601String(),
+      'open_date': openDate?.toIso8601String(),
+      'best_before_date': bestBeforeDate?.toIso8601String(),
+      'predicted_expiry': predictedExpiry?.toIso8601String(),
+      'status': status.name,
       'category': category,
       'source': source,
+      'owner_name': ownerName, // 🟢 序列化到本地缓存
     };
   }
 
-  /// 容错 fromJson：老数据字段缺失/类型错了也尽量兜住，不让整个 app 崩
   factory FoodItem.fromJson(Map<String, dynamic> json) {
+    // 内部 Helper：安全解析枚举
     StorageLocation parseLocation(dynamic value) {
-      final s = value?.toString();
-      switch (s) {
-        case 'freezer':
-          return StorageLocation.freezer;
-        case 'pantry':
-          return StorageLocation.pantry;
-        case 'fridge':
-        default:
-          return StorageLocation.fridge;
-      }
+      if (value == null) return StorageLocation.fridge;
+      // 兼容可能的大小写问题
+      final s = value.toString().toLowerCase(); 
+      if (s.contains('freezer')) return StorageLocation.freezer;
+      if (s.contains('pantry')) return StorageLocation.pantry;
+      return StorageLocation.fridge;
     }
 
     FoodStatus parseStatus(dynamic value) {
-      final s = value?.toString();
-      switch (s) {
-        case 'consumed':
-          return FoodStatus.consumed;
-        case 'discarded':
-          return FoodStatus.discarded;
-        case 'good':
-        default:
-          return FoodStatus.good;
-      }
+      if (value == null) return FoodStatus.good;
+      final s = value.toString().toLowerCase();
+      if (s == 'consumed') return FoodStatus.consumed;
+      if (s == 'discarded') return FoodStatus.discarded;
+      return FoodStatus.good;
     }
 
-    DateTime? parseDate(dynamic v) {
-      if (v == null) return null;
-      if (v is String && v.isEmpty) return null;
-      if (v is String) {
-        return DateTime.tryParse(v);
+    // 内部 Helper：安全解析数字 (处理 int/double/String 混合的情况)
+    double parseDouble(dynamic value, {double defaultValue = 0.0}) {
+      if (value == null) return defaultValue;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value) ?? defaultValue;
+      return defaultValue;
+    }
+
+    double? parseDoubleNullable(dynamic value) {
+      if (value == null) return null;
+      if (value is num) return value.toDouble();
+      if (value is String) return double.tryParse(value);
+      return null;
+    }
+
+    DateTime? parseDate(dynamic value) {
+      if (value == null) return null;
+      if (value is String) return DateTime.tryParse(value);
+      return null;
+    }
+
+    // 🟢 智能解析名字逻辑
+    String? extractName(Map<String, dynamic> data) {
+      // 1. 如果是从 Supabase 关联查询回来的 (user_profiles -> display_name)
+      if (data['user_profiles'] != null && data['user_profiles'] is Map) {
+        return data['user_profiles']['display_name'];
       }
-      if (v is int) {
-        // 兼容毫秒时间戳的旧数据
-        return DateTime.fromMillisecondsSinceEpoch(v);
+      // 2. 如果是从本地缓存读取的扁平结构
+      if (data['owner_name'] != null) {
+        return data['owner_name'];
       }
       return null;
     }
 
-    double parseQuantity(dynamic v) {
-      if (v is num) return v.toDouble();
-      if (v is String) {
-        final parsed = double.tryParse(v);
-        if (parsed != null) return parsed;
-      }
-      return 1.0; // 默认 1
-    }
-
-    // 🟢 解析 minQuantity
-    double? parseMinQty(dynamic v) {
-      if (v is num) return v.toDouble();
-      if (v is String) return double.tryParse(v);
-      return null;
-    }
-
-    // 整体再包一层 try，实在解析不出来就给一个“安全兜底” item
-    try {
-      final rawId = json['id']?.toString();
-      final rawName = json['name']?.toString();
-
-      return FoodItem(
-        id: (rawId == null || rawId.isEmpty)
-            ? 'legacy-${DateTime.now().millisecondsSinceEpoch}'
-            : rawId,
-        name: (rawName == null || rawName.isEmpty)
-            ? 'Unnamed item'
-            : rawName,
-        location: parseLocation(json['location']),
-        quantity: parseQuantity(json['quantity']),
-        unit: (json['unit']?.toString().isNotEmpty ?? false)
-            ? json['unit'].toString()
-            : 'pcs',
-        minQuantity: parseMinQty(json['minQuantity']), // 🟢
-        purchasedDate: parseDate(json['purchasedDate']) ??
-            DateTime.now(), // 没有就用 now，避免崩
-        openDate: parseDate(json['openDate']),
-        bestBeforeDate: parseDate(json['bestBeforeDate']),
-        predictedExpiry: parseDate(json['predictedExpiry']),
-        status: parseStatus(json['status']),
-        category: json['category']?.toString(),
-        source: json['source']?.toString(),
-      );
-    } catch (e) {
-      // 万一上面哪一步直接炸了，这里做最后兜底
-      final fallbackName = json['name']?.toString() ?? 'Unknown item';
-      return FoodItem(
-        id: 'fallback-${DateTime.now().millisecondsSinceEpoch}',
-        name: fallbackName,
-        location: StorageLocation.fridge,
-        quantity: 1.0,
-        unit: 'pcs',
-        purchasedDate: DateTime.now(),
-        status: FoodStatus.good,
-      );
-    }
+    return FoodItem(
+      id: json['id'].toString(),
+      name: json['name'] ?? 'Unknown',
+      location: parseLocation(json['location']),
+      quantity: parseDouble(json['quantity'], defaultValue: 1.0),
+      unit: json['unit'] ?? 'pcs',
+      minQuantity: parseDoubleNullable(json['min_quantity']),
+      purchasedDate: parseDate(json['purchased_date']) ?? DateTime.now(),
+      openDate: parseDate(json['open_date']),
+      bestBeforeDate: parseDate(json['best_before_date']),
+      predictedExpiry: parseDate(json['predicted_expiry']),
+      status: parseStatus(json['status']),
+      category: json['category'],
+      source: json['source'],
+      ownerName: extractName(json), // 🟢 赋值
+    );
   }
 }

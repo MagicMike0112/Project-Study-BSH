@@ -37,198 +37,190 @@ class _ImpactPageState extends State<ImpactPage> {
   static const Color _backgroundColor = Color(0xFFF8F9FC);
 
   void _changeRange(ImpactRange r) {
-    // 🟢 触感反馈：切换 Range 时
     HapticFeedback.selectionClick();
     setState(() => _range = r);
   }
 
   @override
   Widget build(BuildContext context) {
-    final start = _rangeStart();
-    
-    final events = widget.repo.impactEvents
-        .where((e) => !e.date.isBefore(start))
-        .toList();
+    // 🟢 使用 AnimatedBuilder 监听 repo 变化
+    return AnimatedBuilder(
+      animation: widget.repo,
+      builder: (context, child) {
+        final start = _rangeStart();
+        
+        final events = widget.repo.impactEvents
+            .where((e) => !e.date.isBefore(start))
+            .toList();
 
-    final streak = widget.repo.getCurrentStreakDays();
-    final savedCount = widget.repo.getSavedCount();
-    
-    final moneyTotal = events.fold<double>(0, (sum, e) => sum + e.moneySaved);
-    final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
+        final streak = widget.repo.getCurrentStreakDays();
+        final savedCount = widget.repo.getSavedCount();
+        
+        final moneyTotal = events.fold<double>(0, (sum, e) => sum + e.moneySaved);
+        final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
 
-    final petEvents = events.where((e) => e.type == ImpactType.fedToPet).toList();
-    final petQty = petEvents.fold<double>(0, (sum, e) => sum + e.quantity);
-    final totalQty = events.fold<double>(0, (sum, e) => sum + e.quantity);
-    final petShare = totalQty == 0 ? 0.0 : (petQty / totalQty).clamp(0.0, 1.0);
+        final petEvents = events.where((e) => e.type == ImpactType.fedToPet).toList();
+        final petQty = petEvents.fold<double>(0, (sum, e) => sum + e.quantity);
+        final totalQty = events.fold<double>(0, (sum, e) => sum + e.quantity);
+        final petShare = totalQty == 0 ? 0.0 : (petQty / totalQty).clamp(0.0, 1.0);
 
-    final dailyMoney = <DateTime, double>{};
-    final dailyCo2 = <DateTime, double>{};
+        final dailyMoney = <DateTime, double>{};
+        final dailyCo2 = <DateTime, double>{};
 
-    for (final e in events) {
-      final d = DateTime(e.date.year, e.date.month, e.date.day);
-      dailyMoney[d] = (dailyMoney[d] ?? 0) + e.moneySaved;
-      dailyCo2[d] = (dailyCo2[d] ?? 0) + e.co2Saved;
-    }
+        for (final e in events) {
+          final d = DateTime(e.date.year, e.date.month, e.date.day);
+          dailyMoney[d] = (dailyMoney[d] ?? 0) + e.moneySaved;
+          dailyCo2[d] = (dailyCo2[d] ?? 0) + e.co2Saved;
+        }
 
-    final allDates = <DateTime>{...dailyMoney.keys, ...dailyCo2.keys}.toList()
-      ..sort((a, b) => a.compareTo(b));
+        final allDates = <DateTime>{...dailyMoney.keys, ...dailyCo2.keys}.toList()
+          ..sort((a, b) => a.compareTo(b));
 
-    final moneySpots = <FlSpot>[];
-    final co2Spots = <FlSpot>[];
-    final labels = <int, String>{};
+        final moneySpots = <FlSpot>[];
+        final co2Spots = <FlSpot>[];
+        final labels = <int, String>{};
 
-    for (var i = 0; i < allDates.length; i++) {
-      final d = allDates[i];
-      final x = i.toDouble();
-      moneySpots.add(FlSpot(x, dailyMoney[d] ?? 0));
-      co2Spots.add(FlSpot(x, dailyCo2[d] ?? 0));
-      labels[i] = _shortDate(d);
-    }
-    
-    int ecoScore = (savedCount * 2 + streak * 5).clamp(0, 100);
-    if (events.isEmpty) ecoScore = 0;
+        for (var i = 0; i < allDates.length; i++) {
+          final d = allDates[i];
+          final x = i.toDouble();
+          moneySpots.add(FlSpot(x, dailyMoney[d] ?? 0));
+          co2Spots.add(FlSpot(x, dailyCo2[d] ?? 0));
+          labels[i] = _shortDate(d);
+        }
+        
+        int ecoScore = (savedCount * 2 + streak * 5).clamp(0, 100);
+        if (widget.repo.impactEvents.isEmpty) ecoScore = 0;
 
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-      appBar: AppBar(
-        title: const Text(
-          'Your Impact',
-          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
-        ),
-        backgroundColor: _backgroundColor,
-        elevation: 0,
-        centerTitle: false,
-        systemOverlayStyle: SystemUiOverlayStyle.dark, // 🟢 状态栏颜色适配
-        actions: const [
-          ProfileAvatarButton(),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        children: [
-          // 1. Hero Card - 0ms Delay
-          FadeInSlide(
-            index: 0,
-            child: _ImpactHeroCard(score: ecoScore, streak: streak),
-          ),
-          const SizedBox(height: 24),
-
-          // 2. Range Selector - 50ms Delay
-          FadeInSlide(
-            index: 1,
-            child: _SlidingRangeSelector(
-              currentRange: _range,
-              onChanged: _changeRange,
+        return Scaffold(
+          backgroundColor: _backgroundColor,
+          appBar: AppBar(
+            title: const Text(
+              'Family Impact', // 🟢 修改标题，体现家庭属性
+              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
             ),
-          ),
-          const SizedBox(height: 24),
-
-          // 3. Metrics Row - 100ms Delay
-          FadeInSlide(
-            index: 2,
-            child: Row(
-              children: [
-                Expanded(
-                  child: _MetricCard(
-                    icon: Icons.savings_rounded,
-                    title: 'Money Saved',
-                    value: '€${moneyTotal.toStringAsFixed(1)}',
-                    tint: const Color(0xFF0E7AA8),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _MetricCard(
-                    icon: Icons.cloud_off_rounded,
-                    title: 'CO₂ Avoided',
-                    value: '${co2Total.toStringAsFixed(1)} kg',
-                    tint: const Color(0xFF43A047),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          
-          // 4. Equivalents Section - 150ms Delay
-          if (moneyTotal > 0 || co2Total > 0)
-            FadeInSlide(
-              index: 3,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 24),
-                child: _ImpactEquivalentsSection(money: moneyTotal, co2: co2Total),
-              ),
-            ),
-          
-          // 5. Badges Section - 200ms Delay
-          FadeInSlide(
-            index: 4,
-            child: _BadgesSection(savedCount: savedCount),
-          ),
-          const SizedBox(height: 32),
-
-          // 6. Charts Section - 250ms Delay
-          if (events.isEmpty)
-            FadeInSlide(index: 5, child: _EmptyImpactCard())
-          else ...[
-            FadeInSlide(
-              index: 5,
-              child: Text(
-                'Trends',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 18,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            if (allDates.length < 2)
-               FadeInSlide(index: 6, child: _InsufficientDataCard())
-            else ...[
-              FadeInSlide(
-                index: 6,
-                child: _LineChartCard(
-                  title: 'Money Savings',
-                  color: const Color(0xFF0E7AA8),
-                  spots: moneySpots,
-                  labels: labels,
-                  valueSuffix: '€',
-                ),
-              ),
-              const SizedBox(height: 20),
-              FadeInSlide(
-                index: 7,
-                child: _LineChartCard(
-                  title: 'Carbon Footprint',
-                  color: const Color(0xFF43A047),
-                  spots: co2Spots,
-                  labels: labels,
-                  valueSuffix: 'kg',
-                ),
-              ),
+            backgroundColor: _backgroundColor,
+            elevation: 0,
+            centerTitle: false,
+            systemOverlayStyle: SystemUiOverlayStyle.dark,
+            actions: [
+              // 🟢 传入 repo 给头像按钮
+              ProfileAvatarButton(repo: widget.repo),
             ],
-          ],
-          const SizedBox(height: 32),
-
-          // 7. Pet Card - 300ms Delay
-          FadeInSlide(
-            index: 8,
-            child: _GuineaPigCard(
-              petQty: petQty,
-              totalQty: totalQty,
-              petShare: petShare,
-            ),
           ),
-          const SizedBox(height: 40),
-        ],
-      ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            children: [
+              FadeInSlide(
+                index: 0,
+                child: _ImpactHeroCard(score: ecoScore, streak: streak),
+              ),
+              const SizedBox(height: 24),
+              FadeInSlide(
+                index: 1,
+                child: _SlidingRangeSelector(
+                  currentRange: _range,
+                  onChanged: _changeRange,
+                ),
+              ),
+              const SizedBox(height: 24),
+              FadeInSlide(
+                index: 2,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: _MetricCard(
+                        icon: Icons.savings_rounded,
+                        title: 'Money Saved',
+                        value: '€${moneyTotal.toStringAsFixed(1)}',
+                        tint: const Color(0xFF0E7AA8),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: _MetricCard(
+                        icon: Icons.cloud_off_rounded,
+                        title: 'CO₂ Avoided',
+                        value: '${co2Total.toStringAsFixed(1)} kg',
+                        tint: const Color(0xFF43A047),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              if (moneyTotal > 0 || co2Total > 0)
+                FadeInSlide(
+                  index: 3,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    child: _ImpactEquivalentsSection(money: moneyTotal, co2: co2Total),
+                  ),
+                ),
+              FadeInSlide(
+                index: 4,
+                child: _BadgesSection(savedCount: savedCount),
+              ),
+              const SizedBox(height: 32),
+              if (events.isEmpty)
+                FadeInSlide(index: 5, child: _EmptyImpactCard())
+              else ...[
+                FadeInSlide(
+                  index: 5,
+                  child: Text(
+                    'Trends',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (allDates.length < 2)
+                   FadeInSlide(index: 6, child: _InsufficientDataCard())
+                else ...[
+                  FadeInSlide(
+                    index: 6,
+                    child: _LineChartCard(
+                      title: 'Money Savings',
+                      color: const Color(0xFF0E7AA8),
+                      spots: moneySpots,
+                      labels: labels,
+                      valueSuffix: '€',
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FadeInSlide(
+                    index: 7,
+                    child: _LineChartCard(
+                      title: 'Carbon Footprint',
+                      color: const Color(0xFF43A047),
+                      spots: co2Spots,
+                      labels: labels,
+                      valueSuffix: 'kg',
+                    ),
+                  ),
+                ],
+              ],
+              const SizedBox(height: 32),
+              FadeInSlide(
+                index: 8,
+                child: _GuineaPigCard(
+                  petQty: petQty,
+                  totalQty: totalQty,
+                  petShare: petShare,
+                ),
+              ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-// ===================== UI Components =====================
+// ===================== UI Components (Keep Unchanged) =====================
 
-// 🆕 New Component: Equivalents Section
 class _ImpactEquivalentsSection extends StatelessWidget {
   final double money;
   final double co2;
@@ -246,7 +238,6 @@ class _ImpactEquivalentsSection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.black.withOpacity(0.03)),
-        // 🟢 增加轻微阴影
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -339,8 +330,8 @@ class _ImpactHeroCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF2E7D32), // Forest Green
-            Color(0xFF005F87), // BSH Blue
+            Color(0xFF2E7D32), 
+            Color(0xFF005F87), 
           ],
         ),
         boxShadow: [
@@ -378,7 +369,6 @@ class _ImpactHeroCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.baseline,
                         textBaseline: TextBaseline.alphabetic,
                         children: [
-                          // 🟢 使用 TweenAnimationBuilder 让分数滚动增加
                           TweenAnimationBuilder<int>(
                             tween: IntTween(begin: 0, end: score),
                             duration: const Duration(seconds: 2),
@@ -490,7 +480,6 @@ class _SlidingRangeSelector extends StatelessWidget {
             children: [
               AnimatedAlign(
                 alignment: _getAlign(currentRange),
-                // 🟢 优化：使用更有弹性的曲线
                 duration: const Duration(milliseconds: 400),
                 curve: Curves.easeOutBack, 
                 child: Container(
@@ -623,7 +612,6 @@ class _BadgesSection extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(color: Colors.black.withOpacity(0.03)),
-        // 🟢 轻微阴影
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -817,7 +805,6 @@ class _GuineaPigCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: const Color(0xFFFFF8E1), // 暖黄色背景
         borderRadius: BorderRadius.circular(24),
-        // 🟢 轻微阴影
         boxShadow: [
           BoxShadow(
             color: Colors.orange.withOpacity(0.1),
@@ -845,7 +832,7 @@ class _GuineaPigCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Little Shi & Little Yuan', // 🐹 名字
+                      'Little Shi & Little Yuan', // 🐹
                       style: TextStyle(
                         fontWeight: FontWeight.w800,
                         fontSize: 16,

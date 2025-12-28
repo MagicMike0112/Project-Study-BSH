@@ -2,22 +2,26 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'; // 🟢 Added for Haptics
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
+import '../repositories/inventory_repository.dart';
+import 'family_page.dart'; // 🟢 引入
 import 'notification_settings_page.dart';
 
 class AccountPage extends StatefulWidget {
-  // 🔴 移除 isLoggedIn 参数，因为我们会自己监听
+  final InventoryRepository repo; // 🟢 需要 Repo 来获取家庭信息
   final VoidCallback onLogin;
   final VoidCallback onLogout;
 
   const AccountPage({
     super.key,
+    required this.repo,
     required this.onLogin,
     required this.onLogout,
-    // 兼容旧代码调用，虽然不用它了
+    // 兼容旧参数（如果有）
     bool isLoggedIn = false, 
   });
 
@@ -27,6 +31,7 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   static const String _backendBase = 'https://project-study-bsh.vercel.app';
+  static const Color _primaryColor = Color(0xFF005F87);
 
   bool _hcLoading = false;
   bool _hcConnected = false;
@@ -55,13 +60,12 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  // --- Home Connect 逻辑 (保持不变) ---
+  // --- Home Connect 逻辑 ---
 
   Future<void> _refreshHomeConnectStatus() async {
     final client = Supabase.instance.client;
     final session = client.auth.currentSession;
 
-    // 🔴 这里的判断改用 currentSession，而不是 widget.isLoggedIn
     if (session == null) {
       if (!mounted) return;
       setState(() {
@@ -232,25 +236,23 @@ class _AccountPageState extends State<AccountPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 🔴 核心修复：使用 StreamBuilder 监听 Supabase Auth 状态
     return StreamBuilder<AuthState>(
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
         final session = Supabase.instance.client.auth.currentSession;
         final bool loggedIn = session != null;
         final String email = session?.user.email ?? '';
+        final String name = session?.user.userMetadata?['full_name'] ?? 'User';
 
-        // 如果状态从未登录变为已登录，自动刷新 HC 状态
-        // 注意：这里为了简单，每次 rebuild 可能都会调，但 _refreshHomeConnectStatus 内部有防抖或状态检查最好
+        // 自动刷新 HC 状态 (简单的 Debounce 逻辑可加在这里)
         if (loggedIn && !_hcConnected && !_hcLoading) {
-           // 可选：在这里静默刷新 HC 状态
-           // _refreshHomeConnectStatus(); 
+           // _refreshHomeConnectStatus(); // 慎用，容易死循环，最好依赖 initState
         }
 
         return Scaffold(
           backgroundColor: _backgroundColor,
           appBar: AppBar(
-            title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+            title: const Text('Account', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
             backgroundColor: _backgroundColor,
             elevation: 0,
             centerTitle: false,
@@ -259,18 +261,26 @@ class _AccountPageState extends State<AccountPage> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             children: [
               // 1. Profile Section
-              _buildProfileCard(context, loggedIn, email),
+              _buildProfileCard(context, loggedIn, name, email),
 
               const SizedBox(height: 32),
 
-              // 2. Integration Section
+              // 🟢 2. Household Section (New)
+              if (loggedIn) ...[
+                _buildSectionTitle(context, 'Household'),
+                const SizedBox(height: 12),
+                _buildFamilyCard(context),
+                const SizedBox(height: 32),
+              ],
+
+              // 3. Integration Section
               _buildSectionTitle(context, 'Integrations'),
               const SizedBox(height: 12),
               _buildHomeConnectCard(context, loggedIn),
               
               const SizedBox(height: 32),
 
-              // 3. General Settings
+              // 4. General Settings
               _buildSectionTitle(context, 'Preferences'),
               const SizedBox(height: 12),
               _SettingsContainer(
@@ -299,7 +309,7 @@ class _AccountPageState extends State<AccountPage> {
 
               const SizedBox(height: 32),
 
-              // 4. About
+              // 5. About
               _buildSectionTitle(context, 'About'),
               const SizedBox(height: 12),
               _SettingsContainer(
@@ -323,13 +333,16 @@ class _AccountPageState extends State<AccountPage> {
 
               const SizedBox(height: 40),
 
-              // 5. Logout
+              // 6. Logout
               if (loggedIn)
                 Center(
                   child: TextButton.icon(
-                    onPressed: widget.onLogout,
+                    onPressed: () {
+                      HapticFeedback.mediumImpact();
+                      widget.onLogout();
+                    },
                     icon: Icon(Icons.logout_rounded, size: 20, color: Colors.grey[600]),
-                    label: Text('Log Out', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600)),
+                    label: Text('Sign Out', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600)),
                   ),
                 ),
               
@@ -353,7 +366,7 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  Widget _buildProfileCard(BuildContext context, bool loggedIn, String email) {
+  Widget _buildProfileCard(BuildContext context, bool loggedIn, String name, String email) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -381,13 +394,13 @@ class _AccountPageState extends State<AccountPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  loggedIn ? 'Welcome back' : 'Guest Account',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey[600]),
+                  loggedIn ? 'Hello, $name' : 'Guest Account',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  loggedIn ? email : 'Sign in to sync',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
+                  loggedIn ? email : 'Sign in to sync your data',
+                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -404,13 +417,60 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn) {
-    final Color brandColor = const Color(0xFF005F87);
+  // 🟢 家庭卡片组件
+  Widget _buildFamilyCard(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: loggedIn && _hcConnected ? brandColor.withOpacity(0.1) : Colors.transparent),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: () {
+            HapticFeedback.lightImpact();
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => FamilyPage(repo: widget.repo)),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: _primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.home_rounded, color: _primaryColor, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('My Family', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                      const SizedBox(height: 2),
+                      Text(widget.repo.currentFamilyName, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey[300], size: 16),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: loggedIn && _hcConnected ? _primaryColor.withOpacity(0.1) : Colors.transparent),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
       ),
       child: Material(
@@ -450,15 +510,15 @@ class _AccountPageState extends State<AccountPage> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: brandColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                      child: Icon(Icons.home_outlined, color: brandColor, size: 24),
+                      decoration: BoxDecoration(color: _primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.power_settings_new_rounded, color: _primaryColor, size: 24),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('BSH Home Connect', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                          const Text('Home Connect', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
                           const SizedBox(height: 2),
                           if (_hcLoading) const Text('Connecting...', style: TextStyle(fontSize: 13, color: Colors.grey))
                           else if (_hcConnected) Text('Active & Synced', style: TextStyle(fontSize: 13, color: Colors.green[600], fontWeight: FontWeight.w600))

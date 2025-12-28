@@ -1,6 +1,6 @@
 // lib/screens/inventory_page.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🟢 Added for Haptics
+import 'package:flutter/services.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
@@ -18,137 +18,212 @@ class InventoryPage extends StatelessWidget {
 
   static const Color _backgroundColor = Color(0xFFF8F9FC);
 
+  // 🟢 通用方法：显示强制3秒消失的悬浮通知
+  void _showAutoDismissSnackBar(BuildContext context, String message, {VoidCallback? onUndo}) {
+    // 1. 清除旧的
+    ScaffoldMessenger.of(context).clearSnackBars();
+    
+    // 2. 显示新的
+    final controller = ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        // 🟢 使用 fixed+透明背景，让它贴在底部
+        behavior: SnackBarBehavior.fixed,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        duration: const Duration(seconds: 3),
+        
+        // 🟢 自定义气泡内容
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF323232),
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          // 距离底部 20
+          margin: const EdgeInsets.only(bottom: 20), 
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  message, 
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onUndo != null)
+                GestureDetector(
+                  onTap: () {
+                    onUndo();
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.only(left: 12),
+                    child: Text(
+                      'UNDO',
+                      style: TextStyle(
+                        color: Color(0xFF81D4FA), 
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    // 3. 强制关闭逻辑
+    Future.delayed(const Duration(seconds: 3), () {
+      try {
+        controller.close();
+      } catch (_) {}
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final allItems = repo.getActiveItems();
 
-    List<FoodItem> sortByExpiry(List<FoodItem> list) {
-      final copy = [...list];
-      copy.sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
-      return copy;
-    }
+    return AnimatedBuilder(
+      animation: repo,
+      builder: (context, child) {
+        final allItems = repo.getActiveItems();
 
-    final fridgeItems = sortByExpiry(
-      allItems.where((i) => i.location == StorageLocation.fridge).toList(),
-    );
-    final freezerItems = sortByExpiry(
-      allItems.where((i) => i.location == StorageLocation.freezer).toList(),
-    );
-    final pantryItems = sortByExpiry(
-      allItems.where((i) => i.location == StorageLocation.pantry).toList(),
-    );
+        List<FoodItem> sortByExpiry(List<FoodItem> list) {
+          final copy = [...list];
+          copy.sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
+          return copy;
+        }
 
-    final hasAnyItems = fridgeItems.isNotEmpty ||
-        freezerItems.isNotEmpty ||
-        pantryItems.isNotEmpty;
+        final fridgeItems = sortByExpiry(
+          allItems.where((i) => i.location == StorageLocation.fridge).toList(),
+        );
+        final freezerItems = sortByExpiry(
+          allItems.where((i) => i.location == StorageLocation.freezer).toList(),
+        );
+        final pantryItems = sortByExpiry(
+          allItems.where((i) => i.location == StorageLocation.pantry).toList(),
+        );
 
-    return Scaffold(
-      backgroundColor: _backgroundColor,
-      appBar: AppBar(
-        title: const Text(
-          'Inventory',
-          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
-        ),
-        backgroundColor: _backgroundColor,
-        elevation: 0,
-        centerTitle: false,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
-      ),
-      body: hasAnyItems
-          ? ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-              children: [
-                // 1. Hero Card - 0ms Delay
-                FadeInSlide(
-                  index: 0,
-                  child: _InventoryHeroCard(
-                    total: allItems.length,
-                    fridge: fridgeItems.length,
-                    freezer: freezerItems.length,
-                    pantry: pantryItems.length,
-                  ),
-                ),
-                const SizedBox(height: 24),
+        final hasAnyItems = fridgeItems.isNotEmpty ||
+            freezerItems.isNotEmpty ||
+            pantryItems.isNotEmpty;
 
-                // 2. Fridge Section
-                if (fridgeItems.isNotEmpty) ...[
-                  FadeInSlide(
-                    index: 1,
-                    child: _buildSectionHeader(
-                      context,
-                      icon: Icons.kitchen_rounded,
-                      label: 'Fridge',
-                      color: const Color(0xFF005F87),
-                      count: fridgeItems.length,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...fridgeItems.asMap().entries.map(
-                    (entry) => FadeInSlide(
-                      // 🟢 错峰延迟：每个物品延迟一点点
-                      index: 2 + (entry.key > 5 ? 5 : entry.key), 
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildDismissibleItem(context, entry.value, theme),
+        return Scaffold(
+          backgroundColor: _backgroundColor,
+          appBar: AppBar(
+            title: const Text(
+              'Inventory',
+              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
+            ),
+            backgroundColor: _backgroundColor,
+            elevation: 0,
+            centerTitle: false,
+            systemOverlayStyle: SystemUiOverlayStyle.dark,
+          ),
+          body: hasAnyItems
+              ? ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  children: [
+                    FadeInSlide(
+                      index: 0,
+                      child: _InventoryHeroCard(
+                        total: allItems.length,
+                        fridge: fridgeItems.length,
+                        freezer: freezerItems.length,
+                        pantry: pantryItems.length,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
+                    const SizedBox(height: 24),
 
-                // 3. Freezer Section
-                if (freezerItems.isNotEmpty) ...[
-                  FadeInSlide(
-                    index: 3, // 稍微晚一点出现
-                    child: _buildSectionHeader(
-                      context,
-                      icon: Icons.ac_unit_rounded,
-                      label: 'Freezer',
-                      color: const Color(0xFF3F51B5),
-                      count: freezerItems.length,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...freezerItems.asMap().entries.map(
-                    (entry) => FadeInSlide(
-                      index: 4 + (entry.key > 5 ? 5 : entry.key),
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildDismissibleItem(context, entry.value, theme),
+                    if (fridgeItems.isNotEmpty) ...[
+                      FadeInSlide(
+                        index: 1,
+                        child: _buildSectionHeader(
+                          context,
+                          icon: Icons.kitchen_rounded,
+                          label: 'Fridge',
+                          color: const Color(0xFF005F87),
+                          count: fridgeItems.length,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                ],
+                      const SizedBox(height: 12),
+                      ...fridgeItems.asMap().entries.map(
+                        (entry) => FadeInSlide(
+                          key: ValueKey(entry.value.id),
+                          index: 2 + (entry.key > 5 ? 5 : entry.key), 
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildDismissibleItem(context, entry.value, theme),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
 
-                // 4. Pantry Section
-                if (pantryItems.isNotEmpty) ...[
-                  FadeInSlide(
-                    index: 5,
-                    child: _buildSectionHeader(
-                      context,
-                      icon: Icons.shelves,
-                      label: 'Pantry',
-                      color: Colors.brown,
-                      count: pantryItems.length,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...pantryItems.asMap().entries.map(
-                    (entry) => FadeInSlide(
-                      index: 6 + (entry.key > 5 ? 5 : entry.key),
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _buildDismissibleItem(context, entry.value, theme),
+                    if (freezerItems.isNotEmpty) ...[
+                      FadeInSlide(
+                        index: 3, 
+                        child: _buildSectionHeader(
+                          context,
+                          icon: Icons.ac_unit_rounded,
+                          label: 'Freezer',
+                          color: const Color(0xFF3F51B5),
+                          count: freezerItems.length,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 40),
-                ],
-              ],
-            )
-          : _buildEmptyState(context),
+                      const SizedBox(height: 12),
+                      ...freezerItems.asMap().entries.map(
+                        (entry) => FadeInSlide(
+                          key: ValueKey(entry.value.id),
+                          index: 4 + (entry.key > 5 ? 5 : entry.key),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildDismissibleItem(context, entry.value, theme),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+
+                    if (pantryItems.isNotEmpty) ...[
+                      FadeInSlide(
+                        index: 5,
+                        child: _buildSectionHeader(
+                          context,
+                          icon: Icons.shelves,
+                          label: 'Pantry',
+                          color: Colors.brown,
+                          count: pantryItems.length,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      ...pantryItems.asMap().entries.map(
+                        (entry) => FadeInSlide(
+                          key: ValueKey(entry.value.id),
+                          index: 6 + (entry.key > 5 ? 5 : entry.key),
+                          child: Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _buildDismissibleItem(context, entry.value, theme),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                    ],
+                  ],
+                )
+              : _buildEmptyState(context),
+        );
+      },
     );
   }
 
@@ -268,40 +343,23 @@ class InventoryPage extends StatelessWidget {
         child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 28),
       ),
       onDismissed: (_) async {
-        // 🟢 触感反馈
         HapticFeedback.mediumImpact();
         
         final deletedItem = item;
         await repo.deleteItem(item.id);
-        onRefresh();
-
-        // ignore: use_build_context_synchronously
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              behavior: SnackBarBehavior.fixed,
-              backgroundColor: const Color(0xFF323232),
-              duration: const Duration(seconds: 3),
-              content: Text(
-                'Deleted "${deletedItem.name}"',
-                style: const TextStyle(color: Colors.white),
-              ),
-              action: SnackBarAction(
-                label: 'UNDO',
-                textColor: const Color(0xFF81D4FA),
-                onPressed: () async {
-                  await repo.addItem(deletedItem);
-                  onRefresh();
-                },
-              ),
-            ),
-          );
+        
+        if (!context.mounted) return;
+        
+        _showAutoDismissSnackBar(
+          context,
+          'Deleted "${deletedItem.name}"',
+          onUndo: () async {
+            await repo.addItem(deletedItem);
+          },
+        );
       },
       child: BouncingButton(
-        // 🟢 整个卡片可点击且有回弹效果
         onTap: () => _openEditPage(context, item),
-        // 🟢 长按触发 Action Sheet
         onLongPress: () {
           HapticFeedback.selectionClick();
           _showItemActionsSheet(context, item);
@@ -363,15 +421,26 @@ class InventoryPage extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Flexible(
-                        child: Text(
-                          item.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 16,
-                            color: Colors.black87,
-                          ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                item.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ),
+                            // 🟢 这里显示“谁买的”标签
+                            if (item.ownerName != null) ...[
+                              const SizedBox(width: 8),
+                              _UserAvatarTag(name: item.ownerName!),
+                            ],
+                          ],
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -491,7 +560,6 @@ class InventoryPage extends StatelessWidget {
   }
 
   Future<void> _openEditPage(BuildContext context, FoodItem item) async {
-    // 🟢 触感反馈
     HapticFeedback.lightImpact();
     await Navigator.push(
       context,
@@ -502,7 +570,6 @@ class InventoryPage extends StatelessWidget {
         ),
       ),
     );
-    onRefresh();
   }
 
   Future<void> _showItemActionsSheet(BuildContext context, FoodItem item) async {
@@ -571,30 +638,15 @@ class InventoryPage extends StatelessWidget {
                     if (usedQty == null || usedQty <= 0) return;
 
                     await repo.useItemWithImpact(item, 'eat', usedQty);
-                    onRefresh();
                     
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        SnackBar(
-                          behavior: SnackBarBehavior.fixed,
-                          backgroundColor: const Color(0xFF323232),
-                          duration: const Duration(seconds: 3),
-                          content: Text(
-                            'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          action: SnackBarAction(
-                            label: 'UNDO',
-                            textColor: const Color(0xFF81D4FA),
-                            onPressed: () async {
-                              await repo.updateItem(oldItem);
-                              onRefresh();
-                            },
-                          ),
-                        ),
-                      );
+                    _showAutoDismissSnackBar(
+                      context,
+                      'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
+                      onUndo: () async {
+                        await repo.updateItem(oldItem);
+                      },
+                    );
                   },
                 ),
                 _SheetTile(
@@ -620,29 +672,14 @@ class InventoryPage extends StatelessWidget {
                       );
                     }
 
-                    onRefresh();
                     if (!context.mounted) return;
-                    ScaffoldMessenger.of(context)
-                      ..hideCurrentSnackBar()
-                      ..showSnackBar(
-                        SnackBar(
-                          behavior: SnackBarBehavior.fixed,
-                          backgroundColor: const Color(0xFF323232),
-                          duration: const Duration(seconds: 3),
-                          content: Text(
-                            'Fed ${item.name} to pet',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          action: SnackBarAction(
-                            label: 'UNDO',
-                            textColor: const Color(0xFF81D4FA),
-                            onPressed: () async {
-                              await repo.updateItem(oldItem);
-                              onRefresh();
-                            },
-                          ),
-                        ),
-                      );
+                    _showAutoDismissSnackBar(
+                      context,
+                      'Fed ${item.name} to pet',
+                      onUndo: () async {
+                        await repo.updateItem(oldItem);
+                      },
+                    );
                   },
                 ),
                 const Divider(height: 1),
@@ -656,28 +693,13 @@ class InventoryPage extends StatelessWidget {
                     if (ok) {
                       final deletedItem = item;
                       await repo.deleteItem(item.id);
-                      onRefresh();
                         if (!context.mounted) return;
-                        ScaffoldMessenger.of(context)
-                         ..hideCurrentSnackBar()
-                         ..showSnackBar(
-                          SnackBar(
-                            behavior: SnackBarBehavior.fixed,
-                            backgroundColor: const Color(0xFF323232),
-                            duration: const Duration(seconds: 3),
-                            content: Text(
-                              'Deleted "${deletedItem.name}"',
-                              style: const TextStyle(color: Colors.white),
-                            ),
-                            action: SnackBarAction(
-                              label: 'UNDO',
-                              textColor: const Color(0xFF81D4FA),
-                              onPressed: () async {
-                                await repo.addItem(deletedItem);
-                                onRefresh();
-                              },
-                            ),
-                          ),
+                        _showAutoDismissSnackBar(
+                          context,
+                          'Deleted "${deletedItem.name}"',
+                          onUndo: () async {
+                            await repo.addItem(deletedItem);
+                          },
                         );
                     }
                   },
@@ -881,6 +903,53 @@ class InventoryPage extends StatelessWidget {
   }
 }
 
+// 🟢 新增：用户头像标签组件
+class _UserAvatarTag extends StatelessWidget {
+  final String name;
+  const _UserAvatarTag({required this.name});
+
+  Color _getNameColor(String name) {
+    if (name.isEmpty) return Colors.grey;
+    final colors = [
+      Colors.blue.shade600,
+      Colors.red.shade600,
+      Colors.green.shade600,
+      Colors.orange.shade600,
+      Colors.purple.shade600,
+      Colors.teal.shade600,
+      Colors.pink.shade600,
+    ];
+    return colors[name.hashCode.abs() % colors.length];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getNameColor(name);
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.15),
+        shape: BoxShape.circle,
+        border: Border.all(color: color.withOpacity(0.5), width: 1),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ================== Hero Card & Other Components (Unchanged) ==================
+
 class _InventoryHeroCard extends StatelessWidget {
   final int total;
   final int fridge;
@@ -1067,9 +1136,6 @@ class _Leading {
 
 enum _Urgency { expired, today, soon, ok, none }
 
-// ================== Premium Animation Widgets ==================
-
-/// 1. 弹性按压按钮
 class BouncingButton extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -1126,7 +1192,7 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
       onTapCancel: () {
         if (widget.enabled) _controller.reverse();
       },
-      onLongPress: widget.onLongPress, // 传递长按事件
+      onLongPress: widget.onLongPress,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) => Transform.scale(
@@ -1138,7 +1204,6 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
   }
 }
 
-/// 2. 错峰入场动画
 class FadeInSlide extends StatefulWidget {
   final Widget child;
   final int index; 

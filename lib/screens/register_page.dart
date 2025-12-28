@@ -12,6 +12,8 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
 
+  // 🟢 新增：Name 控制器
+  final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _pwdCtrl = TextEditingController();
   final _pwd2Ctrl = TextEditingController();
@@ -43,6 +45,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
+    _nameCtrl.dispose(); // 别忘了销毁
     _emailCtrl.dispose();
     _pwdCtrl.dispose();
     _pwd2Ctrl.dispose();
@@ -62,29 +65,22 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _loading = true);
     try {
+      final name = _nameCtrl.text.trim();
       final email = _emailCtrl.text.trim();
       final pwd = _pwdCtrl.text;
 
-      final authRes = await _supabase.auth.signUp(
+      // 使用 data 参数传递用户信息
+      await _supabase.auth.signUp(
         email: email,
         password: pwd,
         emailRedirectTo: 'https://bshpwa.vercel.app',
-      );
-
-      final user = authRes.user;
-      if (user != null) {
-        await _supabase.from('user_profiles').upsert({
-          'id': user.id,
-          'display_name': null,
-          'locale': null,
-          'has_homeconnect': false,
-          'has_payback': false,
+        data: {
+          'display_name': name, // 🟢 这里的名字现在是用户自己填的了
           'gender': _gender,
           'age_group': _ageGroup,
           'country': _countryCtrl.text.trim(),
-          'created_at': DateTime.now().toIso8601String(),
-        });
-      }
+        },
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -131,7 +127,7 @@ class _RegisterPageState extends State<RegisterPage> {
         child: SafeArea(
           child: Stack(
             children: [
-              // 背景光晕 - 位置略微调整以区别于 Login 页面
+              // 背景光晕
               Positioned(
                 left: -80,
                 top: -60,
@@ -216,6 +212,26 @@ class _RegisterPageState extends State<RegisterPage> {
                                 ),
                               ),
                               const SizedBox(height: 24),
+
+                              // 🟢 1. Name Input Field (新增)
+                              _TechField(
+                                label: 'Name',
+                                hint: 'How should we call you?',
+                                icon: Icons.person_outline_rounded,
+                                controller: _nameCtrl,
+                                keyboardType: TextInputType.name,
+                                enabled: !_loading,
+                                validator: (v) {
+                                  if (v == null || v.trim().isEmpty) {
+                                    return 'Please enter your name';
+                                  }
+                                  if (v.trim().length < 2) {
+                                    return 'Name is too short';
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 12),
 
                               // Email
                               _TechField(
@@ -406,7 +422,6 @@ class _RegisterPageState extends State<RegisterPage> {
 
 // --------------------------------------------------------
 // 复用组件 (TechField, TechDropdown, GlowOrb)
-// 建议将这些提取到 lib/widgets/auth_widgets.dart 中统一管理
 // --------------------------------------------------------
 
 class _TechField extends StatelessWidget {

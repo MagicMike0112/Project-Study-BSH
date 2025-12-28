@@ -1,6 +1,6 @@
 // lib/screens/today_page.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🟢 Added for Haptics
+import 'package:flutter/services.dart'; // Added for Haptics
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import '../widgets/food_card.dart';
@@ -19,134 +19,186 @@ class TodayPage extends StatelessWidget {
   static const Color _primaryBlue = Color(0xFF0E7AA8);
   static const Color _surfaceColor = Color(0xFFF8F9FC);
 
-  @override
-  Widget build(BuildContext context) {
-    final expiring = repo.getExpiringItems(3);
-
-    return Scaffold(
-      backgroundColor: _surfaceColor,
-      appBar: AppBar(
-        title: const Text(
-          'Smart Food Home',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
-        ),
-        centerTitle: false,
-        backgroundColor: _surfaceColor,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        foregroundColor: Colors.black87,
-        systemOverlayStyle: SystemUiOverlayStyle.dark, // 🟢 状态栏适配
-      ),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        children: [
-          // 1. Impact Summary - 0ms Delay
-          FadeInSlide(
-            index: 0,
-            child: _buildImpactSummary(context),
-          ),
-          const SizedBox(height: 24),
-
-          // 2. AI Chef Button - 100ms Delay
-          // 🟢 这是一个重要的 CTA，加上 BouncingButton
-          FadeInSlide(
-            index: 1,
-            child: BouncingButton(
-              onTap: () => _showAiRecipeFlow(context, expiring),
-              child: _buildAiButton(context), // onTap 移交给 BouncingButton
+  // 🟢 辅助方法：显示贴底的自定义通知
+  void _showBottomSnackBar(BuildContext context, String message, {VoidCallback? onUndo}) {
+    if (!context.mounted) return;
+    
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar() // 立即清除上一个
+      ..showSnackBar(
+        SnackBar(
+          // 🟢 贴底关键设置
+          behavior: SnackBarBehavior.fixed,
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          duration: const Duration(seconds: 3),
+          
+          content: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF323232),
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                ),
+              ],
             ),
-          ),
-          const SizedBox(height: 32),
-
-          // 3. Expiring Header - 150ms Delay
-          FadeInSlide(
-            index: 2,
-            child: _buildSectionHeader(context, expiring.length),
-          ),
-          const SizedBox(height: 16),
-
-          // 4. Expiring List - 200ms+ Staggered
-          if (expiring.isEmpty)
-            FadeInSlide(
-              index: 3,
-              child: _buildEmptyState(context),
-            )
-          else
-            ...expiring.asMap().entries.map(
-              (entry) => FadeInSlide(
-                index: 3 + entry.key, // 错峰
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: FoodCard(
-                    item: entry.value,
-                    leading: _buildInventoryStyleLeading(entry.value),
-                    onAction: (action) async {
-                      // 🟢 操作时的触感反馈
-                      HapticFeedback.mediumImpact();
-                      
-                      final item = entry.value;
-                      final oldStatus = item.status;
-                      await repo.recordImpactForAction(item, action);
-
-                      FoodStatus? newStatus;
-                      if (action == 'eat' || action == 'pet') {
-                        newStatus = FoodStatus.consumed;
-                      } else if (action == 'trash') {
-                        newStatus = FoodStatus.discarded;
-                      }
-
-                      if (newStatus != null) {
-                        await repo.updateStatus(item.id, newStatus);
-                      }
-
-                      if (action == 'pet' && !repo.hasShownPetWarning) {
-                        await repo.markPetWarningShown();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              behavior: SnackBarBehavior.fixed,
-                              content: Text('Please ensure the food is safe for your pet!'),
-                              duration: Duration(seconds: 4),
-                            ),
-                          );
-                        }
-                      }
-
-                      if (newStatus != null) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context)
-                            ..hideCurrentSnackBar()
-                            ..showSnackBar(
-                              SnackBar(
-                                behavior: SnackBarBehavior.fixed,
-                                backgroundColor: const Color(0xFF323232),
-                                duration: const Duration(seconds: 3),
-                                content: Text(
-                                  _undoLabelForAction(action, item.name),
-                                  style: const TextStyle(color: Colors.white),
-                                ),
-                                action: SnackBarAction(
-                                  label: 'UNDO',
-                                  textColor: const Color(0xFF81D4FA),
-                                  onPressed: () async {
-                                    HapticFeedback.selectionClick();
-                                    await repo.updateStatus(item.id, oldStatus);
-                                    onRefresh();
-                                  },
-                                ),
-                              ),
-                            );
-                        }
-                      }
-                      onRefresh();
-                    },
+            margin: const EdgeInsets.only(bottom: 20), // 离底部 20
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    message,
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-              ),
+                if (onUndo != null)
+                  GestureDetector(
+                    onTap: () {
+                      onUndo();
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    },
+                    child: const Padding(
+                      padding: EdgeInsets.only(left: 12),
+                      child: Text(
+                        'UNDO',
+                        style: TextStyle(
+                          color: Color(0xFF81D4FA),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          const SizedBox(height: 40),
-        ],
-      ),
+          ),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 监听 Repo 变化
+    return AnimatedBuilder(
+      animation: repo,
+      builder: (context, child) {
+        final expiring = repo.getExpiringItems(3);
+
+        return Scaffold(
+          backgroundColor: _surfaceColor,
+          appBar: AppBar(
+            title: const Text(
+              'Smart Food Home',
+              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+            ),
+            centerTitle: false,
+            backgroundColor: _surfaceColor,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            foregroundColor: Colors.black87,
+            systemOverlayStyle: SystemUiOverlayStyle.dark, 
+          ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            children: [
+              // 1. Impact Summary
+              FadeInSlide(
+                index: 0,
+                child: _buildImpactSummary(context),
+              ),
+              const SizedBox(height: 24),
+
+              // 2. AI Chef Button
+              FadeInSlide(
+                index: 1,
+                child: BouncingButton(
+                  onTap: () => _showAiRecipeFlow(context, expiring),
+                  child: _buildAiButton(context), 
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // 3. Expiring Header
+              FadeInSlide(
+                index: 2,
+                child: _buildSectionHeader(context, expiring.length),
+              ),
+              const SizedBox(height: 16),
+
+              // 4. Expiring List
+              if (expiring.isEmpty)
+                FadeInSlide(
+                  index: 3,
+                  child: _buildEmptyState(context),
+                )
+              else
+                ...expiring.asMap().entries.map(
+                  (entry) => FadeInSlide(
+                    index: 3 + entry.key,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: FoodCard(
+                        item: entry.value,
+                        leading: _buildInventoryStyleLeading(entry.value),
+                        onAction: (action) async {
+                          HapticFeedback.mediumImpact();
+                          
+                          final item = entry.value;
+                          final oldStatus = item.status;
+                          await repo.recordImpactForAction(item, action);
+
+                          FoodStatus? newStatus;
+                          if (action == 'eat' || action == 'pet') {
+                            newStatus = FoodStatus.consumed;
+                          } else if (action == 'trash') {
+                            newStatus = FoodStatus.discarded;
+                          }
+
+                          if (newStatus != null) {
+                            await repo.updateStatus(item.id, newStatus);
+                          }
+
+                          if (action == 'pet' && !repo.hasShownPetWarning) {
+                            await repo.markPetWarningShown();
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  behavior: SnackBarBehavior.fixed, // 警告信息保持默认样式更醒目，或者是你也可以统一
+                                  content: Text('Please ensure the food is safe for your pet!'),
+                                  duration: Duration(seconds: 4),
+                                ),
+                              );
+                            }
+                          }
+
+                          if (newStatus != null) {
+                            // 🟢 使用新的贴底通知
+                            _showBottomSnackBar(
+                              context,
+                              _undoLabelForAction(action, item.name),
+                              onUndo: () async {
+                                HapticFeedback.selectionClick();
+                                await repo.updateStatus(item.id, oldStatus);
+                                onRefresh(); // 这一步其实不需要了，因为 AnimatedBuilder 会自动刷新，但留着也没事
+                              },
+                            );
+                          }
+                          // onRefresh(); // 同样，AnimatedBuilder 会处理
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 40),
+            ],
+          ),
+        );
+      }
     );
   }
 
@@ -267,7 +319,6 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  // 🟢 这里的 onTap 不需要了，因为外层包了 BouncingButton
   Widget _buildAiButton(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
@@ -428,7 +479,7 @@ class _Leading {
   const _Leading(this.icon, this.color);
 }
 
-// ================== Shared Animation Widgets (Keep these) ==================
+// ================== Shared Animation Widgets ==================
 
 class BouncingButton extends StatefulWidget {
   final Widget child;
