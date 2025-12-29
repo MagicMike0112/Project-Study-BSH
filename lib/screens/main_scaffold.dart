@@ -1,13 +1,16 @@
 // lib/screens/main_scaffold.dart
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🟢 Added for Haptics
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart'; // 🟢 引入 Provider
+
 import '../repositories/inventory_repository.dart';
 import 'today_page.dart';
-import 'inventory_page.dart';
+import 'inventory_page.dart'; // 这里面包含了 InventoryPageWrapper
 import 'impact_page.dart';
 import 'add_food_page.dart';
-import 'shopping_list_page.dart'; 
+import 'shopping_list_page.dart';
+import 'account_page.dart'; // 确保引入 AccountPage
 
 class MainScaffold extends StatefulWidget {
   final bool isLoggedIn;
@@ -28,8 +31,6 @@ class MainScaffold extends StatefulWidget {
 class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
   bool _showFabMenu = false;
-
-  late Future<InventoryRepository> _repoFuture;
   late PageController _pageController;
 
   static const Color _primaryColor = Color(0xFF005F87);
@@ -37,7 +38,6 @@ class _MainScaffoldState extends State<MainScaffold> {
   @override
   void initState() {
     super.initState();
-    _repoFuture = InventoryRepository.create();
     _pageController = PageController(initialPage: 0);
   }
 
@@ -47,7 +47,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     super.dispose();
   }
 
-  void _refresh(InventoryRepository repo) {
+  void _refresh() {
     setState(() {});
   }
 
@@ -58,7 +58,6 @@ class _MainScaffoldState extends State<MainScaffold> {
   }
 
   void _toggleFabMenu() {
-    // 🟢 触感反馈：轻微撞击感
     HapticFeedback.lightImpact();
     setState(() => _showFabMenu = !_showFabMenu);
   }
@@ -70,127 +69,124 @@ class _MainScaffoldState extends State<MainScaffold> {
       statusBarIconBrightness: Brightness.dark,
     ));
 
-    return FutureBuilder<InventoryRepository>(
-      future: _repoFuture,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Scaffold(body: Center(child: Text('Init error:\n${snapshot.error}')));
-        }
+    // 🟢 修复 1: 直接从 Provider 获取已经在 main.dart 初始化好的单例 Repo
+    // 这样整个 App 共享同一个数据源，避免重复初始化导致的 bug
+    final repo = context.watch<InventoryRepository>();
 
-        if (!snapshot.hasData) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
-        }
+    final pages = [
+      TodayPage(repo: repo, onRefresh: _refresh),
+      
+      // 🟢 修复 2: 使用 Wrapper 包裹，确保 ShowCaseWidget 存在
+      InventoryPageWrapper(repo: repo, onRefresh: _refresh),
+      
+      ShoppingListPage(repo: repo),
+      
+      // Impact Page
+      ImpactPage(repo: repo),
 
-        final repo = snapshot.data!;
+      // 🟢 补充: 如果你想把 Account 放在 Tab 里，可以加在这里，或者保持现状
+      // 目前看起来 Account 是通过 ProfileAvatarButton 进入的，所以这里只需 4 个 Tab
+    ];
 
-        final pages = [
-          TodayPage(repo: repo, onRefresh: () => _refresh(repo)),
-          InventoryPage(repo: repo, onRefresh: () => _refresh(repo)),
-          ShoppingListPage(repo: repo), 
-          ImpactPage(repo: repo),
-        ];
+    // FAB 只在 Today 和 Inventory 页面显示
+    final bool fabEnabled = _currentIndex <= 1;
 
-        final bool fabEnabled = _currentIndex <= 1;
-
-        return Scaffold(
-          body: Stack(
-            children: [
-              PageView(
-                controller: _pageController,
-                physics: const BouncingScrollPhysics(), // 保持 iOS 风格回弹
-                onPageChanged: (idx) {
-                  setState(() {
-                    _currentIndex = idx;
-                    _showFabMenu = false;
-                  });
-                },
-                children: pages,
-              ),
-              
-              // 遮罩层 (带模糊)
-              if (fabEnabled)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    ignoring: !_showFabMenu,
-                    child: GestureDetector(
-                      onTap: () {
-                        _closeFabMenu();
-                        HapticFeedback.selectionClick(); // 关闭时的轻微反馈
-                      },
-                      child: AnimatedOpacity(
-                        duration: const Duration(milliseconds: 300),
-                        curve: Curves.easeInOut,
-                        opacity: _showFabMenu ? 1.0 : 0.0,
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4), // 🟢 稍微增加模糊度，更有质感
-                          child: Container(color: Colors.black.withOpacity(0.2)),
-                        ),
-                      ),
+    return Scaffold(
+      body: Stack(
+        children: [
+          PageView(
+            controller: _pageController,
+            physics: const BouncingScrollPhysics(),
+            onPageChanged: (idx) {
+              setState(() {
+                _currentIndex = idx;
+                _showFabMenu = false;
+              });
+            },
+            children: pages,
+          ),
+          
+          // FAB 展开时的遮罩层
+          if (fabEnabled)
+            Positioned.fill(
+              child: IgnorePointer(
+                ignoring: !_showFabMenu,
+                child: GestureDetector(
+                  onTap: () {
+                    _closeFabMenu();
+                    HapticFeedback.selectionClick();
+                  },
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    opacity: _showFabMenu ? 1.0 : 0.0,
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
+                      child: Container(color: Colors.black.withOpacity(0.2)),
                     ),
                   ),
                 ),
-            ],
-          ),
-          bottomNavigationBar: NavigationBarTheme(
-            data: NavigationBarThemeData(
-              indicatorColor: _primaryColor.withOpacity(0.1),
-              labelTextStyle: MaterialStateProperty.all(
-                const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
-              iconTheme: MaterialStateProperty.resolveWith((states) {
-                if (states.contains(MaterialState.selected)) {
-                  return const IconThemeData(color: _primaryColor, size: 26);
-                }
-                return IconThemeData(color: Colors.grey.shade500, size: 24);
-              }),
             ),
-            child: NavigationBar(
-              selectedIndex: _currentIndex,
-              height: 65, // 🟢 稍微调低高度，显得更紧凑
-              onDestinationSelected: (idx) {
-                if (_currentIndex != idx) {
-                  // 🟢 触感反馈：类似 iOS Tab 切换的手感
-                  HapticFeedback.selectionClick();
-                  _closeFabMenu();
-                  setState(() => _currentIndex = idx);
-                  _pageController.animateToPage(
-                    idx,
-                    duration: const Duration(milliseconds: 400),
-                    curve: Curves.easeOutQuart, // 更平滑的曲线
-                  );
-                }
-              },
-              backgroundColor: Colors.white,
-              elevation: 0, // 去掉默认阴影，使用上方 border
-              shadowColor: Colors.transparent,
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard),
-                  label: 'Today',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.inventory_2_outlined),
-                  selectedIcon: Icon(Icons.inventory_2),
-                  label: 'Inventory',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.shopping_cart_outlined),
-                  selectedIcon: Icon(Icons.shopping_cart),
-                  label: 'Shopping',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.eco_outlined),
-                  selectedIcon: Icon(Icons.eco),
-                  label: 'Impact',
-                ),
-              ],
-            ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBarTheme(
+        data: NavigationBarThemeData(
+          indicatorColor: _primaryColor.withOpacity(0.1),
+          labelTextStyle: WidgetStateProperty.all(
+            const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
           ),
-          floatingActionButton: _buildExpandableFab(repo, fabEnabled),
-          floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-        );
-      },
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            if (states.contains(WidgetState.selected)) {
+              return const IconThemeData(color: _primaryColor, size: 26);
+            }
+            return IconThemeData(color: Colors.grey.shade500, size: 24);
+          }),
+        ),
+        child: NavigationBar(
+          selectedIndex: _currentIndex,
+          height: 65,
+          onDestinationSelected: (idx) {
+            if (_currentIndex != idx) {
+              HapticFeedback.selectionClick();
+              _closeFabMenu();
+              setState(() => _currentIndex = idx);
+              _pageController.animateToPage(
+                idx,
+                duration: const Duration(milliseconds: 400),
+                curve: Curves.easeOutQuart,
+              );
+            }
+          },
+          backgroundColor: Colors.white,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.dashboard_outlined),
+              selectedIcon: Icon(Icons.dashboard),
+              label: 'Today',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.inventory_2_outlined),
+              selectedIcon: Icon(Icons.inventory_2),
+              label: 'Inventory',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.shopping_cart_outlined),
+              selectedIcon: Icon(Icons.shopping_cart),
+              label: 'Shopping',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.eco_outlined),
+              selectedIcon: Icon(Icons.eco),
+              label: 'Impact',
+            ),
+          ],
+        ),
+      ),
+      floatingActionButton: _buildExpandableFab(repo, fabEnabled),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
@@ -207,7 +203,6 @@ class _MainScaffoldState extends State<MainScaffold> {
             alignment: Alignment.bottomRight,
             clipBehavior: Clip.none,
             children: [
-              // 🟢 菜单项：使用 Spring 曲线和错峰延迟
               _FabActionButton(
                 index: 0,
                 icon: Icons.edit_note_rounded,
@@ -230,8 +225,6 @@ class _MainScaffoldState extends State<MainScaffold> {
                 onTap: () => _navigateToAdd(repo, 2),
               ),
               
-              // 主 FAB
-              // 🟢 增加 BouncingButton 包裹，按压有缩放效果
               BouncingButton(
                 onTap: enabled ? _toggleFabMenu : () {},
                 child: Container(
@@ -239,7 +232,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                   height: 56,
                   decoration: BoxDecoration(
                     color: _primaryColor,
-                    borderRadius: BorderRadius.circular(18), // 🟢 方圆形更现代
+                    borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
                         color: _primaryColor.withOpacity(0.4),
@@ -249,9 +242,9 @@ class _MainScaffoldState extends State<MainScaffold> {
                     ],
                   ),
                   child: AnimatedRotation(
-                    turns: _showFabMenu ? 0.125 : 0, // 旋转 45度
+                    turns: _showFabMenu ? 0.125 : 0,
                     duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutBack, // 🟢 旋转带回弹
+                    curve: Curves.easeOutBack,
                     child: const Icon(
                       Icons.add,
                       size: 32,
@@ -278,7 +271,7 @@ class _MainScaffoldState extends State<MainScaffold> {
         ),
       ),
     );
-    _refresh(repo);
+    _refresh();
   }
 }
 
@@ -301,32 +294,26 @@ class _FabActionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     const double fabSize = 56.0;
     const double gap = 16.0;
-    // 计算底部距离：index 0 是最下面 (Manual)
     final double bottomOffset = fabSize + gap + (index * (50 + gap));
-
-    // 🟢 动画时长错峰：离手最近的先出来
     final duration = Duration(milliseconds: 300 + (index * 100));
-    
-    // 🟢 使用 easeOutBack 产生类似弹簧弹出的效果
-    final curve = Curves.easeOutBack;
+    const curve = Curves.easeOutBack;
 
     return AnimatedPositioned(
       duration: duration,
       curve: curve,
-      right: 4, // 稍微对其中心
-      bottom: visible ? bottomOffset : 0, // 从 FAB 底部弹出
+      right: 4,
+      bottom: visible ? bottomOffset : 0,
       child: AnimatedOpacity(
         duration: Duration(milliseconds: 200 + (index * 50)),
         opacity: visible ? 1 : 0,
         child: AnimatedScale(
-          scale: visible ? 1.0 : 0.5, // 🟢 同时带有缩放效果
+          scale: visible ? 1.0 : 0.5,
           duration: duration,
           curve: curve,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              // 标签
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 margin: const EdgeInsets.only(right: 12),
@@ -345,13 +332,11 @@ class _FabActionButton extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     fontSize: 13,
-                    fontWeight: FontWeight.w700, // 加粗一点更清晰
+                    fontWeight: FontWeight.w700,
                     color: Colors.black87,
                   ),
                 ),
               ),
-              
-              // 按钮本体 - 使用 BouncingButton
               BouncingButton(
                 onTap: onTap,
                 child: Container(
@@ -359,7 +344,7 @@ class _FabActionButton extends StatelessWidget {
                   height: 48,
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(14), // 方圆形
+                    borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.1),
@@ -379,9 +364,7 @@ class _FabActionButton extends StatelessWidget {
   }
 }
 
-// ================== Premium Animation Widgets ==================
-// (这里复用之前的 BouncingButton 代码，确保此文件独立可用)
-
+// 复用的 BouncingButton
 class BouncingButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -408,7 +391,7 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
       vsync: this,
       duration: const Duration(milliseconds: 100),
       lowerBound: 0.0,
-      upperBound: 0.08, // 缩放幅度
+      upperBound: 0.08,
     );
   }
 
@@ -424,7 +407,7 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
       onTapDown: (_) {
         if (widget.enabled) {
           _controller.forward();
-          HapticFeedback.lightImpact(); // 🟢 震动反馈
+          HapticFeedback.lightImpact();
         }
       },
       onTapUp: (_) {

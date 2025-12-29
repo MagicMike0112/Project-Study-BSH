@@ -1,11 +1,12 @@
 // lib/screens/impact_page.dart
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🟢 Added for Haptics
+import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
 import 'dart:math' as math;
 
 import '../repositories/inventory_repository.dart';
-import '../widgets/profile_avatar_button.dart';
+import '../widgets/profile_avatar_button.dart'; // 确保路径正确
 
 enum ImpactRange { week, month, year }
 
@@ -35,6 +36,8 @@ class _ImpactPageState extends State<ImpactPage> {
   String _shortDate(DateTime d) => '${d.month}/${d.day}';
 
   static const Color _backgroundColor = Color(0xFFF8F9FC);
+  static const Color _moneyColor = Color(0xFF005F87); 
+  static const Color _co2Color = Color(0xFF43A047);
 
   void _changeRange(ImpactRange r) {
     HapticFeedback.selectionClick();
@@ -43,27 +46,29 @@ class _ImpactPageState extends State<ImpactPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 🟢 使用 AnimatedBuilder 监听 repo 变化
     return AnimatedBuilder(
       animation: widget.repo,
       builder: (context, child) {
         final start = _rangeStart();
         
+        // 筛选时间范围内的事件
         final events = widget.repo.impactEvents
             .where((e) => !e.date.isBefore(start))
             .toList();
 
+        // 核心数据计算
         final streak = widget.repo.getCurrentStreakDays();
-        final savedCount = widget.repo.getSavedCount();
-        
         final moneyTotal = events.fold<double>(0, (sum, e) => sum + e.moneySaved);
         final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
+        final savedCount = events.length;
 
+        // 宠物数据 (锁定为荷兰猪)
         final petEvents = events.where((e) => e.type == ImpactType.fedToPet).toList();
         final petQty = petEvents.fold<double>(0, (sum, e) => sum + e.quantity);
         final totalQty = events.fold<double>(0, (sum, e) => sum + e.quantity);
         final petShare = totalQty == 0 ? 0.0 : (petQty / totalQty).clamp(0.0, 1.0);
 
+        // 🟢 图表数据准备 (同时准备 Money 和 CO2)
         final dailyMoney = <DateTime, double>{};
         final dailyCo2 = <DateTime, double>{};
 
@@ -73,9 +78,8 @@ class _ImpactPageState extends State<ImpactPage> {
           dailyCo2[d] = (dailyCo2[d] ?? 0) + e.co2Saved;
         }
 
-        final allDates = <DateTime>{...dailyMoney.keys, ...dailyCo2.keys}.toList()
-          ..sort((a, b) => a.compareTo(b));
-
+        final allDates = {...dailyMoney.keys, ...dailyCo2.keys}.toList()..sort();
+        
         final moneySpots = <FlSpot>[];
         final co2Spots = <FlSpot>[];
         final labels = <int, String>{};
@@ -87,129 +91,143 @@ class _ImpactPageState extends State<ImpactPage> {
           co2Spots.add(FlSpot(x, dailyCo2[d] ?? 0));
           labels[i] = _shortDate(d);
         }
-        
-        int ecoScore = (savedCount * 2 + streak * 5).clamp(0, 100);
-        if (widget.repo.impactEvents.isEmpty) ecoScore = 0;
+
+        final bool hasEnoughData = moneySpots.length > 1;
 
         return Scaffold(
           backgroundColor: _backgroundColor,
           appBar: AppBar(
             title: const Text(
-              'Family Impact', // 🟢 修改标题，体现家庭属性
-              style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
+              'Impact Dashboard',
+              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
             ),
             backgroundColor: _backgroundColor,
             elevation: 0,
             centerTitle: false,
             systemOverlayStyle: SystemUiOverlayStyle.dark,
             actions: [
-              // 🟢 传入 repo 给头像按钮
               ProfileAvatarButton(repo: widget.repo),
+              const SizedBox(width: 16),
             ],
           ),
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             children: [
+              // 0. 时间筛选
               FadeInSlide(
                 index: 0,
-                child: _ImpactHeroCard(score: ecoScore, streak: streak),
-              ),
-              const SizedBox(height: 24),
-              FadeInSlide(
-                index: 1,
                 child: _SlidingRangeSelector(
                   currentRange: _range,
                   onChanged: _changeRange,
                 ),
               ),
               const SizedBox(height: 24),
+
+              // 1. Money Hero (核心资产卡片)
+              FadeInSlide(
+                index: 1,
+                child: _MoneyHeroCard(moneySaved: moneyTotal, savedCount: savedCount),
+              ),
+              
+              const SizedBox(height: 16),
+
+              // 2. Bento Grid (次级数据)
               FadeInSlide(
                 index: 2,
                 child: Row(
                   children: [
                     Expanded(
-                      child: _MetricCard(
-                        icon: Icons.savings_rounded,
-                        title: 'Money Saved',
-                        value: '€${moneyTotal.toStringAsFixed(1)}',
-                        tint: const Color(0xFF0E7AA8),
+                      child: _StatBox(
+                        title: 'CO₂ Reduced',
+                        value: '${co2Total.toStringAsFixed(1)} kg',
+                        icon: Icons.cloud_off_rounded,
+                        color: _co2Color,
+                        bgColor: _co2Color.withOpacity(0.1),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Expanded(
-                      child: _MetricCard(
-                        icon: Icons.cloud_off_rounded,
-                        title: 'CO₂ Avoided',
-                        value: '${co2Total.toStringAsFixed(1)} kg',
-                        tint: const Color(0xFF43A047),
+                      child: _StatBox(
+                        title: 'Day Streak',
+                        value: '$streak',
+                        icon: Icons.local_fire_department_rounded,
+                        color: Colors.orange,
+                        bgColor: Colors.orange.withOpacity(0.1),
                       ),
                     ),
                   ],
                 ),
               ),
+
               const SizedBox(height: 24),
-              if (moneyTotal > 0 || co2Total > 0)
-                FadeInSlide(
-                  index: 3,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 24),
-                    child: _ImpactEquivalentsSection(money: moneyTotal, co2: co2Total),
-                  ),
-                ),
+
+              // 3. 荷兰猪专属卡片
               FadeInSlide(
-                index: 4,
-                child: _BadgesSection(savedCount: savedCount),
-              ),
-              const SizedBox(height: 32),
-              if (events.isEmpty)
-                FadeInSlide(index: 5, child: _EmptyImpactCard())
-              else ...[
-                FadeInSlide(
-                  index: 5,
-                  child: Text(
-                    'Trends',
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (allDates.length < 2)
-                   FadeInSlide(index: 6, child: _InsufficientDataCard())
-                else ...[
-                  FadeInSlide(
-                    index: 6,
-                    child: _LineChartCard(
-                      title: 'Money Savings',
-                      color: const Color(0xFF0E7AA8),
-                      spots: moneySpots,
-                      labels: labels,
-                      valueSuffix: '€',
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  FadeInSlide(
-                    index: 7,
-                    child: _LineChartCard(
-                      title: 'Carbon Footprint',
-                      color: const Color(0xFF43A047),
-                      spots: co2Spots,
-                      labels: labels,
-                      valueSuffix: 'kg',
-                    ),
-                  ),
-                ],
-              ],
-              const SizedBox(height: 32),
-              FadeInSlide(
-                index: 8,
+                index: 3,
                 child: _GuineaPigCard(
                   petQty: petQty,
-                  totalQty: totalQty,
                   petShare: petShare,
                 ),
               ),
+
+              const SizedBox(height: 32),
+
+              // 4. 数据可视化：趋势图 (Money + CO2)
+              if (hasEnoughData) ...[
+                // Money Chart
+                FadeInSlide(
+                  index: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 12),
+                    child: Text(
+                      'Savings Trend',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ),
+                ),
+                FadeInSlide(
+                  index: 5,
+                  child: _ChartCard(
+                    spots: moneySpots,
+                    labels: labels,
+                    color: _moneyColor,
+                    unit: '€',
+                  ),
+                ),
+                
+                const SizedBox(height: 24),
+
+                // 🟢 CO2 Chart (新增)
+                FadeInSlide(
+                  index: 6,
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 12),
+                    child: Text(
+                      'CO₂ Reduction Trend',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ),
+                ),
+                FadeInSlide(
+                  index: 7,
+                  child: _ChartCard(
+                    spots: co2Spots,
+                    labels: labels,
+                    color: _co2Color,
+                    unit: 'kg',
+                  ),
+                ),
+
+              ] else if (events.isEmpty) ...[
+                 FadeInSlide(index: 4, child: _EmptyStateCard()),
+              ],
+
               const SizedBox(height: 40),
             ],
           ),
@@ -219,25 +237,148 @@ class _ImpactPageState extends State<ImpactPage> {
   }
 }
 
-// ===================== UI Components (Keep Unchanged) =====================
+// ===================== UI Components =====================
 
-class _ImpactEquivalentsSection extends StatelessWidget {
-  final double money;
-  final double co2;
+// 1. Money Hero Card
+class _MoneyHeroCard extends StatelessWidget {
+  final double moneySaved;
+  final int savedCount;
 
-  const _ImpactEquivalentsSection({required this.money, required this.co2});
+  const _MoneyHeroCard({required this.moneySaved, required this.savedCount});
 
   @override
   Widget build(BuildContext context) {
-    final coffees = (money / 3.0).toStringAsFixed(1);
-    final kmDriven = (co2 / 0.2).toStringAsFixed(0);
+    final coffees = (moneySaved / 3.0).floor();
 
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF004D70), Color(0xFF0083B0)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF005F87).withOpacity(0.3),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.wallet, color: Colors.white, size: 14),
+                    SizedBox(width: 6),
+                    Text(
+                      'SAVINGS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.monetization_on_outlined, color: Colors.white.withOpacity(0.2), size: 24),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Text(
+            '€${moneySaved.toStringAsFixed(2)}',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 44,
+              fontWeight: FontWeight.w900,
+              height: 1.0,
+              letterSpacing: -1.0,
+            ),
+          ),
+          const SizedBox(height: 20),
+          
+          Container(height: 1, color: Colors.white.withOpacity(0.2)),
+          const SizedBox(height: 16),
+          
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$savedCount Items',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    Text(
+                      'Prevented from waste',
+                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
+              const SizedBox(width: 16),
+               Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '≈ $coffees Coffees',
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
+                    Text(
+                      'Value equivalent',
+                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// 2. Stat Box
+class _StatBox extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+  final Color color;
+  final Color bgColor;
+
+  const _StatBox({
+    required this.title,
+    required this.value,
+    required this.icon,
+    required this.color,
+    required this.bgColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.03),
@@ -249,64 +390,24 @@ class _ImpactEquivalentsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'That\'s equivalent to...',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 20),
           ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.brown.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text('☕️', style: TextStyle(fontSize: 20)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(coffees, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-                          const Text('coffees earned', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Container(width: 1, height: 40, color: Colors.grey[200]),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Text('🚗', style: TextStyle(fontSize: 20)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('$kmDriven km', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
-                          const Text('driving avoided', style: TextStyle(fontSize: 11, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            title,
+            style: TextStyle(fontSize: 12, color: Colors.grey[500], fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -314,145 +415,226 @@ class _ImpactEquivalentsSection extends StatelessWidget {
   }
 }
 
-class _ImpactHeroCard extends StatelessWidget {
-  final int score;
-  final int streak;
-
-  const _ImpactHeroCard({required this.score, required this.streak});
+// 3. Guinea Pig Card
+class _GuineaPigCard extends StatelessWidget {
+  final double petQty;
+  final double petShare;
+  const _GuineaPigCard({required this.petQty, required this.petShare});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 180,
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1), // 暖黄色
         borderRadius: BorderRadius.circular(24),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF2E7D32), 
-            Color(0xFF005F87), 
-          ],
-        ),
+        border: Border.all(color: Colors.orange.withOpacity(0.1)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2E7D32).withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.orange.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Stack(
+      child: Column(
         children: [
-          Positioned(right: -40, top: -40, child: _GlassCircle(size: 160)),
-          Positioned(left: -20, bottom: -60, child: _GlassCircle(size: 140)),
-          Padding(
-            padding: const EdgeInsets.all(24),
+          Row(
+            children: [
+              const Text('🐹', style: TextStyle(fontSize: 32)),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Little Shi & Little Yuan', 
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: Color(0xFF5D4037),
+                      ),
+                    ),
+                    Text(
+                      'Total Snacks: ${petQty.toStringAsFixed(1)} kg',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: const Color(0xFF5D4037).withOpacity(0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // 增加进度条可视化
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Diet Share',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown[300]),
+                  ),
+                  Text(
+                    '${(petShare * 100).toStringAsFixed(0)}%',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown[700]),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: petShare,
+                  backgroundColor: Colors.brown.withOpacity(0.1),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+                  minHeight: 8,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.6),
+              borderRadius: BorderRadius.circular(12),
+            ),
             child: Row(
               children: [
+                Icon(Icons.lightbulb_outline_rounded, size: 16, color: Colors.brown[400]),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text(
-                        'ECO SCORE',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1.0,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          TweenAnimationBuilder<int>(
-                            tween: IntTween(begin: 0, end: score),
-                            duration: const Duration(seconds: 2),
-                            curve: Curves.easeOutExpo,
-                            builder: (context, value, child) {
-                              return Text(
-                                '$value',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 56,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.0,
-                                ),
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            '/100',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.local_fire_department_rounded, color: Color(0xFFFFB74D), size: 16),
-                            const SizedBox(width: 4),
-                            Text(
-                              '$streak day streak!',
-                              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 110,
-                  height: 110,
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(begin: 0, end: score / 100),
-                    duration: const Duration(seconds: 2),
-                    curve: Curves.easeOutExpo,
-                    builder: (context, value, child) {
-                      return CustomPaint(
-                        painter: _ArcPainter(
-                          percent: value,
-                          color: Colors.white,
-                          bgColor: Colors.white.withOpacity(0.15),
-                        ),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                score > 80 ? Icons.emoji_events : Icons.eco, 
-                                color: Colors.white, 
-                                size: 32
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                  child: Text(
+                    'Did you know? Guinea pigs "popcorn" (jump in the air) when they are excited about veggies!',
+                    style: TextStyle(fontSize: 11, color: Colors.brown[600], fontStyle: FontStyle.italic),
                   ),
                 ),
               ],
             ),
-          ),
+          )
         ],
       ),
+    );
+  }
+}
+
+// 4. Chart Card (趋势图)
+class _ChartCard extends StatelessWidget {
+  final List<FlSpot> spots;
+  final Map<int, String> labels;
+  final Color color;
+  final String unit; // 🟢 新增单位参数
+
+  const _ChartCard({
+    required this.spots,
+    required this.labels,
+    required this.color,
+    required this.unit,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double maxY = spots.isEmpty ? 5.0 : spots.fold(0.0, (m, s) => s.y > m ? s.y : m) * 1.2;
+    final safeMaxY = maxY <= 0 ? 5.0 : maxY;
+
+    return Container(
+      height: 220,
+      padding: const EdgeInsets.fromLTRB(16, 24, 24, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
+      ),
+      child: LineChart(
+        LineChartData(
+          gridData: FlGridData(
+            show: true,
+            drawVerticalLine: false,
+            horizontalInterval: safeMaxY / 4,
+            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[100], strokeWidth: 1, dashArray: [5, 5]),
+          ),
+          titlesData: FlTitlesData(
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 24,
+                interval: 1,
+                getTitlesWidget: (value, meta) {
+                  final idx = value.toInt();
+                  if (idx == 0 || idx == labels.length - 1 || (labels.length > 4 && idx == labels.length ~/ 2)) {
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(labels[idx] ?? '', style: TextStyle(fontSize: 10, color: Colors.grey[400], fontWeight: FontWeight.w500)),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+            ),
+          ),
+          borderData: FlBorderData(show: false),
+          minX: 0,
+          maxX: spots.isEmpty ? 1 : (spots.length - 1).toDouble(),
+          minY: 0,
+          maxY: safeMaxY,
+          lineBarsData: [
+            LineChartBarData(
+              spots: spots,
+              isCurved: true,
+              curveSmoothness: 0.3,
+              color: color,
+              barWidth: 3,
+              isStrokeCapRound: true,
+              dotData: const FlDotData(show: false),
+              belowBarData: BarAreaData(
+                show: true,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [color.withOpacity(0.15), color.withOpacity(0.0)],
+                ),
+              ),
+            ),
+          ],
+          // 🟢 悬浮提示增加单位
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipItems: (touchedSpots) {
+                return touchedSpots.map((spot) {
+                  return LineTooltipItem(
+                    '${spot.y.toStringAsFixed(1)} $unit',
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  );
+                }).toList();
+              },
+              tooltipRoundedRadius: 8,
+              tooltipPadding: const EdgeInsets.all(8),
+              tooltipMargin: 10,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyStateCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(32),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.black.withOpacity(0.03))),
+      child: Column(children: [Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]), const SizedBox(height: 16), Text("No data yet", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[800])), const SizedBox(height: 8), Text("Start using items to see your impact!", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], height: 1.5, fontSize: 13))]),
     );
   }
 }
@@ -469,8 +651,9 @@ class _SlidingRangeSelector extends StatelessWidget {
       height: 46,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.grey[200],
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -480,16 +663,16 @@ class _SlidingRangeSelector extends StatelessWidget {
             children: [
               AnimatedAlign(
                 alignment: _getAlign(currentRange),
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutBack, 
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutBack,
                 child: Container(
                   width: itemWidth,
                   height: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(10),
+                    color: const Color(0xFF005F87),
+                    borderRadius: BorderRadius.circular(12),
                     boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 2)),
+                      BoxShadow(color: const Color(0xFF005F87).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2)),
                     ],
                   ),
                 ),
@@ -507,7 +690,7 @@ class _SlidingRangeSelector extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.black87 : Colors.grey[600],
+                            color: isSelected ? Colors.white : Colors.grey[500],
                           ),
                           child: Text(_label(r)),
                         ),
@@ -540,436 +723,12 @@ class _SlidingRangeSelector extends StatelessWidget {
   }
 }
 
-class _MetricCard extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final Color tint;
-
-  const _MetricCard({required this.icon, required this.title, required this.value, required this.tint});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: tint.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: tint, size: 24),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: Colors.black87,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey[500],
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BadgesSection extends StatelessWidget {
-  final int savedCount;
-  const _BadgesSection({required this.savedCount});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Achievements',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _BadgeItem(icon: Icons.egg_alt_outlined, label: 'Starter', isUnlocked: savedCount >= 1, color: Colors.blue),
-              _BadgeItem(icon: Icons.eco, label: 'Saver', isUnlocked: savedCount >= 10, color: Colors.green),
-              _BadgeItem(icon: Icons.volunteer_activism, label: 'Hero', isUnlocked: savedCount >= 50, color: Colors.red),
-              _BadgeItem(icon: Icons.diamond_outlined, label: 'Legend', isUnlocked: savedCount >= 100, color: Colors.purple),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BadgeItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isUnlocked;
-  final Color color;
-
-  const _BadgeItem({required this.icon, required this.label, required this.isUnlocked, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 56, height: 56,
-          decoration: BoxDecoration(
-            color: isUnlocked ? color.withOpacity(0.1) : Colors.grey[100],
-            shape: BoxShape.circle,
-            border: Border.all(color: isUnlocked ? color.withOpacity(0.5) : Colors.transparent, width: 2),
-          ),
-          child: Icon(icon, color: isUnlocked ? color : Colors.grey[300], size: 28),
-        ),
-        const SizedBox(height: 8),
-        Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isUnlocked ? Colors.black87 : Colors.grey[400])),
-      ],
-    );
-  }
-}
-
-class _LineChartCard extends StatelessWidget {
-  final String title;
-  final Color color;
-  final List<FlSpot> spots;
-  final Map<int, String> labels;
-  final String valueSuffix;
-
-  const _LineChartCard({
-    required this.title,
-    required this.color,
-    required this.spots,
-    required this.labels,
-    required this.valueSuffix,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final double maxY = spots.isEmpty ? 5.0 : spots.fold(0.0, (m, s) => s.y > m ? s.y : m) * 1.2;
-    final safeMaxY = maxY <= 0 ? 5.0 : maxY;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 24, 20, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 16, offset: const Offset(0, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: Row(
-              children: [
-                Container(width: 12, height: 12, decoration: BoxDecoration(color: color, shape: BoxShape.circle, boxShadow: [BoxShadow(color: color.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2))])),
-                const SizedBox(width: 10),
-                Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.black87)),
-              ],
-            ),
-          ),
-          SizedBox(
-            height: 180,
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: safeMaxY / 3,
-                  getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[100], strokeWidth: 1, dashArray: [4, 4]),
-                ),
-                borderData: FlBorderData(show: false),
-                minX: 0.0,
-                maxX: spots.isEmpty ? 1.0 : (spots.length - 1).toDouble(),
-                minY: 0.0,
-                maxY: safeMaxY,
-                lineTouchData: LineTouchData(
-                  touchTooltipData: LineTouchTooltipData(
-                    getTooltipItems: (touchedSpots) {
-                      return touchedSpots.map((ts) {
-                        return LineTooltipItem(
-                          '${ts.y.toStringAsFixed(1)} $valueSuffix',
-                          const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                        );
-                      }).toList();
-                    },
-                    tooltipRoundedRadius: 12,
-                    tooltipPadding: const EdgeInsets.all(12),
-                    tooltipMargin: 10,
-                  ),
-                  handleBuiltInTouches: true,
-                ),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 24,
-                      interval: 1,
-                      getTitlesWidget: (value, meta) {
-                        final idx = value.toInt();
-                        if (idx == 0 || idx == labels.length - 1 || (labels.length > 4 && idx == labels.length ~/ 2)) {
-                          return Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(labels[idx] ?? '', style: TextStyle(fontSize: 10, color: Colors.grey[400], fontWeight: FontWeight.w500)),
-                          );
-                        }
-                        return const SizedBox.shrink();
-                      },
-                    ),
-                  ),
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    isCurved: true,
-                    curveSmoothness: 0.35,
-                    spots: spots,
-                    barWidth: 3,
-                    color: color,
-                    isStrokeCapRound: true,
-                    dotData: const FlDotData(show: false),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [color.withOpacity(0.15), color.withOpacity(0.0)],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GuineaPigCard extends StatelessWidget {
-  final double petQty;
-  final double totalQty;
-  final double petShare;
-  const _GuineaPigCard({required this.petQty, required this.totalQty, required this.petShare});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1), // 暖黄色背景
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withOpacity(0.1),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.pets, color: Colors.orange, size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Little Shi & Little Yuan', // 🐹
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                        color: Color(0xFF5D4037),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'The Guinea Pig Loop',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFF5D4037).withOpacity(0.5),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Items Snacked', style: TextStyle(fontSize: 11, color: Colors.brown[300])),
-                      const SizedBox(height: 4),
-                      Text(
-                        petQty.toStringAsFixed(0),
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF5D4037)),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(width: 1, height: 30, color: Colors.brown.withOpacity(0.1)),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Diet Share', style: TextStyle(fontSize: 11, color: Colors.brown[300])),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${(petShare * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: Color(0xFF5D4037)),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyImpactCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(32),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.black.withOpacity(0.03))),
-      child: Column(children: [Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]), const SizedBox(height: 16), Text("No data yet", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[800])), const SizedBox(height: 8), Text("Start cooking or feeding your pets to see your impact charts.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], height: 1.5, fontSize: 13))]),
-    );
-  }
-}
-
-class _InsufficientDataCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.black.withOpacity(0.03))),
-      child: Column(children: [Icon(Icons.timeline_rounded, size: 40, color: Colors.grey[300]), const SizedBox(height: 12), Text("Collecting data...", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[700])), const SizedBox(height: 4), Text("We need at least 2 days of activity to show trends.", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], fontSize: 12))]),
-    );
-  }
-}
-
-class _GlassCircle extends StatelessWidget {
-  final double size;
-  const _GlassCircle({required this.size});
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: size, height: size, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.05)));
-  }
-}
-
-class _ArcPainter extends CustomPainter {
-  final double percent;
-  final Color color;
-  final Color bgColor;
-
-  _ArcPainter({required this.percent, required this.color, required this.bgColor});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    const strokeWidth = 8.0;
-
-    final bgPaint = Paint()..color = bgColor..strokeWidth = strokeWidth..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-    final fgPaint = Paint()..color = color..strokeWidth = strokeWidth..style = PaintingStyle.stroke..strokeCap = StrokeCap.round;
-
-    canvas.drawCircle(center, radius - strokeWidth / 2, bgPaint);
-    const startAngle = -math.pi / 2;
-    final sweepAngle = 2 * math.pi * percent;
-    canvas.drawArc(Rect.fromCircle(center: center, radius: radius - strokeWidth / 2), startAngle, sweepAngle, false, fgPaint);
-  }
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
-// ================== Shared Animation Widgets (Keep these) ==================
-
 class FadeInSlide extends StatefulWidget {
   final Widget child;
   final int index; 
   final Duration duration;
 
-  const FadeInSlide({
-    super.key,
-    required this.child,
-    required this.index,
-    this.duration = const Duration(milliseconds: 500),
-  });
+  const FadeInSlide({super.key, required this.child, required this.index, this.duration = const Duration(milliseconds: 500)});
 
   @override
   State<FadeInSlide> createState() => _FadeInSlideState();
@@ -984,16 +743,10 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
-    
-    // 使用 easeOutCubic 曲线，非常柔和自然
     final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-
     _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
     _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
-
-    // 错峰进场
-    final delay = widget.index * 50; 
-    Future.delayed(Duration(milliseconds: delay), () {
+    Future.delayed(Duration(milliseconds: widget.index * 50), () {
       if (mounted) _controller.forward();
     });
   }
@@ -1006,12 +759,6 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
 
   @override
   Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(
-        position: _offsetAnim,
-        child: widget.child,
-      ),
-    );
+    return FadeTransition(opacity: _fadeAnim, child: SlideTransition(position: _offsetAnim, child: widget.child));
   }
 }

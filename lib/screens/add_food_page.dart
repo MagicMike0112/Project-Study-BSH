@@ -432,8 +432,9 @@ class _AddFoodPageState extends State<AddFoodPage>
         }
 
         if (predictedExpiry != null) {
-          if (predictedExpiry.isBefore(purchaseDate)) predictedExpiry = purchaseDate;
-          else if (predictedExpiry.isAfter(max)) predictedExpiry = max;
+          if (predictedExpiry.isBefore(purchaseDate)) {
+            predictedExpiry = purchaseDate;
+          } else if (predictedExpiry.isAfter(max)) predictedExpiry = max;
         }
 
         return _ScannedItem(
@@ -573,7 +574,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                     Expanded(
                       flex: 2,
                       child: DropdownButtonFormField<String>(
-                        value: _unit,
+                        initialValue: _unit,
                         items: ['pcs', 'kg', 'g', 'L', 'ml', 'pack', 'box', 'cup']
                             .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                             .toList(),
@@ -623,7 +624,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                   style: ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    side: MaterialStateProperty.all(BorderSide(color: Colors.grey.shade300)),
+                    side: WidgetStateProperty.all(BorderSide(color: Colors.grey.shade300)),
                   ),
                 ),
               ],

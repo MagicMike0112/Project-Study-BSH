@@ -19,7 +19,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final bg = const Color(0xFFF6F8FA);
+    const bg = Color(0xFFF6F8FA);
 
     return Scaffold(
       backgroundColor: bg,

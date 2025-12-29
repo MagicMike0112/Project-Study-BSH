@@ -17,27 +17,25 @@ class ShoppingListPage extends StatefulWidget {
 
 class _ShoppingListPageState extends State<ShoppingListPage> {
   final TextEditingController _controller = TextEditingController();
-  final List<String> _suggestions = ['Eggs', 'Milk', 'Bread', 'Bananas', 'Timothy Hay', 'Romaine Lettuce', 'Bell Pepper'];
   
-  // 🟢 修复版：使用透明背景+Fixed模式，强制让气泡停在底部
+  // 🟢 智能建议列表：展示我们“懂用户”的能力
+  final List<String> _suggestions = [
+    'Milk', 'Eggs', 'Avocado', 'Sourdough', 'Chicken Breast', 
+    'Toilet Paper', 'Olive Oil', 'Coffee', 'Greek Yogurt', 'Dark Chocolate'
+  ];
+  
   void _showAutoDismissSnackBar(String message, {VoidCallback? onUndo}) {
     if (!mounted) return;
 
-    // 1. 清除旧的
     ScaffoldMessenger.of(context).clearSnackBars();
     
-    // 2. 显示新的
     final controller = ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        // 🟢 关键修改1：使用 fixed，这样它会像地板一样贴在最下面，不会乱飘
         behavior: SnackBarBehavior.fixed,
-        // 🟢 关键修改2：背景透明，阴影去掉
         backgroundColor: Colors.transparent,
         elevation: 0,
-        // 系统可能忽略 duration，所以需要手动关闭逻辑
         duration: const Duration(seconds: 3),
         
-        // 🟢 关键修改3：内容本身就是一个“悬浮气泡”
         content: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
@@ -51,7 +49,6 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
               ),
             ],
           ),
-          // 🟢 修改点：将底部边距改为 20，让它停靠在屏幕最底部
           margin: const EdgeInsets.only(bottom: 20), 
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -86,7 +83,6 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
       ),
     );
 
-    // 3. 强制关闭逻辑
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) {
         try {
@@ -116,13 +112,113 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     _controller.clear();
   }
 
+  // 🧠 核心升级：懂用户的智能分类引擎
   String _guessCategory(String name) {
     final n = name.toLowerCase();
-    if (n.contains('hay') || n.contains('pellet') || n.contains('guinea') || n.contains('lettuce') || n.contains('pepper')) return 'pet';
-    if (n.contains('milk') || n.contains('cheese') || n.contains('yogurt') || n.contains('butter')) return 'dairy';
-    if (n.contains('apple') || n.contains('banana') || n.contains('carrot') || n.contains('spinach') || n.contains('onion')) return 'produce';
-    if (n.contains('chicken') || n.contains('beef') || n.contains('fish')) return 'meat';
-    if (n.contains('bread') || n.contains('rice') || n.contains('pasta')) return 'pantry';
+
+    // 0. 特例处理 (Context Aware)
+    // "Peanut Butter" 属于 Pantry，不属于 Dairy (Butter)
+    if (n.contains('peanut butter')) return 'pantry';
+    // "Almond Milk" 属于 Dairy/Alternative，不属于 Snacks (Nut)
+    if (n.contains('coconut milk') || n.contains('almond milk') || n.contains('soy milk') || n.contains('oat milk')) return 'dairy'; 
+
+    // 1. Pet (宠物) - 优先级最高，避免误判
+    if (n.contains('cat') || n.contains('dog') || n.contains('puppy') || n.contains('kitten') || 
+        n.contains('litter') || n.contains('pet') || n.contains('hamster') || n.contains('rabbit') || 
+        n.contains('guinea') || n.contains('hay') || n.contains('pellet') || n.contains('bird') || n.contains('fish food')) {
+      return 'pet';
+    }
+
+    // 2. Household & Personal (日用 & 个护)
+    if (n.contains('paper') || n.contains('tissue') || n.contains('towel') || n.contains('toilet') || n.contains('napkin') || 
+        n.contains('soap') || n.contains('shampoo') || n.contains('conditioner') || n.contains('wash') || n.contains('clean') || 
+        n.contains('detergent') || n.contains('bleach') || n.contains('softener') || 
+        n.contains('brush') || n.contains('paste') || n.contains('floss') || 
+        n.contains('trash') || n.contains('bag') || n.contains('foil') || n.contains('wrap') || 
+        n.contains('battery') || n.contains('bulb') || n.contains('sponge') || n.contains('wipe')) {
+      return 'household';
+    }
+
+    // 3. Frozen (冷冻)
+    if (n.contains('frozen') || n.contains('ice cream') || n.contains('gelato') || n.contains('sorbet') || 
+        n.contains('pizza') || n.contains('fries') || n.contains('nuggets') || n.contains('waffles') && n.contains('frozen')) {
+      return 'frozen';
+    }
+
+    // 4. Beverages (饮品)
+    if (n.contains('water') || n.contains('juice') || n.contains('soda') || n.contains('coke') || n.contains('pepsi') || n.contains('sprite') || n.contains('drink') || 
+        n.contains('beer') || n.contains('wine') || n.contains('liquor') || n.contains('alcohol') || n.contains('vodka') || n.contains('whisky') || n.contains('gin') || 
+        n.contains('coffee') || n.contains('tea') || n.contains('espresso') || n.contains('latte') || n.contains('cappuccino') || 
+        n.contains('lemonade') || n.contains('smoothie')) {
+      return 'beverage';
+    }
+
+    // 5. Bakery (烘焙)
+    if (n.contains('bread') || n.contains('toast') || n.contains('bagel') || n.contains('bun') || n.contains('roll') || 
+        n.contains('croissant') || n.contains('baguette') || n.contains('sourdough') || 
+        n.contains('cake') || n.contains('muffin') || n.contains('cupcake') || n.contains('brownie') || n.contains('pie') || n.contains('tart') || 
+        n.contains('pastry') || n.contains('doughnut') || n.contains('donut') || 
+        n.contains('flour') || n.contains('sugar') || n.contains('baking') || n.contains('yeast') || n.contains('tortilla') || n.contains('pita')) {
+      return 'bakery';
+    }
+
+    // 6. Dairy & Eggs (乳制品 & 蛋)
+    if (n.contains('milk') || n.contains('cream') || n.contains('yogurt') || n.contains('yoghurt') || n.contains('kefir') || 
+        n.contains('cheese') || n.contains('cheddar') || n.contains('mozzarella') || n.contains('brie') || n.contains('parmesan') || n.contains('feta') || n.contains('ricotta') || 
+        n.contains('butter') || n.contains('margarine') || 
+        n.contains('egg')) {
+      return 'dairy';
+    }
+
+    // 7. Seafood (海鲜)
+    if (n.contains('fish') || n.contains('salmon') || n.contains('tuna') || n.contains('cod') || n.contains('tilapia') || n.contains('bass') || n.contains('trout') || 
+        n.contains('halibut') || n.contains('sole') || 
+        n.contains('shrimp') || n.contains('prawn') || n.contains('crab') || n.contains('lobster') || n.contains('clam') || n.contains('mussel') || 
+        n.contains('oyster') || n.contains('scallop') || n.contains('squid') || n.contains('calamari') || n.contains('octopus')) {
+      return 'seafood';
+    }
+
+    // 8. Meat (肉类)
+    if (n.contains('chicken') || n.contains('turkey') || n.contains('duck') || 
+        n.contains('beef') || n.contains('steak') || n.contains('ribeye') || n.contains('sirloin') || n.contains('filet') || n.contains('brisket') || n.contains('burger') || n.contains('ground') || 
+        n.contains('pork') || n.contains('chop') || n.contains('ribs') || n.contains('bacon') || n.contains('ham') || n.contains('sausage') || n.contains('salami') || n.contains('pepperoni') || n.contains('hot dog') || 
+        n.contains('lamb') || n.contains('veal') || n.contains('meat')) {
+      return 'meat';
+    }
+
+    // 9. Produce (蔬果)
+    if (n.contains('apple') || n.contains('banana') || n.contains('orange') || n.contains('lemon') || n.contains('lime') || n.contains('grape') || n.contains('pear') || n.contains('peach') || n.contains('plum') || n.contains('nectarine') || n.contains('apricot') || 
+        n.contains('berry') || n.contains('strawberry') || n.contains('blueberry') || n.contains('raspberry') || n.contains('blackberry') || 
+        n.contains('melon') || n.contains('watermelon') || n.contains('cantaloupe') || n.contains('honeydew') || 
+        n.contains('kiwi') || n.contains('mango') || n.contains('pineapple') || n.contains('papaya') || n.contains('pomegranate') || n.contains('cherry') || n.contains('fig') || n.contains('date') || n.contains('avocado') || n.contains('coconut') || 
+        n.contains('tomato') || n.contains('cucumber') || n.contains('pepper') || n.contains('chili') || n.contains('jalapeno') || 
+        n.contains('carrot') || n.contains('potato') || n.contains('sweet potato') || n.contains('yam') || n.contains('onion') || n.contains('garlic') || n.contains('shallot') || n.contains('ginger') || 
+        n.contains('lettuce') || n.contains('spinach') || n.contains('kale') || n.contains('arugula') || n.contains('cabbage') || n.contains('broccoli') || n.contains('cauliflower') || n.contains('asparagus') || n.contains('celery') || 
+        n.contains('zucchini') || n.contains('squash') || n.contains('pumpkin') || n.contains('eggplant') || n.contains('aubergine') || n.contains('corn') || n.contains('pea') || n.contains('bean') || n.contains('mushroom') || 
+        n.contains('herb') || n.contains('basil') || n.contains('parsley') || n.contains('cilantro') || n.contains('coriander') || n.contains('dill') || n.contains('mint') || n.contains('rosemary') || n.contains('thyme') || 
+        n.contains('fruit') || n.contains('veg') || n.contains('salad')) {
+      return 'produce';
+    }
+
+    // 10. Snacks (零食)
+    if (n.contains('chip') || n.contains('crisp') || n.contains('popcorn') || n.contains('pretzel') || 
+        n.contains('nut') || n.contains('peanut') || n.contains('almond') || n.contains('cashew') || n.contains('walnut') || n.contains('pecan') || n.contains('pistachio') || 
+        n.contains('cookie') || n.contains('biscuit') || n.contains('cracker') || 
+        n.contains('chocolate') || n.contains('candy') || n.contains('sweet') || n.contains('gum') || n.contains('jelly') || n.contains('snack') || n.contains('bar')) {
+      return 'snacks';
+    }
+
+    // 11. Pantry (粮油副食)
+    if (n.contains('rice') || n.contains('pasta') || n.contains('spaghetti') || n.contains('macaroni') || n.contains('noodle') || n.contains('quinoa') || n.contains('couscous') || n.contains('oat') || n.contains('cereal') || n.contains('granola') || 
+        n.contains('oil') || n.contains('olive oil') || n.contains('vegetable oil') || n.contains('canola oil') || 
+        n.contains('sauce') || n.contains('soy sauce') || n.contains('ketchup') || n.contains('mayo') || n.contains('mustard') || n.contains('bbq') || n.contains('dressing') || n.contains('salsa') || n.contains('hummus') || 
+        n.contains('soup') || n.contains('stock') || n.contains('broth') || n.contains('bouillon') || 
+        n.contains('can') || n.contains('tin') || n.contains('jar') || 
+        n.contains('salt') || n.contains('pepper') || n.contains('spice') || n.contains('seasoning') || n.contains('curry') || n.contains('cinnamon') || n.contains('vanilla') || 
+        n.contains('honey') || n.contains('syrup') || n.contains('jam') || n.contains('jelly') || n.contains('spread')) {
+      return 'pantry';
+    }
+
     return 'general';
   }
 
@@ -198,7 +294,7 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                               side: BorderSide(color: primary.withOpacity(0.1)),
                               backgroundColor: Colors.white,
                               label: Text(sug, style: const TextStyle(fontSize: 13)),
-                              avatar: Icon(Icons.add, size: 16, color: primary),
+                              avatar: const Icon(Icons.add, size: 16, color: primary),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(20),
                                 side: BorderSide(color: primary.withOpacity(0.1)),
@@ -367,10 +463,11 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
   }
 }
 
-// 🟢 新增：用户头像标签组件
+// 🟢 优雅的头像 Tag
 class _UserAvatarTag extends StatelessWidget {
   final String name;
-  const _UserAvatarTag({required this.name});
+  final double size;
+  const _UserAvatarTag({required this.name, this.size = 20});
 
   Color _getNameColor(String name) {
     if (name.isEmpty) return Colors.grey;
@@ -391,21 +488,31 @@ class _UserAvatarTag extends StatelessWidget {
     final color = _getNameColor(name);
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.5), width: 1),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: color,
+    return Tooltip(
+      message: 'Added by $name',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.9),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2), // 白色边框增加对比度
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          initial,
+          style: TextStyle(
+            fontSize: size * 0.5,
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
       ),
     );
@@ -420,23 +527,37 @@ class _ShoppingTile extends StatelessWidget {
 
   const _ShoppingTile({required this.item, required this.onToggle});
 
+  // 🟢 升级：更丰富的颜色映射
   Color _catColor(String c) {
     switch(c) {
-      case 'pet': return Colors.brown;
-      case 'dairy': return Colors.blue;
-      case 'produce': return Colors.green;
-      case 'meat': return Colors.red;
-      case 'pantry': return Colors.orange;
+      case 'pet': return const Color(0xFF795548); // Brown
+      case 'household': return const Color(0xFF607D8B); // BlueGrey
+      case 'frozen': return const Color(0xFF00BCD4); // Cyan
+      case 'beverage': return const Color(0xFF009688); // Teal
+      case 'bakery': return const Color(0xFFFFC107); // Amber
+      case 'dairy': return const Color(0xFF2196F3); // Blue
+      case 'seafood': return const Color(0xFF3F51B5); // Indigo
+      case 'meat': return const Color(0xFFE53935); // Red
+      case 'produce': return const Color(0xFF4CAF50); // Green
+      case 'snacks': return const Color(0xFFFF5722); // DeepOrange
+      case 'pantry': return const Color(0xFFFF9800); // Orange
       default: return Colors.grey;
     }
   }
 
+  // 🟢 升级：更丰富的图标映射 (Material Rounded)
   IconData _catIcon(String c) {
     switch(c) {
-      case 'pet': return Icons.pets;
-      case 'dairy': return Icons.local_drink_rounded;
-      case 'produce': return Icons.eco_rounded;
+      case 'pet': return Icons.pets_rounded;
+      case 'household': return Icons.cleaning_services_rounded;
+      case 'frozen': return Icons.ac_unit_rounded;
+      case 'beverage': return Icons.local_drink_rounded;
+      case 'bakery': return Icons.bakery_dining_rounded;
+      case 'dairy': return Icons.water_drop_rounded; 
+      case 'seafood': return Icons.set_meal_rounded;
       case 'meat': return Icons.restaurant_rounded;
+      case 'produce': return Icons.eco_rounded;
+      case 'snacks': return Icons.cookie_rounded;
       case 'pantry': return Icons.kitchen_rounded;
       default: return Icons.shopping_bag_rounded;
     }
@@ -487,14 +608,28 @@ class _ShoppingTile extends StatelessWidget {
                     : null,
                 ),
                 const SizedBox(width: 16),
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(_catIcon(item.category), size: 18, color: color),
+                
+                // 🟢 优雅修改：将头像 Tag 叠加在图标右下角
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(_catIcon(item.category), size: 18, color: color),
+                    ),
+                    if (item.ownerName != null)
+                      Positioned(
+                        right: -4,
+                        bottom: -4,
+                        child: _UserAvatarTag(name: item.ownerName!, size: 16),
+                      ),
+                  ],
                 ),
+                
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -510,24 +645,6 @@ class _ShoppingTile extends StatelessWidget {
                           decorationColor: color,
                         ),
                       ),
-                      // 这里显示“谁买的”标签
-                      if (item.ownerName != null) ...[
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            _UserAvatarTag(name: item.ownerName!),
-                            const SizedBox(width: 4),
-                            Text(
-                              item.ownerName!,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey[500],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
                     ],
                   ),
                 ),

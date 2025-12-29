@@ -269,7 +269,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                 title: 'From Inventory',
                 subtitle: _activeItems.isEmpty ? null : 'Select items to use in today\'s recipe.',
                 child: _activeItems.isEmpty
-                    ? _EmptyHint(
+                    ? const _EmptyHint(
                         icon: Icons.inventory_2_outlined,
                         title: 'Inventory is empty',
                         subtitle: 'Add items first, then generate recipes here.',
@@ -313,7 +313,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                     ),
                     const SizedBox(height: 12),
                     if (_extraIngredients.isEmpty)
-                      _EmptyHint(
+                      const _EmptyHint(
                         icon: Icons.kitchen_outlined,
                         title: 'No extras added',
                         subtitle: 'Optional ingredients to help AI.',
@@ -479,7 +479,7 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
                         children: [
                           Container(
                             padding: const EdgeInsets.all(24),
-                            decoration: BoxDecoration(
+                            decoration: const BoxDecoration(
                               color: Colors.white,
                               shape: BoxShape.circle,
                               boxShadow: AppStyle.softShadow,
@@ -595,7 +595,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   Widget _buildConfig() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _SectionCard(title: 'Review Selection', subtitle: 'AI will prioritize these expiring items.', child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (widget.items.isEmpty) _EmptyHint(icon: Icons.info_outline, title: 'No Items', subtitle: 'Please select ingredients first.')
+        if (widget.items.isEmpty) const _EmptyHint(icon: Icons.info_outline, title: 'No Items', subtitle: 'Please select ingredients first.')
         else Wrap(spacing: 8, runSpacing: 8, children: widget.items.map((i) => Chip(label: Text(i.name), backgroundColor: Colors.white, side: BorderSide(color: Colors.grey.shade300))).toList()),
         if (widget.extraIngredients.isNotEmpty) ...[const SizedBox(height: 16), const Text('Extras', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), const SizedBox(height: 8), Wrap(spacing: 8, runSpacing: 8, children: widget.extraIngredients.map((e) => Chip(label: Text(e), backgroundColor: Colors.white, side: BorderSide(color: Colors.grey.shade300))).toList())],
         if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) ...[const SizedBox(height: 16), Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.amber.withOpacity(0.3))), child: Row(children: [const Icon(Icons.star, color: Colors.orange, size: 18), const SizedBox(width: 8), Expanded(child: Text('Note: ${widget.specialRequest!}', style: TextStyle(color: Colors.brown.shade700)))],),)],
@@ -607,7 +607,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
 
   Widget _buildLoading() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _ShimmerBlock(width: 180, height: 24),
+      const _ShimmerBlock(width: 180, height: 24),
       const SizedBox(height: 16),
       Expanded(child: GridView.builder(itemCount: 4, gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.75), itemBuilder: (context, index) => const _ShimmerRecipeCard())),
     ]);
@@ -1084,7 +1084,9 @@ class RecipeSuggestion {
     final appliances = (appliancesRaw is List) ? appliancesRaw.map((x) => x.toString()).toList() : const <String>[];
     int? ovenTempC;
     final v = m['ovenTempC'];
-    if (v is int) ovenTempC = v; else if (v is num) ovenTempC = v.round(); else if (v != null) ovenTempC = int.tryParse(v.toString());
+    if (v is int) {
+      ovenTempC = v;
+    } else if (v is num) ovenTempC = v.round(); else if (v != null) ovenTempC = int.tryParse(v.toString());
 
     return RecipeSuggestion(
       id: m['id']?.toString() ?? const Uuid().v4(),
@@ -1103,13 +1105,13 @@ class RecipeSuggestion {
   bool get usesOven {
     final a = appliances.map((x) => x.toLowerCase()).toList();
     if (a.any((x) => x.contains('oven'))) return true;
-    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
+    final text = ('$title\n${steps.join('\n')}').toLowerCase();
     return text.contains('oven') || text.contains('preheat') || text.contains('bake');
   }
 
   int? inferOvenTempFromText() {
     if (ovenTempC != null) return ovenTempC;
-    final text = ('${title}\n${steps.join('\n')}').toLowerCase();
+    final text = ('$title\n${steps.join('\n')}').toLowerCase();
     final reg = RegExp(r'(\d{2,3})\s*(°\s*c|°c|c\b|degrees?\s*c)');
     final m = reg.firstMatch(text);
     if (m != null) {

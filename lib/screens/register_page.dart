@@ -523,7 +523,7 @@ class _TechDropdown extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
 
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       items: items
           .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 15))))
           .toList(),

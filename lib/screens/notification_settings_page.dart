@@ -1,3 +1,4 @@
+// lib/screens/notification_settings_page.dart
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -53,11 +54,11 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
   Future<void> _scheduleNotificationsForCurrentSettings() async {
     if (!_notifyExpiring) return;
 
+    // 🟢 核心修改：调用 Service 时传入当前选定的时间
     await NotificationService().scheduleLunchDinnerNotifications(
       lunchTime: _lunchTime,
       dinnerTime: _dinnerTime,
-      message:
-          'Some of your ingredients are expiring soon. Check Smart Food Home 🍽️',
+      message: 'Some of your ingredients are expiring soon. Check Smart Food Home 🍽️',
     );
   }
 
@@ -83,8 +84,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       initialTime: initial,
       builder: (context, child) {
         return MediaQuery(
-          data:
-              MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+          data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
           child: child!,
         );
       },
@@ -111,14 +111,16 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       await _scheduleNotificationsForCurrentSettings();
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Saved. New reminder time will apply to future notifications.',
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Saved. New reminder time will apply to future notifications.',
+          ),
+          duration: Duration(seconds: 2),
         ),
-        duration: Duration(seconds: 2),
-      ),
-    );
+      );
+    }
   }
 
   Future<void> _resetTimesToDefault() async {
@@ -166,7 +168,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 顶部说明：简短、高级一点
           Text(
             'Smart reminders',
             style: textTheme.titleLarge?.copyWith(
@@ -182,7 +183,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
           ),
           const SizedBox(height: 16),
 
-          // 主卡片：一个总开关 + 配置区域
           Card(
             elevation: 0,
             shape: RoundedRectangleBorder(
@@ -196,7 +196,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 顶部：标题 + 开关
                   Row(
                     children: [
                       Expanded(
@@ -229,7 +228,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     ],
                   ),
 
-                  // 动画显示/隐藏具体时间设置
                   AnimatedCrossFade(
                     firstChild: const SizedBox.shrink(),
                     secondChild: Column(
@@ -252,7 +250,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                         ),
                         const SizedBox(height: 8),
 
-                        // 午饭时间
                         _TimeRow(
                           icon: Icons.lunch_dining_outlined,
                           label: 'Usual lunch time',
@@ -264,7 +261,6 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
 
                         const SizedBox(height: 6),
 
-                        // 晚饭时间
                         _TimeRow(
                           icon: Icons.dinner_dining_outlined,
                           label: 'Usual dinner time',

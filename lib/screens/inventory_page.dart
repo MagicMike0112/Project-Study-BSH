@@ -1,12 +1,36 @@
 // lib/screens/inventory_page.dart
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:showcaseview/showcaseview.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import 'add_food_page.dart';
 
-class InventoryPage extends StatelessWidget {
+class InventoryPageWrapper extends StatelessWidget {
+  final InventoryRepository repo;
+  final VoidCallback onRefresh;
+
+  const InventoryPageWrapper({
+    super.key,
+    required this.repo,
+    required this.onRefresh,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ShowCaseWidget(
+      builder: (context) => InventoryPage(
+        repo: repo, 
+        onRefresh: onRefresh,
+      ),
+    );
+  }
+}
+
+class InventoryPage extends StatefulWidget {
   final InventoryRepository repo;
   final VoidCallback onRefresh;
 
@@ -16,23 +40,78 @@ class InventoryPage extends StatelessWidget {
     required this.onRefresh,
   });
 
-  static const Color _backgroundColor = Color(0xFFF8F9FC);
+  @override
+  State<InventoryPage> createState() => _InventoryPageState();
+}
 
-  // 🟢 通用方法：显示强制3秒消失的悬浮通知
+class _InventoryPageState extends State<InventoryPage> {
+  static const Color _backgroundColor = Color(0xFFF8F9FC);
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  // 🟢 移除了 _recipeKey
+  final GlobalKey _searchKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndShowTutorial());
+  }
+
+  Future<void> _checkAndShowTutorial() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    if (!mounted) return;
+
+    final hasShown = prefs.getBool('hasShownIntro_v3') ?? false; // 升级版本号以重置引导
+
+    if (!hasShown) {
+      try {
+        // 🟢 移除了 _recipeKey，只引导搜索栏
+        ShowCaseWidget.of(context).startShowCase([
+          _searchKey, 
+        ]);
+        await prefs.setBool('hasShownIntro_v3', true);
+      } catch (e) {
+        debugPrint("Showcase error (safe to ignore): $e");
+      }
+    }
+  }
+
+  Future<void> _checkAndShowGestureHint(bool hasItems) async {
+    if (!hasItems) return;
+    
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+
+    final hasShownHint = prefs.getBool('hasShownGestureHint') ?? false;
+
+    if (!hasShownHint) {
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          _showAutoDismissSnackBar(context, '💡 Tip: Swipe left to delete, tap to edit.');
+          prefs.setBool('hasShownGestureHint', true);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   void _showAutoDismissSnackBar(BuildContext context, String message, {VoidCallback? onUndo}) {
-    // 1. 清除旧的
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).clearSnackBars();
     
-    // 2. 显示新的
     final controller = ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        // 🟢 使用 fixed+透明背景，让它贴在底部
         behavior: SnackBarBehavior.fixed,
         backgroundColor: Colors.transparent,
         elevation: 0,
         duration: const Duration(seconds: 3),
-        
-        // 🟢 自定义气泡内容
         content: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
@@ -46,7 +125,6 @@ class InventoryPage extends StatelessWidget {
               ),
             ],
           ),
-          // 距离底部 20
           margin: const EdgeInsets.only(bottom: 20), 
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -62,7 +140,7 @@ class InventoryPage extends StatelessWidget {
                 GestureDetector(
                   onTap: () {
                     onUndo();
-                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    if (context.mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   },
                   child: const Padding(
                     padding: EdgeInsets.only(left: 12),
@@ -80,13 +158,6 @@ class InventoryPage extends StatelessWidget {
         ),
       ),
     );
-
-    // 3. 强制关闭逻辑
-    Future.delayed(const Duration(seconds: 3), () {
-      try {
-        controller.close();
-      } catch (_) {}
-    });
   }
 
   @override
@@ -94,9 +165,13 @@ class InventoryPage extends StatelessWidget {
     final theme = Theme.of(context);
 
     return AnimatedBuilder(
-      animation: repo,
+      animation: widget.repo,
       builder: (context, child) {
-        final allItems = repo.getActiveItems();
+        final allItems = widget.repo.getActiveItems();
+        
+        final filteredList = _searchQuery.isEmpty 
+            ? allItems 
+            : allItems.where((i) => i.name.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
 
         List<FoodItem> sortByExpiry(List<FoodItem> list) {
           final copy = [...list];
@@ -104,19 +179,17 @@ class InventoryPage extends StatelessWidget {
           return copy;
         }
 
-        final fridgeItems = sortByExpiry(
-          allItems.where((i) => i.location == StorageLocation.fridge).toList(),
-        );
-        final freezerItems = sortByExpiry(
-          allItems.where((i) => i.location == StorageLocation.freezer).toList(),
-        );
-        final pantryItems = sortByExpiry(
-          allItems.where((i) => i.location == StorageLocation.pantry).toList(),
-        );
+        final fridgeItems = sortByExpiry(filteredList.where((i) => i.location == StorageLocation.fridge).toList());
+        final freezerItems = sortByExpiry(filteredList.where((i) => i.location == StorageLocation.freezer).toList());
+        final pantryItems = sortByExpiry(filteredList.where((i) => i.location == StorageLocation.pantry).toList());
 
-        final hasAnyItems = fridgeItems.isNotEmpty ||
-            freezerItems.isNotEmpty ||
-            pantryItems.isNotEmpty;
+        final hasAnyItems = allItems.isNotEmpty;
+        final hasSearchResults = filteredList.isNotEmpty;
+        final isSearching = _searchQuery.isNotEmpty;
+
+        if (hasAnyItems && !isSearching) {
+          _checkAndShowGestureHint(true);
+        }
 
         return Scaffold(
           backgroundColor: _backgroundColor,
@@ -129,105 +202,194 @@ class InventoryPage extends StatelessWidget {
             elevation: 0,
             centerTitle: false,
             systemOverlayStyle: SystemUiOverlayStyle.dark,
+            // 🟢 移除了 actions (包含 AI 按钮)
           ),
-          body: hasAnyItems
-              ? ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          body: !hasAnyItems
+              ? _buildEmptyState(context)
+              : Column(
                   children: [
-                    FadeInSlide(
-                      index: 0,
-                      child: _InventoryHeroCard(
-                        total: allItems.length,
-                        fridge: fridgeItems.length,
-                        freezer: freezerItems.length,
-                        pantry: pantryItems.length,
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                      child: Showcase(
+                        key: _searchKey,
+                        title: 'Quick Search',
+                        description: 'Find items instantly.',
+                        targetBorderRadius: BorderRadius.circular(16),
+                        tooltipBackgroundColor: Colors.brown,
+                        textColor: Colors.white,
+                        child: _buildSearchBar(),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    
+                    Expanded(
+                      child: !hasSearchResults
+                          ? _buildNoSearchResults()
+                          : ListView(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                              // 增加底部 Padding，防止列表被 MainScaffold 的 FAB 遮挡
+                              
+                              children: [
+                                if (!isSearching) ...[
+                                  FadeInSlide(
+                                    index: 0,
+                                    child: _InventoryHeroCard(
+                                      total: allItems.length,
+                                      fridge: allItems.where((i) => i.location == StorageLocation.fridge).length,
+                                      freezer: allItems.where((i) => i.location == StorageLocation.freezer).length,
+                                      pantry: allItems.where((i) => i.location == StorageLocation.pantry).length,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                ],
 
-                    if (fridgeItems.isNotEmpty) ...[
-                      FadeInSlide(
-                        index: 1,
-                        child: _buildSectionHeader(
-                          context,
-                          icon: Icons.kitchen_rounded,
-                          label: 'Fridge',
-                          color: const Color(0xFF005F87),
-                          count: fridgeItems.length,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...fridgeItems.asMap().entries.map(
-                        (entry) => FadeInSlide(
-                          key: ValueKey(entry.value.id),
-                          index: 2 + (entry.key > 5 ? 5 : entry.key), 
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildDismissibleItem(context, entry.value, theme),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                                if (fridgeItems.isNotEmpty) ...[
+                                  FadeInSlide(
+                                    index: 1,
+                                    child: _buildSectionHeader(
+                                      context,
+                                      icon: Icons.kitchen_rounded,
+                                      label: 'Fridge',
+                                      color: const Color(0xFF005F87),
+                                      count: fridgeItems.length,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ...fridgeItems.asMap().entries.map(
+                                    (entry) => FadeInSlide(
+                                      key: ValueKey(entry.value.id),
+                                      index: 2 + (entry.key > 5 ? 5 : entry.key), 
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(bottom: 10),
+                                        child: _buildDismissibleItem(context, entry.value, theme),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
 
-                    if (freezerItems.isNotEmpty) ...[
-                      FadeInSlide(
-                        index: 3, 
-                        child: _buildSectionHeader(
-                          context,
-                          icon: Icons.ac_unit_rounded,
-                          label: 'Freezer',
-                          color: const Color(0xFF3F51B5),
-                          count: freezerItems.length,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...freezerItems.asMap().entries.map(
-                        (entry) => FadeInSlide(
-                          key: ValueKey(entry.value.id),
-                          index: 4 + (entry.key > 5 ? 5 : entry.key),
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildDismissibleItem(context, entry.value, theme),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                    ],
+                                if (freezerItems.isNotEmpty) ...[
+                                  FadeInSlide(
+                                    index: 3, 
+                                    child: _buildSectionHeader(
+                                      context,
+                                      icon: Icons.ac_unit_rounded,
+                                      label: 'Freezer',
+                                      color: const Color(0xFF3F51B5),
+                                      count: freezerItems.length,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ...freezerItems.asMap().entries.map(
+                                    (entry) => FadeInSlide(
+                                      key: ValueKey(entry.value.id),
+                                      index: 4 + (entry.key > 5 ? 5 : entry.key),
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(bottom: 10),
+                                        child: _buildDismissibleItem(context, entry.value, theme),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                ],
 
-                    if (pantryItems.isNotEmpty) ...[
-                      FadeInSlide(
-                        index: 5,
-                        child: _buildSectionHeader(
-                          context,
-                          icon: Icons.shelves,
-                          label: 'Pantry',
-                          color: Colors.brown,
-                          count: pantryItems.length,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ...pantryItems.asMap().entries.map(
-                        (entry) => FadeInSlide(
-                          key: ValueKey(entry.value.id),
-                          index: 6 + (entry.key > 5 ? 5 : entry.key),
-                          child: Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: _buildDismissibleItem(context, entry.value, theme),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 40),
-                    ],
+                                if (pantryItems.isNotEmpty) ...[
+                                  FadeInSlide(
+                                    index: 5,
+                                    child: _buildSectionHeader(
+                                      context,
+                                      icon: Icons.shelves,
+                                      label: 'Pantry',
+                                      color: Colors.brown,
+                                      count: pantryItems.length,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  ...pantryItems.asMap().entries.map(
+                                    (entry) => FadeInSlide(
+                                      key: ValueKey(entry.value.id),
+                                      index: 6 + (entry.key > 5 ? 5 : entry.key),
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(bottom: 10),
+                                        child: _buildDismissibleItem(context, entry.value, theme),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 40),
+                                ],
+                              ],
+                            ),
+                    ),
                   ],
-                )
-              : _buildEmptyState(context),
+                ),
         );
       },
     );
   }
 
-  // ================== Components ==================
+  // --- Components ---
+
+  Widget _buildSearchBar() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        onChanged: (value) {
+          setState(() {
+            _searchQuery = value;
+          });
+        },
+        decoration: InputDecoration(
+          hintText: 'Search items...',
+          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
+          prefixIcon: Icon(Icons.search_rounded, color: Colors.grey[400]),
+          suffixIcon: _searchQuery.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear_rounded, color: Colors.grey[400], size: 20),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {
+                      _searchQuery = '';
+                    });
+                    FocusScope.of(context).unfocus();
+                  },
+                )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNoSearchResults() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.search_off_rounded, size: 64, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text(
+            'No items found',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _buildSectionHeader(
     BuildContext context, {
@@ -238,15 +400,15 @@ class InventoryPage extends StatelessWidget {
   }) {
     return Row(
       children: [
-        Icon(icon, size: 20, color: color),
+        Icon(icon, size: 18, color: color), 
         const SizedBox(width: 8),
         Text(
           label,
           style: const TextStyle(
-            fontSize: 18,
+            fontSize: 16, 
             fontWeight: FontWeight.w800,
             color: Colors.black87,
-            letterSpacing: -0.5,
+            letterSpacing: -0.3,
           ),
         ),
         const SizedBox(width: 8),
@@ -259,7 +421,7 @@ class InventoryPage extends StatelessWidget {
           child: Text(
             '$count',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: color,
               fontWeight: FontWeight.w800,
             ),
@@ -338,15 +500,15 @@ class InventoryPage extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24),
         decoration: BoxDecoration(
           color: const Color(0xFFFFEBEE),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(16), 
         ),
-        child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 28),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 24),
       ),
       onDismissed: (_) async {
         HapticFeedback.mediumImpact();
         
         final deletedItem = item;
-        await repo.deleteItem(item.id);
+        await widget.repo.deleteItem(item.id);
         
         if (!context.mounted) return;
         
@@ -354,7 +516,7 @@ class InventoryPage extends StatelessWidget {
           context,
           'Deleted "${deletedItem.name}"',
           onUndo: () async {
-            await repo.addItem(deletedItem);
+            await widget.repo.addItem(deletedItem);
           },
         );
       },
@@ -389,30 +551,41 @@ class InventoryPage extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: isLowStock ? Border.all(color: Colors.orange.shade300, width: 2) : null,
+        borderRadius: BorderRadius.circular(16), 
+        border: isLowStock ? Border.all(color: Colors.orange.shade300, width: 1.5) : null,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.02), 
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), 
         child: Row(
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: leading.color.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(leading.icon, color: leading.color, size: 24),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  width: 42, 
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: leading.color.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(leading.icon, color: leading.color, size: 22),
+                ),
+                if (item.ownerName != null)
+                  Positioned(
+                    right: -3,
+                    bottom: -3,
+                    child: _UserAvatarTag(name: item.ownerName!, size: 18),
+                  ),
+              ],
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -421,26 +594,15 @@ class InventoryPage extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Flexible(
-                        child: Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                item.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ),
-                            // 🟢 这里显示“谁买的”标签
-                            if (item.ownerName != null) ...[
-                              const SizedBox(width: 8),
-                              _UserAvatarTag(name: item.ownerName!),
-                            ],
-                          ],
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: Colors.black87,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -451,18 +613,12 @@ class InventoryPage extends StatelessWidget {
                             if (isLowStock) ...[
                                 Container(
                                     margin: const EdgeInsets.only(right: 6),
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
                                     decoration: BoxDecoration(
                                         color: const Color(0xFFFFF3E0),
                                         borderRadius: BorderRadius.circular(6),
                                     ),
-                                    child: const Row(
-                                        children: [
-                                            Icon(Icons.trending_down_rounded, size: 12, color: Colors.orange),
-                                            SizedBox(width: 4),
-                                            Text('LOW', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.deepOrange)),
-                                        ],
-                                    ),
+                                    child: const Text('LOW', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.deepOrange)),
                                 ),
                             ],
                             _expiryPill(context, urgency, daysLabel),
@@ -470,23 +626,26 @@ class InventoryPage extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    qtyText,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isLowStock ? Colors.deepOrange : Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  if (item.minQuantity != null)
-                      Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                              'Keep > ${item.minQuantity!.toStringAsFixed(0)}',
-                              style: TextStyle(fontSize: 10, color: Colors.grey[400]),
-                          ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                       Text(
+                        qtyText,
+                        style: TextStyle(
+                          fontSize: 12, 
+                          color: isLowStock ? Colors.deepOrange : Colors.grey[600],
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
+                      if (item.minQuantity != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '(Min ${item.minQuantity!.toStringAsFixed(0)})',
+                            style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                          ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -532,15 +691,15 @@ class InventoryPage extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         text,
         style: TextStyle(
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: FontWeight.w700,
           color: fg,
         ),
@@ -565,7 +724,7 @@ class InventoryPage extends StatelessWidget {
       context,
       MaterialPageRoute(
         builder: (_) => AddFoodPage(
-          repo: repo,
+          repo: widget.repo,
           itemToEdit: item,
         ),
       ),
@@ -637,14 +796,14 @@ class InventoryPage extends StatelessWidget {
                     final usedQty = await _askQuantityDialog(context, item, 'eat');
                     if (usedQty == null || usedQty <= 0) return;
 
-                    await repo.useItemWithImpact(item, 'eat', usedQty);
+                    await widget.repo.useItemWithImpact(item, 'eat', usedQty);
                     
                     if (!context.mounted) return;
                     _showAutoDismissSnackBar(
                       context,
                       'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
                       onUndo: () async {
-                        await repo.updateItem(oldItem);
+                        await widget.repo.updateItem(oldItem);
                       },
                     );
                   },
@@ -658,10 +817,10 @@ class InventoryPage extends StatelessWidget {
                     final usedQty = await _askQuantityDialog(context, item, 'pet');
                     if (usedQty == null || usedQty <= 0) return;
 
-                    await repo.useItemWithImpact(item, 'pet', usedQty);
+                    await widget.repo.useItemWithImpact(item, 'pet', usedQty);
 
-                    if (!repo.hasShownPetWarning) {
-                      await repo.markPetWarningShown();
+                    if (!widget.repo.hasShownPetWarning) {
+                      await widget.repo.markPetWarningShown();
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -677,7 +836,7 @@ class InventoryPage extends StatelessWidget {
                       context,
                       'Fed ${item.name} to pet',
                       onUndo: () async {
-                        await repo.updateItem(oldItem);
+                        await widget.repo.updateItem(oldItem);
                       },
                     );
                   },
@@ -692,13 +851,13 @@ class InventoryPage extends StatelessWidget {
                     final ok = await _confirmDelete(context, item);
                     if (ok) {
                       final deletedItem = item;
-                      await repo.deleteItem(item.id);
+                      await widget.repo.deleteItem(item.id);
                         if (!context.mounted) return;
                         _showAutoDismissSnackBar(
                           context,
                           'Deleted "${deletedItem.name}"',
                           onUndo: () async {
-                            await repo.addItem(deletedItem);
+                            await widget.repo.addItem(deletedItem);
                           },
                         );
                     }
@@ -903,10 +1062,11 @@ class InventoryPage extends StatelessWidget {
   }
 }
 
-// 🟢 新增：用户头像标签组件
+// 🟢 优雅的用户头像标签：圆形 + 边框 + Tooltip
 class _UserAvatarTag extends StatelessWidget {
   final String name;
-  const _UserAvatarTag({required this.name});
+  final double size;
+  const _UserAvatarTag({required this.name, this.size = 20});
 
   Color _getNameColor(String name) {
     if (name.isEmpty) return Colors.grey;
@@ -927,28 +1087,40 @@ class _UserAvatarTag extends StatelessWidget {
     final color = _getNameColor(name);
     final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
 
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        shape: BoxShape.circle,
-        border: Border.all(color: color.withOpacity(0.5), width: 1),
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        initial,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-          color: color,
+    // 🟢 增加 Tooltip，长按显示完整名字
+    return Tooltip(
+      message: 'Added by $name',
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.9), // 稍微实心一点
+          shape: BoxShape.circle,
+          // 🟢 白色边框让它从背景图标中凸显出来
+          border: Border.all(color: Colors.white, width: 2), 
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            )
+          ],
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          initial,
+          style: TextStyle(
+            fontSize: size * 0.5, // 字体随大小缩放
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
         ),
       ),
     );
   }
 }
 
-// ================== Hero Card & Other Components (Unchanged) ==================
+// ================== Hero Card & Other Components ==================
 
 class _InventoryHeroCard extends StatelessWidget {
   final int total;
@@ -986,8 +1158,8 @@ class _InventoryHeroCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          Positioned(right: -30, top: -40, child: _GlassCircle(size: 140)),
-          Positioned(left: -20, bottom: -50, child: _GlassCircle(size: 160)),
+          const Positioned(right: -30, top: -40, child: _GlassCircle(size: 140)),
+          const Positioned(left: -20, bottom: -50, child: _GlassCircle(size: 160)),
           Padding(
             padding: const EdgeInsets.all(24),
             child: Column(

@@ -2,17 +2,19 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // 🟢 Added for Haptics
+import 'package:flutter/services.dart'; // For Haptics
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../repositories/inventory_repository.dart';
-import 'family_page.dart'; // 🟢 引入
+import 'family_page.dart';
 import 'notification_settings_page.dart';
+// 🟢 修复 1: 引入正确的登录页面
+import 'login_page.dart'; 
 
 class AccountPage extends StatefulWidget {
-  final InventoryRepository repo; // 🟢 需要 Repo 来获取家庭信息
+  final InventoryRepository repo;
   final VoidCallback onLogin;
   final VoidCallback onLogout;
 
@@ -21,8 +23,7 @@ class AccountPage extends StatefulWidget {
     required this.repo,
     required this.onLogin,
     required this.onLogout,
-    // 兼容旧参数（如果有）
-    bool isLoggedIn = false, 
+    bool isLoggedIn = false,
   });
 
   @override
@@ -42,7 +43,6 @@ class _AccountPageState extends State<AccountPage> {
   @override
   void initState() {
     super.initState();
-    // 检查是否有 Deep Link 回调 (HC 授权返回)
     final qp = Uri.base.queryParameters;
     if (qp['hc'] == 'connected') {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -53,14 +53,13 @@ class _AccountPageState extends State<AccountPage> {
         );
       });
     } else {
-      // 初始加载一次状态
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _refreshHomeConnectStatus();
       });
     }
   }
 
-  // --- Home Connect 逻辑 ---
+  // --- Home Connect Logic ---
 
   Future<void> _refreshHomeConnectStatus() async {
     final client = Supabase.instance.client;
@@ -105,7 +104,7 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> _startHomeConnectBind() async {
     final client = Supabase.instance.client;
     final session = client.auth.currentSession;
-    if (session == null) { widget.onLogin(); return; }
+    if (session == null) { _handleLogin(); return; } 
 
     setState(() { _hcLoading = true; _hcError = null; });
 
@@ -157,7 +156,7 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> _fetchHomeConnectAppliances() async {
     final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) { widget.onLogin(); return; }
+    if (session == null) { _handleLogin(); return; }
     if (!_hcConnected) return;
 
     setState(() { _hcLoading = true; _hcError = null; });
@@ -215,9 +214,7 @@ class _AccountPageState extends State<AccountPage> {
                           title: Text(a['name'] ?? 'Unknown'),
                           subtitle: Text('ID: ${a['haId']}'),
                           trailing: const Icon(Icons.copy, size: 16),
-                          onTap: () {
-                            // Copy logic if needed
-                          },
+                          onTap: () {},
                         );
                       },
                     ),
@@ -230,9 +227,20 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  // ================== Build Method ==================
+  // 🟢 核心修复：处理登录跳转逻辑
+  void _handleLogin() {
+    HapticFeedback.mediumImpact();
+    // 1. 尝试调用父组件传入的回调（如果有的话）
+    widget.onLogin();
+    
+    // 2. 显式跳转到 LoginPage，确保按钮有反应
+    // allowSkip: false 表示从这里进入是专门为了登录，不显示"跳过"按钮
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const LoginPage(allowSkip: false)),
+    );
+  }
 
-  static const Color _backgroundColor = Color(0xFFF8F9FC);
+  // ================== Build Method ==================
 
   @override
   Widget build(BuildContext context) {
@@ -244,16 +252,15 @@ class _AccountPageState extends State<AccountPage> {
         final String email = session?.user.email ?? '';
         final String name = session?.user.userMetadata?['full_name'] ?? 'User';
 
-        // 自动刷新 HC 状态 (简单的 Debounce 逻辑可加在这里)
         if (loggedIn && !_hcConnected && !_hcLoading) {
-           // _refreshHomeConnectStatus(); // 慎用，容易死循环，最好依赖 initState
+           // _refreshHomeConnectStatus(); // 慎用，避免死循环
         }
 
         return Scaffold(
-          backgroundColor: _backgroundColor,
+          backgroundColor: const Color(0xFFF8F9FC),
           appBar: AppBar(
             title: const Text('Account', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
-            backgroundColor: _backgroundColor,
+            backgroundColor: const Color(0xFFF8F9FC),
             elevation: 0,
             centerTitle: false,
           ),
@@ -265,7 +272,7 @@ class _AccountPageState extends State<AccountPage> {
 
               const SizedBox(height: 32),
 
-              // 🟢 2. Household Section (New)
+              // 2. Household Section
               if (loggedIn) ...[
                 _buildSectionTitle(context, 'Household'),
                 const SizedBox(height: 12),
@@ -291,13 +298,13 @@ class _AccountPageState extends State<AccountPage> {
                     title: 'Notifications',
                     subtitle: 'Expiry alerts & reminders',
                     onTap: () {
-                       Navigator.of(context).push(
+                        Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const NotificationSettingsPage()),
                       );
                     },
                   ),
                   _Divider(),
-                  _SettingsTile(
+                  const _SettingsTile(
                     icon: Icons.card_giftcard_rounded,
                     iconColor: Colors.purple,
                     title: 'Loyalty Cards',
@@ -314,7 +321,7 @@ class _AccountPageState extends State<AccountPage> {
               const SizedBox(height: 12),
               _SettingsContainer(
                 children: [
-                  _SettingsTile(
+                  const _SettingsTile(
                     icon: Icons.privacy_tip_rounded,
                     iconColor: Colors.blueGrey,
                     title: 'Privacy Policy',
@@ -395,7 +402,7 @@ class _AccountPageState extends State<AccountPage> {
               children: [
                 Text(
                   loggedIn ? 'Hello, $name' : 'Guest Account',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -408,7 +415,8 @@ class _AccountPageState extends State<AccountPage> {
           ),
           if (!loggedIn)
             FilledButton(
-              onPressed: widget.onLogin,
+              // 🟢 使用修复后的 handler
+              onPressed: _handleLogin,
               style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), padding: const EdgeInsets.symmetric(horizontal: 16)),
               child: const Text('Log In'),
             ),
@@ -417,7 +425,6 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  // 🟢 家庭卡片组件
   Widget _buildFamilyCard(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
@@ -478,7 +485,7 @@ class _AccountPageState extends State<AccountPage> {
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
-            if (!loggedIn) { widget.onLogin(); return; }
+            if (!loggedIn) { _handleLogin(); return; } // 🟢 Use local handler
             if (_hcConnected) {
               await showModalBottomSheet(
                 context: context,

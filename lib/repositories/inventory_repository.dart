@@ -1,13 +1,13 @@
-// lib/repositories/inventory_repository.dart
 import 'dart:async';
-import 'dart:convert'; 
-import 'dart:math'; 
+import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
+import '../utils/impact_calculator.dart';
 
 // ================== Internal Models ==================
 
@@ -16,8 +16,8 @@ class ShoppingItem {
   final String name;
   final String category;
   bool isChecked;
-  // 🟢 新增：谁添加的
   final String? ownerName;
+  final String? userId;
 
   ShoppingItem({
     required this.id,
@@ -25,28 +25,34 @@ class ShoppingItem {
     this.category = 'general',
     this.isChecked = false,
     this.ownerName,
+    this.userId,
   });
 
-  Map<String, dynamic> toJson(String familyId, String userId) {
+  // 用于上传到数据库的 JSON
+  Map<String, dynamic> toDbJson(String familyId, String currentUserId) {
     return {
       'id': id,
       'family_id': familyId,
-      'user_id': userId,
+      'user_id': userId ?? currentUserId,
       'name': name,
       'category': category,
       'is_checked': isChecked,
       'updated_at': DateTime.now().toIso8601String(),
-      // 'owner_name' 不需要传给 DB，DB 根据 user_id 关联
     };
   }
 
+  // 用于本地缓存的 JSON
+  Map<String, dynamic> toLocalJson(String familyId, String currentUserId) {
+    var map = toDbJson(familyId, currentUserId);
+    map['owner_name'] = ownerName;
+    return map;
+  }
+
   factory ShoppingItem.fromJson(Map<String, dynamic> json) {
-    // 🟢 解析名字逻辑
     String? extractName(Map<String, dynamic> data) {
       if (data['user_profiles'] != null && data['user_profiles'] is Map) {
         return data['user_profiles']['display_name'];
       }
-      // 兼容本地缓存结构
       if (data['owner_name'] != null) {
         return data['owner_name'];
       }
@@ -59,14 +65,8 @@ class ShoppingItem {
       category: json['category'] ?? 'general',
       isChecked: json['is_checked'] ?? false,
       ownerName: extractName(json),
+      userId: json['user_id']?.toString(),
     );
-  }
-  
-  // 方便本地序列化缓存 ownerName
-  Map<String, dynamic> toLocalJson(String familyId, String userId) {
-    var map = toJson(familyId, userId);
-    map['owner_name'] = ownerName;
-    return map;
   }
 }
 
@@ -156,10 +156,11 @@ class ImpactEvent {
 class ExpiryService {
   DateTime predictExpiry(String? category, StorageLocation location, DateTime purchased, {DateTime? openDate, DateTime? bestBefore}) {
     int days = 7;
-    if (location == StorageLocation.freezer) days = 90;
-    else if (location == StorageLocation.pantry) days = 14;
+    if (location == StorageLocation.freezer) {
+      days = 90;
+    } else if (location == StorageLocation.pantry) days = 14;
     else if (location == StorageLocation.fridge) days = 5;
-    
+
     if (bestBefore != null) {
       final ruleDate = purchased.add(Duration(days: days));
       if (ruleDate.isAfter(bestBefore)) return bestBefore;
@@ -180,15 +181,18 @@ enum ImpactType { eaten, fedToPet, trashed }
 class InventoryRepository extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
 
-  // 🟢 新增：Realtime Channel 控制器
   RealtimeChannel? _inventoryChannel;
   RealtimeChannel? _shoppingChannel;
+  StreamSubscription<AuthState>? _authSubscription;
 
   List<FoodItem> _items = [];
   List<ImpactEvent> _impactEvents = [];
   List<ShoppingHistoryItem> _shoppingHistory = [];
   List<ShoppingItem> _activeShoppingList = [];
   
+  // 🟢 新增：待办上传队列 (支持离线同步)
+  List<Map<String, dynamic>> _pendingUploads = [];
+
   final ExpiryService _expiryService = ExpiryService();
 
   bool hasShownPetWarning = false;
@@ -197,463 +201,458 @@ class InventoryRepository extends ChangeNotifier {
   String? _currentFamilyId;
   String? _currentFamilyName;
   String? _currentUserId;
-  // 🟢 新增：当前用户的名字，用于乐观更新 ownerName
-  String? _currentUserName; 
+  String? _currentUserName;
+
+  Completer<void>? _sessionCompleter;
+
+  Map<String, String> _familyMemberCache = {};
 
   String get currentFamilyName => _currentFamilyName ?? 'My Home';
 
-  InventoryRepository._();
+  InventoryRepository._() {
+    _initAuthListener();
+  }
 
   static Future<InventoryRepository> create() async {
     final repo = InventoryRepository._();
-    await repo._loadLocalMeta(); 
-    await repo._loadLocalCache(); // 1. 先载入本地数据，UI 立刻有内容
-    await repo._initFamilySession();
-    repo._fetchAllData(); // 2. 后台静默刷新，不阻塞启动
+    await repo._loadLocalMeta();
+    await repo._loadLocalCache();
+    
+    repo._initFamilySession().then((_) {
+      repo._fetchAllData();
+    }).catchError((e) {
+      debugPrint("Background init error: $e");
+    });
+    
     return repo;
   }
 
-  // 🟢 新增：销毁时取消订阅
   @override
   void dispose() {
-    _supabase.removeChannel(_inventoryChannel!);
-    _supabase.removeChannel(_shoppingChannel!);
+    _authSubscription?.cancel();
+    _cleanupRealtime();
     super.dispose();
   }
 
-  // ================== Initialization & Cache ==================
+  void _cleanupRealtime() {
+    if (_inventoryChannel != null) _supabase.removeChannel(_inventoryChannel!);
+    if (_shoppingChannel != null) _supabase.removeChannel(_shoppingChannel!);
+    _inventoryChannel = null;
+    _shoppingChannel = null;
+  }
+
+  void _initAuthListener() {
+    _authSubscription = _supabase.auth.onAuthStateChange.listen((data) async {
+      final AuthChangeEvent event = data.event;
+      if (event == AuthChangeEvent.signedIn) {
+        _sessionCompleter = null; 
+        await _initFamilySession();
+        await _fetchAllData();
+      } else if (event == AuthChangeEvent.signedOut) {
+        _resetState();
+        notifyListeners();
+      }
+    });
+  }
+
+  void _resetState() {
+    _cleanupRealtime();
+    _currentUserId = null;
+    _currentFamilyId = null;
+    _currentFamilyName = null;
+    _currentUserName = null;
+    _familyMemberCache.clear();
+    _items = [];
+    _activeShoppingList = [];
+    _shoppingHistory = [];
+    _impactEvents = [];
+    _pendingUploads = []; // 清空待办
+    _sessionCompleter = null;
+  }
 
   Future<void> _initFamilySession() async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-    _currentUserId = user.id;
+    if (_sessionCompleter != null) {
+      if (!_sessionCompleter!.isCompleted) return _sessionCompleter!.future;
+      return; 
+    }
+    
+    _sessionCompleter = Completer<void>();
 
     try {
-      // 1. 获取家庭信息
+      final user = _supabase.auth.currentUser;
+      if (user == null) {
+        _resetState();
+        return;
+      }
+
+      _currentUserId = user.id;
+      _currentUserName = user.userMetadata?['display_name'] ?? user.email?.split('@').first ?? 'Me';
+      try {
+        final profile = await _supabase.from('user_profiles').select('display_name').eq('id', user.id).maybeSingle();
+        if (profile != null) _currentUserName = profile['display_name'];
+      } catch (_) {}
+
       final response = await _supabase
           .from('family_members')
           .select('family_id, families(name)')
           .eq('user_id', user.id)
-          .limit(1); 
+          .limit(1)
+          .maybeSingle();
 
-      if (response.isNotEmpty) {
-        final data = response.first;
-        _currentFamilyId = data['family_id'];
-        final familyData = data['families'] as Map<String, dynamic>?;
-        _currentFamilyName = familyData?['name'];
-        debugPrint('Family loaded: $_currentFamilyName');
+      if (response != null) {
+        _currentFamilyId = response['family_id'];
+        _currentFamilyName = response['families']['name'];
+        debugPrint('✅ Connected to existing family: $_currentFamilyName');
       } else {
-        debugPrint('Creating new family...');
-        final newFamilyRes = await _supabase
-            .from('families')
-            .insert({'name': 'My Home', 'created_by': user.id})
-            .select()
-            .single();
-            
-        final newFamilyId = newFamilyRes['id'];
-
-        await _supabase.from('family_members').insert({
-          'family_id': newFamilyId,
-          'user_id': user.id,
-          'role': 'owner',
-        });
-
-        _currentFamilyId = newFamilyId;
-        _currentFamilyName = 'My Home';
+        debugPrint('⚠️ No family found. Auto-creating default family...');
+        await _createNewDefaultFamily(user.id);
       }
 
-      // 🟢 2. 顺便获取用户名字 (Profile)，用于后续添加物品时自动打标签
-      // 假设你的 user_profiles 表的 id 就是 auth.uid()
-      try {
-        final profileRes = await _supabase
-            .from('user_profiles')
-            .select('display_name')
-            .eq('id', user.id)
-            .maybeSingle();
-        
-        if (profileRes != null) {
-          _currentUserName = profileRes['display_name'];
-        }
-      } catch (e) {
-        debugPrint('Profile fetch warning: $e');
-      }
-
-      // 🟢 核心：家庭ID确定后，启动实时监听
       if (_currentFamilyId != null) {
+        await _refreshFamilyMemberCache();
         _initRealtimeSubscription();
       }
 
     } catch (e) {
-      debugPrint('Family init critical error: $e');
+      debugPrint('🚨 Session Init Error: $e');
+      if (_currentUserId != null && _currentFamilyId == null) {
+         await _createNewDefaultFamily(_currentUserId!);
+      }
+    } finally {
+      if (_sessionCompleter != null && !_sessionCompleter!.isCompleted) {
+        _sessionCompleter!.complete();
+      }
     }
   }
 
-  // 🟢 核心新增：实时同步逻辑
-  void _initRealtimeSubscription() {
+  // 🟢 确保创建家庭逻辑正确，适用于无家庭用户
+  Future<void> _createNewDefaultFamily(String userId) async {
+    try {
+      // 1. 在 families 表插入新记录，并立即返回 ID
+      // 注意：这需要 RLS 策略允许 'insert' 和查看自己 'created_by' 的记录
+      final newFamily = await _supabase
+          .from('families')
+          .insert({'name': 'My Home', 'created_by': userId})
+          .select()
+          .single();
+
+      final fid = newFamily['id'];
+      
+      // 2. 将自己加入 family_members
+      // 注意：这需要 RLS 策略允许 'insert' user_id = auth.uid()
+      await _supabase.from('family_members').insert({
+        'family_id': fid,
+        'user_id': userId,
+        'role': 'owner',
+      });
+      
+      _currentFamilyId = fid;
+      _currentFamilyName = 'My Home';
+      debugPrint('✅ Created and joined default family: $fid');
+    } catch (e) {
+      debugPrint('🚨 Failed to create default family: $e');
+      // 如果创建失败（比如网络问题），保持 _currentFamilyId 为 null，
+      // 后续操作会再次触发 _ensureFamily 重试
+    }
+  }
+
+  Future<void> _fetchAllData() async {
+    await _ensureFamily();
     if (_currentFamilyId == null) return;
 
-    debugPrint('🔌 Starting Realtime Sync for family: $_currentFamilyId');
+    // 🟢 关键步骤：在拉取新数据前，先处理离线队列
+    await _processPendingQueue();
 
-    // 1. 监听库存 (Inventory)
-    _inventoryChannel = _supabase.channel('public:inventory_items:$_currentFamilyId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all, // 监听增删改
-          schema: 'public',
-          table: 'inventory_items',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'family_id',
-            value: _currentFamilyId!,
-          ),
-          callback: (payload) async {
-            await _handleInventoryRealtime(payload);
-          },
-        )
-        .subscribe();
-
-    // 2. 监听购物清单 (Shopping List)
-    _shoppingChannel = _supabase.channel('public:shopping_items:$_currentFamilyId')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'shopping_items',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'family_id',
-            value: _currentFamilyId!,
-          ),
-          callback: (payload) async {
-            await _handleShoppingRealtime(payload);
-          },
-        )
-        .subscribe();
-  }
-
-  // 🟢 处理库存变更
-  Future<void> _handleInventoryRealtime(PostgresChangePayload payload) async {
-    final newRecord = payload.newRecord;
-    final oldRecord = payload.oldRecord; // 仅包含 id
-
-    switch (payload.eventType) {
-      case PostgresChangeEvent.insert:
-        // 去重：如果本地已经有了（乐观更新导致的），就不加了
-        if (_items.any((i) => i.id == newRecord['id'].toString())) return;
-        
-        // 此时 newRecord 没有 join user_profiles，ownerName 会空
-        // 简单策略：先显示，后台悄悄补全信息
-        final newItem = FoodItem.fromJson(newRecord);
-        _items.insert(0, newItem);
-        _fetchOwnerNameForItem(newItem, isShopping: false); // 异步补全名字
-        break;
-
-      case PostgresChangeEvent.update:
-        final index = _items.indexWhere((i) => i.id == newRecord['id'].toString());
-        if (index != -1) {
-          // 保留本地的 ownerName，因为 update payload 也没有 profile
-          final oldOwnerName = _items[index].ownerName;
-          final updatedItem = FoodItem.fromJson(newRecord).copyWith(ownerName: oldOwnerName);
-          _items[index] = updatedItem;
-        }
-        break;
-
-      case PostgresChangeEvent.delete:
-        _items.removeWhere((i) => i.id == oldRecord['id'].toString());
-        break;
-        
-      default: break;
-    }
-    notifyListeners();
-    _saveLocalCache();
-  }
-
-  // 🟢 处理购物清单变更
-  Future<void> _handleShoppingRealtime(PostgresChangePayload payload) async {
-    final newRecord = payload.newRecord;
-    final oldRecord = payload.oldRecord;
-
-    switch (payload.eventType) {
-      case PostgresChangeEvent.insert:
-        if (_activeShoppingList.any((i) => i.id == newRecord['id'].toString())) return;
-        final newItem = ShoppingItem.fromJson(newRecord);
-        _activeShoppingList.add(newItem);
-        _fetchOwnerNameForItem(newItem, isShopping: true); // 异步补全名字
-        break;
-
-      case PostgresChangeEvent.update:
-        final index = _activeShoppingList.indexWhere((i) => i.id == newRecord['id'].toString());
-        if (index != -1) {
-          // 保留旧名字
-          final oldOwner = _activeShoppingList[index].ownerName;
-          // 注意：ShoppingItem 是 final，需要创建一个新的
-          // 这里的 fromJson 同样没有名字，我们需要手动补上旧名字
-          ShoppingItem updatedItem = ShoppingItem.fromJson(newRecord);
-          // 使用旧名字替换 null
-          updatedItem = ShoppingItem(
-            id: updatedItem.id,
-            name: updatedItem.name,
-            category: updatedItem.category,
-            isChecked: updatedItem.isChecked,
-            ownerName: oldOwner, // 保持 owner 不变
-          );
-          _activeShoppingList[index] = updatedItem;
-        }
-        break;
-
-      case PostgresChangeEvent.delete:
-        _activeShoppingList.removeWhere((i) => i.id == oldRecord['id'].toString());
-        break;
-        
-      default: break;
-    }
-    notifyListeners();
-    _saveLocalCache();
-  }
-
-  // 🟢 辅助：为 Realtime 新增的物品补全 ownerName
-  // 因为 Realtime 推送的是 raw table data，没有关联查询
-  Future<void> _fetchOwnerNameForItem(dynamic item, {required bool isShopping}) async {
     try {
-      final table = isShopping ? 'shopping_items' : 'inventory_items';
-      final res = await _supabase
-          .from(table)
-          .select('user_profiles(display_name)')
-          .eq('id', item.id)
-          .single();
-      
-      final name = res['user_profiles']?['display_name'];
-      if (name != null) {
-        if (!isShopping) {
-          final index = _items.indexWhere((i) => i.id == item.id);
-          if (index != -1) {
-            _items[index] = _items[index].copyWith(ownerName: name);
-          }
-        } else {
-          final index = _activeShoppingList.indexWhere((i) => i.id == item.id);
-          if (index != -1) {
-            final old = _activeShoppingList[index];
-            _activeShoppingList[index] = ShoppingItem(
-              id: old.id, name: old.name, category: old.category, isChecked: old.isChecked,
-              ownerName: name,
-            );
-          }
-        }
-        notifyListeners(); // 名字回来后再次刷新
-        _saveLocalCache();
-      }
-    } catch (_) {}
+      _refreshFamilyMemberCache().catchError((e) => debugPrint("Member cache error: $e"));
+
+      final results = await Future.wait([
+        _supabase.from('inventory_items').select('*, user_profiles(display_name)').eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
+        _supabase.from('shopping_items').select('*, user_profiles(display_name)').eq('family_id', _currentFamilyId!).order('created_at', ascending: true),
+        _supabase.from('shopping_history').select().eq('family_id', _currentFamilyId!).order('added_date', ascending: false),
+        _supabase.from('impact_events').select().eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
+      ]);
+
+      _items = (results[0] as List).map((e) {
+        try { return FoodItem.fromJson(_injectFallbackName(e)); } catch (_) { return null; }
+      }).whereType<FoodItem>().toList();
+
+      _activeShoppingList = (results[1] as List).map((e) {
+         try { return ShoppingItem.fromJson(_injectFallbackName(e)); } catch (_) { return null; }
+      }).whereType<ShoppingItem>().toList();
+
+      _shoppingHistory = (results[2] as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
+      _impactEvents = (results[3] as List).map((e) => ImpactEvent.fromJson(e)).toList();
+
+      _calculateStreakFromLocalEvents();
+      await _saveLocalCache();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('🚨 Fetch Data Error: $e');
+    }
   }
 
   Future<void> _ensureFamily() async {
     if (_currentFamilyId != null) return;
-    await _initFamilySession();
-  }
-
-  Future<void> _fetchAllData() async {
-    try {
-      if (_currentFamilyId == null) return;
-
-      // 🟢 修改查询：关联 user_profiles 获取 ownerName
-      final itemsData = await _supabase
-          .from('inventory_items')
-          .select('*, user_profiles(display_name)') // 关联查询
-          .eq('family_id', _currentFamilyId!)
-          .order('created_at', ascending: false);
-      _items = (itemsData as List).map((e) => FoodItem.fromJson(e)).toList();
-
-      // 🟢 Shopping List 同理
-      final shoppingData = await _supabase
-          .from('shopping_items')
-          .select('*, user_profiles(display_name)') // 关联查询
-          .eq('family_id', _currentFamilyId!)
-          .order('created_at', ascending: true);
-      _activeShoppingList = (shoppingData as List).map((e) => ShoppingItem.fromJson(e)).toList();
-
-      final historyData = await _supabase.from('shopping_history').select().eq('family_id', _currentFamilyId!).order('added_date', ascending: false);
-      _shoppingHistory = (historyData as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
-
-      final impactData = await _supabase.from('impact_events').select().eq('family_id', _currentFamilyId!).order('created_at', ascending: false);
-      _impactEvents = (impactData as List).map((e) => ImpactEvent.fromJson(e)).toList();
-
-      _calculateStreakFromLocalEvents();
-      await _saveLocalCache(); // Sync network data to local
-      notifyListeners();
-    } catch (e) {
-      debugPrint('Error fetching data: $e');
+    
+    if (_sessionCompleter != null) {
+       await _sessionCompleter!.future;
+    } else {
+       await _initFamilySession();
+    }
+    
+    if (_currentFamilyId == null) {
+       debugPrint("Warning: Operation performed without family context (Offline or Error)");
     }
   }
 
-  Future<void> _saveLocalCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final fid = _currentFamilyId ?? '';
-      final uid = _currentUserId ?? '';
+  // ================== Realtime Logic ==================
 
-      final itemsJson = jsonEncode(_items.map((e) => e.toJson()).toList());
-      // 使用 toLocalJson 来保存 ownerName 到本地
-      final shoppingJson = jsonEncode(_activeShoppingList.map((e) => e.toLocalJson(fid, uid)).toList());
-      final historyJson = jsonEncode(_shoppingHistory.map((e) => e.toJson(fid, uid)).toList());
-      final impactJson = jsonEncode(_impactEvents.map((e) => e.toJson(fid, uid)).toList());
+  void _initRealtimeSubscription() {
+    if (_currentFamilyId == null) return;
+    _cleanupRealtime();
 
-      await prefs.setString('cache_inventory', itemsJson);
-      await prefs.setString('cache_shopping', shoppingJson);
-      await prefs.setString('cache_history', historyJson);
-      await prefs.setString('cache_impact', impactJson);
-    } catch (e) { debugPrint('Save cache error: $e'); }
+    _inventoryChannel = _supabase.channel('public:inventory:$_currentFamilyId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'inventory_items',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
+          callback: (payload) => _handleInventoryRealtime(payload),
+        ).subscribe();
+
+    _shoppingChannel = _supabase.channel('public:shopping:$_currentFamilyId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'shopping_items',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
+          callback: (payload) => _handleShoppingRealtime(payload),
+        ).subscribe();
   }
 
-  Future<void> _loadLocalCache() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      
-      final itemsStr = prefs.getString('cache_inventory');
-      if (itemsStr != null) _items = (jsonDecode(itemsStr) as List).map((e) => FoodItem.fromJson(e)).toList();
+  void _handleInventoryRealtime(PostgresChangePayload payload) {
+    if (_currentFamilyId == null) return;
+    final newRec = payload.newRecord;
+    final oldRec = payload.oldRecord;
 
-      final shoppingStr = prefs.getString('cache_shopping');
-      if (shoppingStr != null) _activeShoppingList = (jsonDecode(shoppingStr) as List).map((e) => ShoppingItem.fromJson(e)).toList();
-
-      final historyStr = prefs.getString('cache_history');
-      if (historyStr != null) _shoppingHistory = (jsonDecode(historyStr) as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
-
-      final impactStr = prefs.getString('cache_impact');
-      if (impactStr != null) {
-        _impactEvents = (jsonDecode(impactStr) as List).map((e) => ImpactEvent.fromJson(e)).toList();
-        _calculateStreakFromLocalEvents();
+    if (payload.eventType == PostgresChangeEvent.insert) {
+      if (!_items.any((i) => i.id == newRec['id'])) {
+        _items.insert(0, FoodItem.fromJson(_injectFallbackName(newRec)));
       }
-
-      notifyListeners();
-    } catch (e) { debugPrint('Load cache error: $e'); }
+    } else if (payload.eventType == PostgresChangeEvent.update) {
+      final idx = _items.indexWhere((i) => i.id == newRec['id']);
+      if (idx != -1) _items[idx] = FoodItem.fromJson(_injectFallbackName(newRec));
+    } else if (payload.eventType == PostgresChangeEvent.delete) {
+      _items.removeWhere((i) => i.id == oldRec['id']);
+    }
+    _saveLocalCache();
+    notifyListeners();
   }
 
-  // ================== Inventory CRUD ==================
+  void _handleShoppingRealtime(PostgresChangePayload payload) {
+    if (_currentFamilyId == null) return;
+    final newRec = payload.newRecord;
+    final oldRec = payload.oldRecord;
+
+    if (payload.eventType == PostgresChangeEvent.insert) {
+      if (!_activeShoppingList.any((i) => i.id == newRec['id'])) {
+        _activeShoppingList.add(ShoppingItem.fromJson(_injectFallbackName(newRec)));
+      }
+    } else if (payload.eventType == PostgresChangeEvent.update) {
+      final idx = _activeShoppingList.indexWhere((i) => i.id == newRec['id']);
+      if (idx != -1) _activeShoppingList[idx] = ShoppingItem.fromJson(_injectFallbackName(newRec));
+    } else if (payload.eventType == PostgresChangeEvent.delete) {
+      _activeShoppingList.removeWhere((i) => i.id == oldRec['id']);
+    }
+    _saveLocalCache();
+    notifyListeners();
+  }
+
+  Map<String, dynamic> _injectFallbackName(Map<String, dynamic> json) {
+    if (json['user_profiles'] != null) return json;
+    final uid = json['user_id']?.toString();
+    final name = (uid == _currentUserId) ? _currentUserName : (_familyMemberCache[uid] ?? 'Family');
+    final newMap = Map<String, dynamic>.from(json);
+    newMap['user_profiles'] = {'display_name': name};
+    return newMap;
+  }
+
+  // ================== Data Sanitization & Sync Logic ==================
+
+  Map<String, dynamic> _cleanJsonForDb(Map<String, dynamic> rawJson) {
+    final json = Map<String, dynamic>.from(rawJson);
+    json.remove('user_profiles');
+    json.remove('owner_name');
+    json.remove('ownerName'); 
+    json.remove('display_name');
+    // 移除 meta_table 标记，防止发送到 supabase 报错
+    json.remove('meta_table'); 
+
+    if (_currentFamilyId != null) json['family_id'] = _currentFamilyId;
+    if (_currentUserId != null) json['user_id'] = _currentUserId;
+
+    return json;
+  }
+
+  // 🟢 核心功能：处理离线积压的任务 (Sync & Merge)
+  Future<void> _processPendingQueue() async {
+    if (_pendingUploads.isEmpty) return;
+    if (_currentFamilyId == null) return;
+
+    debugPrint("🔄 Syncing/Merging ${_pendingUploads.length} offline items...");
+    
+    final List<Map<String, dynamic>> queue = List.from(_pendingUploads);
+    final List<Map<String, dynamic>> successful = [];
+
+    for (var itemWithMeta in queue) {
+      try {
+        final tableName = itemWithMeta['meta_table'] ?? 'inventory_items'; // 默认为 inventory_items
+        
+        final itemJson = Map<String, dynamic>.from(itemWithMeta);
+        itemJson['family_id'] = _currentFamilyId;
+        itemJson['user_id'] = _currentUserId;
+        
+        final payload = _cleanJsonForDb(itemJson);
+
+        await _supabase.from(tableName).upsert(payload).timeout(const Duration(seconds: 5));
+        
+        successful.add(itemWithMeta);
+        debugPrint("✅ Synced offline item to $tableName: ${itemJson['name']}");
+      } catch (e) {
+        debugPrint("❌ Sync failed for item: $e");
+      }
+    }
+
+    if (successful.isNotEmpty) {
+      _pendingUploads.removeWhere((pending) => successful.contains(pending));
+      await _saveLocalCache();
+    }
+  }
+
+  // 🟢 核心功能：将失败的操作加入队列
+  Future<void> _queueOfflineAction(String tableName, Map<String, dynamic> rawJson) async {
+    final payload = _cleanJsonForDb(rawJson);
+    
+    payload['meta_table'] = tableName;
+    
+    final idx = _pendingUploads.indexWhere((e) => e['id'] == payload['id']);
+    if (idx != -1) {
+      _pendingUploads[idx] = payload;
+    } else {
+      _pendingUploads.add(payload);
+    }
+    
+    debugPrint("⚠️ Action queued for offline sync ($tableName): ${payload['name']}");
+    await _saveLocalCache();
+  }
+
+  // ================== CRUD Operations ==================
 
   List<FoodItem> getActiveItems() => _items.where((i) => i.status == FoodStatus.good).toList();
-  List<FoodItem> getExpiringItems(int withinDays) => getActiveItems().where((i) => i.daysToExpiry <= withinDays).toList();
+  List<FoodItem> getExpiringItems(int days) => getActiveItems().where((i) => i.daysToExpiry <= days).toList();
 
   Future<void> addItem(FoodItem item) async {
-    // 🟢 1. 乐观更新：给 item 加上当前用户的名字
-    final itemWithUser = item.copyWith(ownerName: _currentUserName);
-    
-    _items.insert(0, itemWithUser);
+    final optimisticItem = item.copyWith(ownerName: _currentUserName);
+    _items.insert(0, optimisticItem);
     notifyListeners();
-    _saveLocalCache(); 
+    await _saveLocalCache();
 
-    // 2. 后台异步同步 Supabase
     try {
       await _ensureFamily();
-      if (_currentFamilyId == null) return; 
-
-      final json = item.toJson();
-      json['family_id'] = _currentFamilyId; 
-      json['user_id'] = _currentUserId; 
+      if (_currentFamilyId == null) throw Exception("Cannot sync: No family context");
       
-      await _supabase.from('inventory_items').insert(json);
+      final payload = _cleanJsonForDb(item.toJson());
+      await _supabase.from('inventory_items').insert(payload).timeout(const Duration(seconds: 5));
       await _checkAutoRefill(item);
     } catch (e) {
-      debugPrint('Add item network error: $e');
+      await _queueOfflineAction('inventory_items', item.toJson());
     }
   }
 
   Future<void> updateItem(FoodItem item) async {
-    // 🟢 乐观更新
-    final index = _items.indexWhere((i) => i.id == item.id);
-    if (index != -1) {
-      _items[index] = item;
-      notifyListeners();
-      _saveLocalCache();
-    }
+    final idx = _items.indexWhere((i) => i.id == item.id);
+    if (idx != -1) _items[idx] = item;
+    notifyListeners();
+    await _saveLocalCache();
 
     try {
       await _ensureFamily();
-      if (_currentFamilyId == null) return;
-      
-      final json = item.toJson();
-      json['family_id'] = _currentFamilyId;
-      
-      await _supabase.from('inventory_items').update(json).eq('id', item.id);
+      final payload = _cleanJsonForDb(item.toJson());
+      payload.remove('created_at');
+
+      await _supabase.from('inventory_items').update(payload).eq('id', item.id).timeout(const Duration(seconds: 5));
       await _checkAutoRefill(item);
-    } catch (e) { debugPrint('Update error: $e'); }
+    } catch (e) {
+      await _queueOfflineAction('inventory_items', item.toJson());
+    }
   }
 
   Future<void> deleteItem(String id) async {
-    // 🟢 乐观更新
     _items.removeWhere((i) => i.id == id);
     notifyListeners();
-    _saveLocalCache();
+    await _saveLocalCache();
 
     try {
-      await _supabase.from('inventory_items').delete().eq('id', id);
-    } catch (e) { debugPrint('Delete error: $e'); }
+      await _supabase.from('inventory_items').delete().eq('id', id).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('Delete sync error: $e');
+    }
   }
 
   Future<void> updateStatus(String id, FoodStatus status) async {
     final index = _items.indexWhere((i) => i.id == id);
     if (index != -1) {
       final updatedItem = _items[index].copyWith(status: status);
-      await updateItem(updatedItem); 
+      await updateItem(updatedItem);
       if (status == FoodStatus.consumed) _updateStreakOnConsumed();
     }
   }
 
-  // ================== Shopping List (重点修复延迟部分) ==================
+  // ================== Shopping List ==================
 
   List<ShoppingItem> getShoppingList() => List.unmodifiable(_activeShoppingList);
 
   Future<void> saveShoppingItem(ShoppingItem item) async {
-    // 🟢 1. 乐观更新：如果是新增，附加上当前用户的名字
-    ShoppingItem optimisticItem = item;
-    if (item.ownerName == null && _currentUserName != null) {
-        optimisticItem = ShoppingItem(
-            id: item.id,
-            name: item.name,
-            category: item.category,
-            isChecked: item.isChecked,
-            ownerName: _currentUserName // 加上名字
-        );
-    }
+    final idx = _activeShoppingList.indexWhere((i) => i.id == item.id);
+    if (idx != -1) _activeShoppingList[idx] = item; else _activeShoppingList.add(item);
+    notifyListeners();
+    await _saveLocalCache();
 
-    final index = _activeShoppingList.indexWhere((i) => i.id == item.id);
-    if (index != -1) {
-      _activeShoppingList[index] = optimisticItem;
-    } else {
-      _activeShoppingList.add(optimisticItem);
-    }
-    
-    notifyListeners(); // 界面瞬间响应
-    _saveLocalCache(); // 存本地
-
-    // 2. 后台处理网络请求
     try {
       await _ensureFamily();
-      if (_currentFamilyId == null || _currentUserId == null) return;
-
-      await _supabase.from('shopping_items').upsert(
-        item.toJson(_currentFamilyId!, _currentUserId!)
-      );
-    } catch (e) { debugPrint('Save shopping network error: $e'); }
+      if (_currentFamilyId == null) return;
+      
+      final payload = _cleanJsonForDb(item.toDbJson(_currentFamilyId!, _currentUserId!));
+      await _supabase.from('shopping_items').upsert(payload).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      await _queueOfflineAction('shopping_items', item.toLocalJson(_currentFamilyId ?? '', _currentUserId ?? ''));
+    }
   }
 
   Future<void> toggleShoppingItemStatus(ShoppingItem item) async {
     item.isChecked = !item.isChecked;
     await saveShoppingItem(item); 
-    
-    if (item.isChecked) await archiveShoppingItems([item]);
-    else await removeRecentHistoryItem(item.name);
+    if (item.isChecked) {
+      await archiveShoppingItems([item]);
+    } else {
+      await removeRecentHistoryItem(item.name);
+    }
   }
 
   Future<void> deleteShoppingItem(ShoppingItem item) async {
-    // 🟢 乐观更新
     _activeShoppingList.removeWhere((i) => i.id == item.id);
     notifyListeners();
-    _saveLocalCache();
-
+    await _saveLocalCache();
     try {
       await _supabase.from('shopping_items').delete().eq('id', item.id);
       if (item.isChecked) await removeRecentHistoryItem(item.name);
-    } catch (e) { debugPrint('Delete shopping error: $e'); }
+    } catch (e) {
+      debugPrint('Delete shopping error: $e');
+    }
   }
 
   Future<void> checkoutShoppingItems(List<ShoppingItem> items) async {
-    // 1. 先把物品加到 Inventory (乐观)
     for (var item in items) {
       StorageLocation loc = StorageLocation.fridge;
       if (item.category == 'pantry') loc = StorageLocation.pantry;
@@ -663,28 +662,24 @@ class InventoryRepository extends ChangeNotifier {
       final newItem = FoodItem(
         id: const Uuid().v4(),
         name: item.name,
-        location: loc,
+        category: item.category,
         quantity: 1,
         unit: 'pcs',
         purchasedDate: DateTime.now(),
-        category: item.category,
+        location: loc,
         source: 'shopping_list',
-        ownerName: item.ownerName // 继承购物清单里的 ownerName
+        ownerName: item.ownerName
       );
-      // addItem 内部已经包含 notify 和 saveLocal
-      await addItem(newItem); 
+      await addItem(newItem);
       
-      // 2. 从 Shopping List 移除 (乐观)
-      _activeShoppingList.removeWhere((i) => i.id == item.id);
-      
-      // 后台删 Shopping List 记录
       try {
-        await _supabase.from('shopping_items').delete().eq('id', item.id);
-      } catch (e) { debugPrint('Checkout delete error: $e'); }
+        _supabase.from('shopping_items').delete().eq('id', item.id).then((_) {});
+      } catch (_) {}
     }
     
+    _activeShoppingList.removeWhere((i) => items.any((selected) => selected.id == i.id));
     notifyListeners();
-    _saveLocalCache();
+    await _saveLocalCache();
   }
 
   // ================== History & Impact ==================
@@ -696,39 +691,30 @@ class InventoryRepository extends ChangeNotifier {
   }
 
   Future<void> archiveShoppingItems(List<ShoppingItem> items) async {
-    // 🟢 乐观更新
     final now = DateTime.now();
     for (var item in items) {
-      final historyItem = ShoppingHistoryItem(
-        id: const Uuid().v4(),
-        name: item.name,
-        category: item.category,
-        date: now,
-      );
+      final historyItem = ShoppingHistoryItem(id: const Uuid().v4(), name: item.name, category: item.category, date: now);
       _shoppingHistory.insert(0, historyItem);
       
-      // 网络异步操作
       _ensureFamily().then((_) {
-        if (_currentFamilyId != null && _currentUserId != null) {
-           _supabase.from('shopping_history').insert(
-            historyItem.toJson(_currentFamilyId!, _currentUserId!)
-          );
+        if (_currentFamilyId != null) {
+          final payload = _cleanJsonForDb(historyItem.toJson(_currentFamilyId!, _currentUserId!));
+          _supabase.from('shopping_history').insert(payload).then((_){}).catchError((e){debugPrint("History upload fail:$e");});
         }
       });
     }
     notifyListeners();
-    _saveLocalCache();
+    await _saveLocalCache();
   }
 
   Future<void> removeRecentHistoryItem(String name) async {
-    // 🟢 乐观更新
     final index = _shoppingHistory.indexWhere((e) => e.name == name);
     if (index != -1) {
       final item = _shoppingHistory[index];
       if (DateTime.now().difference(item.date).inMinutes < 60) {
         _shoppingHistory.removeAt(index);
         notifyListeners();
-        _saveLocalCache();
+        await _saveLocalCache();
 
         try {
           await _supabase.from('shopping_history').delete().eq('id', item.id);
@@ -738,11 +724,10 @@ class InventoryRepository extends ChangeNotifier {
   }
 
   Future<void> clearHistory() async {
-    // 🟢 乐观更新
     _shoppingHistory.clear();
     notifyListeners();
-    _saveLocalCache();
-    
+    await _saveLocalCache();
+
     try {
       if (_currentFamilyId != null) {
         await _supabase.from('shopping_history').delete().eq('family_id', _currentFamilyId!);
@@ -761,7 +746,7 @@ class InventoryRepository extends ChangeNotifier {
 
     final remaining = item.quantity - clamped;
     if (remaining <= 0.0001) {
-      await updateStatus(item.id, FoodStatus.consumed); 
+      await updateStatus(item.id, FoodStatus.consumed);
     } else {
       await updateItem(item.copyWith(quantity: remaining));
     }
@@ -769,24 +754,27 @@ class InventoryRepository extends ChangeNotifier {
 
   Future<void> recordImpactForAction(FoodItem item, String action, {double? overrideQty}) async {
     final qty = overrideQty ?? item.quantity;
-    double money = 0; double co2 = 0; ImpactType type;
-    double normalizeQty = qty;
-    
-    if (item.unit.toLowerCase() == 'g' || item.unit.toLowerCase() == 'ml') normalizeQty = qty / 1000.0;
-    
+    final factors = ImpactCalculator.calculate(item.name, item.category, qty, item.unit);
+
+    double money = 0;
+    double co2 = 0;
+    ImpactType type;
+
     switch (action) {
-      case 'eat': 
-        type = ImpactType.eaten; 
-        money = normalizeQty * 4.0; 
-        co2 = normalizeQty * 2.5; 
+      case 'eat':
+        type = ImpactType.eaten;
+        money = factors.pricePerKg;
+        co2 = factors.co2PerKg;
         break;
-      case 'pet': 
-        type = ImpactType.fedToPet; 
-        money = normalizeQty * 4.0; 
-        co2 = normalizeQty * 2.0; 
+      case 'pet':
+        type = ImpactType.fedToPet;
+        money = factors.pricePerKg;
+        co2 = factors.co2PerKg;
         break;
-      default: 
-        type = ImpactType.trashed; 
+      default:
+        type = ImpactType.trashed;
+        money = 0;
+        co2 = 0;
         break;
     }
 
@@ -800,27 +788,25 @@ class InventoryRepository extends ChangeNotifier {
         moneySaved: money,
         co2Saved: co2,
       );
-      
-      // 🟢 乐观更新
+
       _impactEvents.insert(0, event);
       _updateStreakOnConsumed();
-      _saveMeta(); 
+      _saveMeta();
       notifyListeners();
-      _saveLocalCache();
+      await _saveLocalCache();
 
       try {
         await _ensureFamily();
         if (_currentFamilyId != null && _currentUserId != null) {
-          await _supabase.from('impact_events').insert(
-            event.toJson(_currentFamilyId!, _currentUserId!)
-          );
+          final payload = _cleanJsonForDb(event.toJson(_currentFamilyId!, _currentUserId!));
+          await _supabase.from('impact_events').insert(payload);
         }
       } catch (e) { debugPrint('Impact error: $e'); }
     }
   }
 
-  // ================== Meta / Helper ==================
-  
+  // ================== Cache & Meta ==================
+
   Future<void> _checkAutoRefill(FoodItem item) async {
     if (item.minQuantity == null) return;
     if (item.quantity <= item.minQuantity!) {
@@ -832,62 +818,234 @@ class InventoryRepository extends ChangeNotifier {
     }
   }
 
+  Future<void> _saveLocalCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final fid = _currentFamilyId ?? '';
+      final uid = _currentUserId ?? '';
+      await prefs.setString('cache_inventory', jsonEncode(_items.map((e) => e.toJson()).toList()));
+      await prefs.setString('cache_shopping', jsonEncode(_activeShoppingList.map((e) => e.toLocalJson(fid, uid)).toList()));
+      await prefs.setString('cache_history', jsonEncode(_shoppingHistory.map((e) => e.toJson(fid, uid)).toList()));
+      await prefs.setString('cache_impact', jsonEncode(_impactEvents.map((e) => e.toJson(fid, uid)).toList()));
+      
+      // 🟢 保存待办队列到本地
+      await prefs.setString('pending_uploads', jsonEncode(_pendingUploads));
+    } catch (_) {}
+  }
+
+  Future<void> _loadLocalCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final s1 = prefs.getString('cache_inventory');
+      if (s1 != null) {
+        _items = (jsonDecode(s1) as List).map((e) {
+          try { return FoodItem.fromJson(e); } catch(_) { return null; }
+        }).whereType<FoodItem>().toList();
+      }
+      
+      final s2 = prefs.getString('cache_shopping');
+      if (s2 != null) {
+        _activeShoppingList = (jsonDecode(s2) as List).map((e) {
+          try { return ShoppingItem.fromJson(e); } catch(_) { return null; }
+        }).whereType<ShoppingItem>().toList();
+      }
+
+      final s3 = prefs.getString('cache_history');
+      if (s3 != null) _shoppingHistory = (jsonDecode(s3) as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
+      final s4 = prefs.getString('cache_impact');
+      if (s4 != null) {
+        _impactEvents = (jsonDecode(s4) as List).map((e) => ImpactEvent.fromJson(e)).toList();
+        _calculateStreakFromLocalEvents();
+      }
+      
+      // 🟢 加载待办队列
+      final sPending = prefs.getString('pending_uploads');
+      if (sPending != null) {
+        _pendingUploads = List<Map<String, dynamic>>.from(jsonDecode(sPending));
+      }
+
+      notifyListeners();
+    } catch (_) {}
+  }
+
   Future<void> _loadLocalMeta() async {
     final prefs = await SharedPreferences.getInstance();
     hasShownPetWarning = prefs.getBool('petWarningShown') ?? false;
     _streakDays = prefs.getInt('streakDays') ?? 0;
   }
-  
+
   Future<void> _saveMeta() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('petWarningShown', hasShownPetWarning);
     await prefs.setInt('streakDays', _streakDays);
   }
-  
+
   void _calculateStreakFromLocalEvents() { if (_impactEvents.isNotEmpty) _streakDays = 1; }
   void _updateStreakOnConsumed() { _streakDays++; }
   int getCurrentStreakDays() => _streakDays;
 
-  Future<void> markPetWarningShown() async { 
-    hasShownPetWarning = true; 
-    await _saveMeta(); 
+  Future<void> markPetWarningShown() async {
+    hasShownPetWarning = true;
+    await _saveMeta();
   }
 
-  // ================== Family Management ==================
-  
+  // ================== Family Features (Fixed Loading) ==================
+
+  // 🔍 DEBUG VERSION
   Future<List<Map<String, dynamic>>> getFamilyMembers() async {
-    await _ensureFamily();
-    if (_currentFamilyId == null) return [];
     try {
-      final res = await _supabase.from('family_members').select('role, user_id, user_profiles(display_name)').eq('family_id', _currentFamilyId!);
-      return (res as List).map((e) {
-        final profile = e['user_profiles'] as Map<String, dynamic>?;
+      debugPrint('\n--- 🕵️‍♂️ 开始诊断家庭成员查询 ---');
+      
+      // 1. 检查上下文
+      await _ensureFamily();
+      debugPrint('👉 当前使用的 Family ID: $_currentFamilyId');
+      debugPrint('👉 当前登录用户 ID: $_currentUserId');
+      
+      if (_currentFamilyId == null) {
+        debugPrint('❌ 错误: Family ID 为空，无法查询');
+        return [];
+      }
+
+      // 2. 测试性查询：先不查 user_profiles，只看 family_members 表有没有数据
+      // 这能帮我们判断是 "表里没数据/RLS拦截" 还是 "关联查询写错了"
+      try {
+        final simpleCheck = await _supabase
+            .from('family_members')
+            .select('user_id, role')
+            .eq('family_id', _currentFamilyId!);
+        debugPrint('📦 [基础检查] family_members 表中找到了 ${simpleCheck.length} 条记录');
+        if (simpleCheck.isEmpty) {
+          debugPrint('⚠️ 警告: 基础表查询为空！可能是 RLS 权限策略拦截，或者真的没数据。');
+        } else {
+          debugPrint('📄 记录详情: $simpleCheck');
+        }
+      } catch (e) {
+        debugPrint('🚨 [基础检查] 失败: $e');
+      }
+
+      // 3. 执行完整查询 (带关联)
+      debugPrint('🔄 正在执行完整关联查询...');
+      final res = await _supabase
+          .from('family_members')
+          .select('user_id, role, user_profiles(display_name, email)') 
+          .eq('family_id', _currentFamilyId!);
+      
+      debugPrint('📦 [完整响应] Supabase 返回原始数据: $res');
+
+      if ((res as List).isEmpty) {
+        debugPrint('❌ 结果列表为空。');
+        return [];
+      }
+
+      // 4. 解析数据
+      final list = (res as List).map((e) {
+        final profile = e['user_profiles'];
+        debugPrint('👤 处理成员: ${e['user_id']}');
+        debugPrint('   - 关联的 Profile 数据: $profile');
+        
+        if (profile == null) {
+           debugPrint('   ⚠️ 警告: Profile 为 null。请检查外键关联或 user_profiles 的 RLS。');
+        }
+
+        final profileMap = profile ?? {};
         return {
           'user_id': e['user_id'],
           'role': e['role'],
-          'name': profile?['display_name'] ?? 'Unknown User',
+          'name': profileMap['display_name'] ?? profileMap['email'] ?? 'Member',
+          'email': profileMap['email'] ?? '', // 👈 确保这里取了 email
         };
       }).toList();
-    } catch (e) { return []; }
+
+      debugPrint('✅ 最终返回列表长度: ${list.length}');
+      debugPrint('--- 诊断结束 ---\n');
+      return list;
+
+    } catch (e) {
+      debugPrint('🚨 严重错误: getFamilyMembers 崩溃 -> $e');
+      return [];
+    }
+  }
+
+  Future<void> _refreshFamilyMemberCache() async {
+    final members = await getFamilyMembers();
+    _familyMemberCache = { for (var m in members) m['user_id'].toString() : m['name'].toString() };
   }
 
   Future<String> createInviteCode() async {
-    await _ensureFamily();
-    if (_currentFamilyId == null) throw Exception("System Error");
+    // 🟢 强化：确保有家庭，如果没有，尝试初始化
+    if (_currentFamilyId == null) {
+        await _initFamilySession();
+    }
+    // 如果还不行，那就真的是系统级错误（离线或服务器挂了）
+    if (_currentFamilyId == null) throw Exception("System Error: No Family Context. Please check your connection.");
+    
     final code = (100000 + Random().nextInt(900000)).toString();
-    await _supabase.from('family_invites').insert({'family_id': _currentFamilyId, 'inviter_id': _currentUserId, 'code': code});
+    final expiresAt = DateTime.now().add(const Duration(hours: 48)).toIso8601String();
+
+    await _supabase.from('family_invites').insert({
+      'family_id': _currentFamilyId, 
+      'inviter_id': _currentUserId, 
+      'code': code,
+      'expires_at': expiresAt,
+    });
     return code;
   }
 
   Future<bool> joinFamily(String code) async {
-    if (_currentUserId == null) return false;
     try {
       final invite = await _supabase.from('family_invites').select().eq('code', code).gt('expires_at', DateTime.now().toIso8601String()).maybeSingle();
       if (invite == null) return false;
-      await _supabase.from('family_members').insert({'family_id': invite['family_id'], 'user_id': _currentUserId, 'role': 'member'});
+
+      // 1. 插入成员记录
+      await _supabase.from('family_members').insert({
+        'family_id': invite['family_id'],
+        'user_id': _currentUserId, 
+        'role': 'member'
+      });
+      
+      // 2. 🟢 关键：强制重置状态，让 _initFamilySession 重新拉取最新的 family_id
+      _resetState(); 
+      _currentFamilyId = null; // 显式置空，迫使 _initFamilySession 重新查询
+      
+      // 3. 重新初始化会话 (这时候数据库策略允许你查到新家庭了)
       await _initFamilySession();
+      
+      // 4. 拉取所有数据 (包括成员列表)
+      await _fetchAllData();
+      
+      return true;
+    } catch (e) {
+      debugPrint('Join failed: $e');
+      return false;
+    }
+  }
+
+  Future<bool> leaveFamily() async {
+    if (_currentUserId == null || _currentFamilyId == null) return false;
+    try {
+      // 1. 退出当前家庭
+      await _supabase.from('family_members').delete().eq('family_id', _currentFamilyId!).eq('user_id', _currentUserId!);
+      
+      // 2. 清理本地状态
+      _resetState();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cache_inventory');
+      await prefs.remove('cache_shopping');
+      await prefs.remove('cache_history');
+      await prefs.remove('cache_impact');
+      await prefs.remove('pending_uploads'); 
+      
+      // 3. 🟢 关键修复：立即创建新家庭，确保用户有"家"可归，可以生成 code
+      // 这里不调用 _initFamilySession，因为它可能去查旧数据或者返回空
+      // 直接调用 _createNewDefaultFamily 来初始化新状态
+      await _createNewDefaultFamily(_currentUserId!);
+      
+      // 4. 刷新数据（此时应该是一个空的新家庭）
       await _fetchAllData();
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      debugPrint('Leave failed: $e');
+      return false;
+    }
   }
 }

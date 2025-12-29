@@ -1,3 +1,4 @@
+// lib/screens/family_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../repositories/inventory_repository.dart';
@@ -21,14 +22,34 @@ class _FamilyPageState extends State<FamilyPage> {
     _loadMembers();
   }
 
+  // 🟢 核心修复：使用 try-catch-finally 确保 Loading 必定停止
   Future<void> _loadMembers() async {
+    if (!mounted) return;
     setState(() => _loading = true);
-    final list = await widget.repo.getFamilyMembers();
-    if (mounted) {
-      setState(() {
-        _members = list;
-        _loading = false;
-      });
+
+    try {
+      final list = await widget.repo.getFamilyMembers();
+      if (mounted) {
+        setState(() {
+          _members = list;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error loading members: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load members: $e'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      // 无论成功还是失败，都必须停止转圈
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -37,14 +58,19 @@ class _FamilyPageState extends State<FamilyPage> {
     setState(() => _loading = true);
     
     try {
-      final code = await widget.repo.createInviteCode();
+      // 增加超时保护，防止卡死
+      final code = await widget.repo.createInviteCode().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw 'Request timed out. Please check your network.';
+        },
+      );
+
       if (mounted) {
-        setState(() => _loading = false);
         _showInviteDialog(code);
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _loading = false);
         String errorMsg = e.toString();
         if (errorMsg.contains('message:')) {
            errorMsg = errorMsg.split('message:')[1].split(',')[0];
@@ -60,6 +86,11 @@ class _FamilyPageState extends State<FamilyPage> {
           ),
         );
       }
+    } finally {
+      // 🟢 修复：生成邀请码后也要确保 Loading 停止
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -72,7 +103,6 @@ class _FamilyPageState extends State<FamilyPage> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         title: const Text('Join Family', style: TextStyle(fontWeight: FontWeight.w700)),
-        // 🟢 核心修复：添加 SingleChildScrollView 防止键盘弹起时溢出
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -84,7 +114,7 @@ class _FamilyPageState extends State<FamilyPage> {
               const SizedBox(height: 24),
               TextField(
                 controller: controller,
-                autofocus: true, // 打开弹窗自动聚焦键盘
+                autofocus: true,
                 decoration: InputDecoration(
                   labelText: 'Invite Code',
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
@@ -121,29 +151,85 @@ class _FamilyPageState extends State<FamilyPage> {
 
     if (ok == true && controller.text.trim().length >= 6) {
       setState(() => _loading = true);
-      final success = await widget.repo.joinFamily(controller.text.trim());
-      if (mounted) {
-        setState(() => _loading = false);
-        if (success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              behavior: SnackBarBehavior.floating,
-              margin: EdgeInsets.all(20),
-              content: Text('Joined family successfully! 🎉'),
-              backgroundColor: Color(0xFF005F87),
-            )
-          );
-          Navigator.pop(context); 
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              behavior: SnackBarBehavior.floating,
-              margin: EdgeInsets.all(20),
-              content: Text('Invalid or expired code.'), 
-              backgroundColor: Colors.redAccent
-            )
-          );
+      
+      try {
+        final success = await widget.repo.joinFamily(controller.text.trim());
+        if (mounted) {
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                behavior: SnackBarBehavior.floating,
+                margin: EdgeInsets.all(20),
+                content: Text('Joined family successfully! 🎉'),
+                backgroundColor: Color(0xFF005F87),
+              )
+            );
+            // 重新加载成员列表
+            _loadMembers();
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                behavior: SnackBarBehavior.floating,
+                margin: EdgeInsets.all(20),
+                content: Text('Invalid or expired code.'), 
+                backgroundColor: Colors.redAccent
+              )
+            );
+          }
         }
+      } catch (e) {
+        if(mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
+      } finally {
+        if (mounted) {
+          setState(() => _loading = false);
+        }
+      }
+    }
+  }
+
+  // 🟢 退出家庭的处理函数
+  Future<void> _handleLeaveFamily() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Leave Family?'),
+        content: const Text('You will no longer see shared inventory and shopping lists. You will return to your own private home.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true), 
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Leave'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      setState(() => _loading = true);
+      try {
+        final success = await widget.repo.leaveFamily();
+        if (mounted) {
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Left family. Switched to private mode.'))
+            );
+            _loadMembers(); // 重新加载（会自动变为 My Home）
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Failed to leave family.'), backgroundColor: Colors.red)
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Leave family error: $e');
+        if(mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
+      } finally {
+        if (mounted) setState(() => _loading = false);
       }
     }
   }
@@ -153,12 +239,11 @@ class _FamilyPageState extends State<FamilyPage> {
       context: context,
       backgroundColor: Colors.white,
       showDragHandle: true,
-      isScrollControlled: true, // 🟢 允许 BottomSheet 根据内容高度自适应（防止小屏幕溢出）
+      isScrollControlled: true, 
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
       builder: (ctx) => SafeArea(
-        child: SingleChildScrollView( // 🟢 同样添加滚动支持
+        child: SingleChildScrollView( 
           child: Padding(
-            // 这里利用 viewInsets 处理键盘遮挡（虽然这个界面通常没有输入框，但为了通用性）
             padding: EdgeInsets.only(
               left: 32, 
               right: 32, 
@@ -184,7 +269,6 @@ class _FamilyPageState extends State<FamilyPage> {
                 ),
                 const SizedBox(height: 32),
                 
-                // 邀请码卡片
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 24),
@@ -238,7 +322,7 @@ class _FamilyPageState extends State<FamilyPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC), // 浅灰蓝背景
+      backgroundColor: const Color(0xFFF8F9FC), 
       appBar: AppBar(
         title: const Text('My Family', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87)),
         backgroundColor: const Color(0xFFF8F9FC),
@@ -252,14 +336,12 @@ class _FamilyPageState extends State<FamilyPage> {
           : ListView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               children: [
-                // 1. Header Card
                 FadeInSlide(
                   index: 0,
                   child: _buildHeaderCard(),
                 ),
                 const SizedBox(height: 40),
 
-                // 2. Members Title
                 FadeInSlide(
                   index: 1,
                   child: Row(
@@ -282,17 +364,21 @@ class _FamilyPageState extends State<FamilyPage> {
                 ),
                 const SizedBox(height: 16),
 
-                // 3. Members List
-                ..._members.asMap().entries.map((e) => FadeInSlide(
-                  index: 2 + e.key,
-                  child: _MemberTile(member: e.value),
-                )),
+                if (_members.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(20.0),
+                    child: Center(child: Text("No members found.", style: TextStyle(color: Colors.grey))),
+                  )
+                else
+                  ..._members.asMap().entries.map((e) => FadeInSlide(
+                    index: 2 + e.key,
+                    child: _MemberTile(member: e.value),
+                  )),
                 
                 const SizedBox(height: 48),
 
-                // 4. Actions
                 FadeInSlide(
-                  index: 2 + _members.length,
+                  index: 2 + (_members.isEmpty ? 1 : _members.length),
                   child: Column(
                     children: [
                       BouncingButton(
@@ -343,6 +429,17 @@ class _FamilyPageState extends State<FamilyPage> {
                           ),
                         ),
                       ),
+                      
+                      // 🟢 底部退出按钮
+                      const SizedBox(height: 40),
+                      TextButton.icon(
+                        onPressed: _handleLeaveFamily,
+                        icon: const Icon(Icons.exit_to_app_rounded, color: Colors.redAccent, size: 20),
+                        label: const Text('Leave This Family', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -370,8 +467,8 @@ class _FamilyPageState extends State<FamilyPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F7FF),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF0F7FF),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.home_rounded, color: Color(0xFF005F87), size: 36),
@@ -411,8 +508,8 @@ class _MemberTile extends StatelessWidget {
     final isOwner = role == 'OWNER';
     final avatarColor = _getAvatarColor(name);
 
-    return BouncingButton( // 给每个成员卡片加上点击动效
-      onTap: () {}, // 占位，保持动效
+    return BouncingButton( 
+      onTap: () {}, 
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),

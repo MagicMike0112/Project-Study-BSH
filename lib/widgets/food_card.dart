@@ -88,7 +88,7 @@ class FoodCard extends StatelessWidget {
             ),
           ],
           onSelected: (val) {
-            onAction(val as String);
+            onAction(val);
             if (val == 'pet') {
               // 你的专属彩蛋 🐹
               ScaffoldMessenger.of(context).showSnackBar(

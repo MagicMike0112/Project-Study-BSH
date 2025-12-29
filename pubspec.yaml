@@ -1,42 +1,56 @@
 name: smart_food_home
 description: "A sustainable food management app for BSH project study."
-publish_to: 'none' # Prevent accidental publishing to pub.dev
+publish_to: 'none'
 
 version: 1.0.0+1
-
 environment:
   sdk: '>=3.2.0 <4.0.0'
+ # 建议设为 3.22+ 以支持最新的 Web 特性
 
 dependencies:
   flutter:
     sdk: flutter
   
-  supabase_flutter: ^2.6.0  
-  flutter_local_notifications: ^19.5.0
-  flutter_timezone: ^5.0.1
-  shared_preferences: ^2.3.0
-  fl_chart: ^0.69.0
+  # --- 后端 & 核心 ---
+  supabase_flutter: ^2.8.3  # 推荐使用较新版本
+  provider: ^6.1.2
+  shared_preferences: ^2.3.5
+  showcaseview: ^3.0.0
   # --- UI & 样式 ---
-  cupertino_icons: ^1.0.8    # iOS 风格图标
-  google_fonts: ^6.2.1       # 谷歌字体 (让 App 看起来更像 BSH 的高端风格)
-  http: any
-  url_launcher: any
-  # --- 核心逻辑工具 ---
-  uuid: ^4.4.0               # 生成唯一的 Food ID (必备)
-  intl: ^0.19.0              # 日期格式化 (yyyy-MM-dd)
+  fl_chart: ^0.70.2
+  cupertino_icons: ^1.0.8
+  google_fonts: ^6.2.1
+  
+  # --- 网络 & 链接 ---
+  # ⚠️ 修复了 "any"，并升级到支持 Web 的版本
+  http: ^1.3.0
+  url_launcher: ^6.3.1      # 支持 Wasm/Web
+  connectivity_plus: ^6.1.0 # ⚠️ 修复关键点：6.0+ 版本解决了 Web 报错问题
 
-  # --- 硬件功能 (相机 & 语音) ---
-  image_picker: ^1.1.2       # 调用相机拍照
-  speech_to_text: ^7.0.0     # 语音转文字 (麦克风)
-  permission_handler: ^11.3.1 # 处理 Android/iOS 权限
+  # --- 通知 & 时间 ---
+  # ⚠️ 修复了重复定义和 "^latest" 错误
+  flutter_local_notifications: ^18.0.1 
+  timezone: ^0.9.4
+  flutter_timezone: ^5.0.1
+
+  # --- 工具 ---
+  uuid: ^4.5.1
+  intl: ^0.20.2
+  
+  # --- 硬件功能 ---
+  image_picker: ^1.1.2
+  speech_to_text: ^7.0.0
+  permission_handler: ^11.4.0
+  
+  # --- 本地数据库 ---
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  connectivity_plus: ^5.0.2
-  provider: ^6.1.5+1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^4.0.0      # 代码规范检查
-  flutter_launcher_icons: ^0.13.1
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
 flutter:
-  uses-material-design: true # 启用 Material Design
+  uses-material-design: true

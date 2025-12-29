@@ -33,7 +33,7 @@ class _ArchivePageState extends State<ArchivePage> {
 
   @override
   Widget build(BuildContext context) {
-    final bg = const Color(0xFFF6F8FA);
+    const bg = Color(0xFFF6F8FA);
 
     return Scaffold(
       backgroundColor: bg,
@@ -44,8 +44,8 @@ class _ArchivePageState extends State<ArchivePage> {
         child: _loading
             ? const Center(child: CircularProgressIndicator())
             : _items.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.all(16),
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
                     child: _EmptyCard(
                       title: 'No archived recipes',
                       subtitle: 'Open any recipe and tap “Add to archive”.',
