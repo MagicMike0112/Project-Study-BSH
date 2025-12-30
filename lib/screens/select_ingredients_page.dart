@@ -688,7 +688,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   }
 
   Future<String> _findOvenHaId(String token) async {
-    final r = await http.get(Uri.parse('$_backendBase/api/hc/appliances'), headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'});
+    final r = await http.get(
+      Uri.parse('$_backendBase/api/hc?action=appliances'), 
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'}
+    );
     if (r.statusCode != 200) throw Exception('Fetch appliances failed: ${r.statusCode} ${r.body}');
     final obj = jsonDecode(r.body) as Map<String, dynamic>;
     final list = (obj['homeappliances'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
@@ -708,7 +711,15 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     setState(() => _hcActionLoading = true);
     try {
       final haId = await _findOvenHaId(token);
-      final r = await http.post(Uri.parse('$_backendBase/api/hc/oven/preheat'), headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}, body: jsonEncode({'haId': haId, 'temperatureC': temp, 'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating'}));
+      final r = await http.post(
+        Uri.parse('$_backendBase/api/hc?action=preheat'), 
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}, 
+        body: jsonEncode({
+          'haId': haId, 
+          'temperatureC': temp, 
+          'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating'
+        })
+      );
       if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
       
       if (!mounted) return;

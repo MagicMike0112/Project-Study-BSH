@@ -80,7 +80,7 @@ class _AccountPageState extends State<AccountPage> {
 
     try {
       final r = await http.get(
-        Uri.parse('$_backendBase/api/hc/status'),
+        Uri.parse('$_backendBase/api/hc?action=status'), // 🟢 修改
         headers: {'Authorization': 'Bearer ${session.accessToken}'},
       );
       final data = jsonDecode(r.body) as Map<String, dynamic>;
@@ -110,7 +110,7 @@ class _AccountPageState extends State<AccountPage> {
 
     try {
       final r = await http.post(
-        Uri.parse('$_backendBase/api/hc/connect'),
+        Uri.parse('$_backendBase/api/hc?action=connect'),
         headers: {'Authorization': 'Bearer ${session.accessToken}', 'Content-Type': 'application/json'},
         body: jsonEncode({"returnTo": "https://bshpwa.vercel.app/#/account?hc=connected"}),
       );
@@ -138,7 +138,7 @@ class _AccountPageState extends State<AccountPage> {
     setState(() { _hcLoading = true; _hcError = null; });
     try {
       final r = await http.delete(
-        Uri.parse('$_backendBase/api/hc/disconnect'),
+        Uri.parse('$_backendBase/api/hc?action=disconnect'),
         headers: {'Authorization': 'Bearer ${session.accessToken}'},
       );
       if (r.statusCode != 200) throw Exception('Failed');
@@ -162,7 +162,7 @@ class _AccountPageState extends State<AccountPage> {
     setState(() { _hcLoading = true; _hcError = null; });
     try {
       final r = await http.get(
-        Uri.parse('$_backendBase/api/hc/appliances'),
+        Uri.parse('$_backendBase/api/hc?action=appliances'),
         headers: {'Authorization': 'Bearer ${session.accessToken}'},
       );
       final data = jsonDecode(r.body) as Map<String, dynamic>;
