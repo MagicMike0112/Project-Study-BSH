@@ -65,6 +65,12 @@ function addDays(baseDate, days) {
 }
 
 function extractOutputText(resp) {
+  // 适配标准 OpenAI SDK 的 chat.completions 结构
+  if (resp.choices && Array.isArray(resp.choices) && resp.choices[0]?.message?.content) {
+    return resp.choices[0].message.content.trim();
+  }
+  
+  // 适配可能的旧代码或自定义结构
   if (typeof resp?.output_text === "string" && resp.output_text.trim()) {
     return resp.output_text.trim();
   }
@@ -153,6 +159,7 @@ function looksNonFood(name) {
 function mergeDuplicates(items) {
   const map = new Map();
   for (const it of items) {
+    // 这里 Key 不再包含具体品牌名，因为 item.name 已经是 genericName 了，这有助于更好地合并同类项
     const key = `${it.name.toLowerCase()}|${it.unit}|${it.storageLocation}`;
     if (!map.has(key)) {
       map.set(key, { ...it });
@@ -201,20 +208,17 @@ Rules:
 - If any item field is missing, fill conservatively.
 `.trim();
 
-  const resp = await client.responses.create({
-    model: "gpt-4.1-mini",
-    input: [
-      {
-        role: "user",
-        content: [
-          { type: "input_text", text: repairPrompt },
-          { type: "input_text", text: `TEXT_TO_REPAIR:\n${String(rawText ?? "").slice(0, 20000)}` },
-        ],
-      },
+  // 注意：这里改回了标准的 client.chat.completions.create，因为 client.responses.create 不是标准 SDK 方法
+  // 如果你使用的是特殊 SDK 版本，请改回原样
+  const resp = await client.chat.completions.create({
+    model: "gpt-4o-mini", // 推荐使用 gpt-4o-mini 替代 gpt-4.1-mini
+    messages: [
+      { role: "system", content: repairPrompt },
+      { role: "user", content: `TEXT_TO_REPAIR:\n${String(rawText ?? "").slice(0, 20000)}` },
     ],
     temperature: 0,
-    text: { format: { type: "json_object" } },
-    max_output_tokens: 1800,
+    response_format: { type: "json_object" },
+    max_tokens: 2000,
   });
   return extractOutputText(resp);
 }
@@ -257,12 +261,18 @@ export default async function handler(req, res) {
 You are an OCR+inventory assistant.
 Goal: Extract a clean inventory list from the image (mode="${mode}").
 
-CRITICAL - Semantic Pre-processing:
-For each item, identify its specific "name" from the image, but ALSO provide a "genericName".
-Example:
-- Name: "Haitian Light Soy Sauce 500ml" -> GenericName: "Soy Sauce"
-- Name: "Organic Baby Spinach 200g" -> GenericName: "Spinach"
-- Name: "Coca Cola Zero Sugar 1L" -> GenericName: "Cola"
+CRITICAL - NAME STANDARDIZATION:
+For every item detected, you MUST populate "genericName" with the **generic ingredient name only**.
+- REMOVE all brand names (e.g., "Haitian", "Heinz", "Nestle").
+- REMOVE packaging types if irrelevant (e.g. "Pack of", "Bag").
+- KEEP the core food identity.
+
+Examples:
+- "Haitian Light Soy Sauce" -> genericName: "Soy Sauce"
+- "Organic Baby Spinach" -> genericName: "Spinach"
+- "Coca Cola Zero Sugar" -> genericName: "Cola"
+- "Lay's Potato Chips" -> genericName: "Potato Chips"
+- "Kellogg's Corn Flakes" -> genericName: "Corn Flakes"
 
 IMPORTANT:
 - ONLY include edible FOOD and DRINK items.
@@ -279,8 +289,8 @@ Output JSON ONLY with this exact shape:
   "purchaseDate": "YYYY-MM-DD" | null,
   "items": [
     {
-      "name": string,
-      "genericName": string,
+      "name": string,         // The full text as seen on receipt/image (for reference)
+      "genericName": string,  // THE CLEAN, BRAND-FREE INGREDIENT NAME
       "quantity": number,
       "unit": string,
       "storageLocation": "fridge" | "freezer" | "pantry",
@@ -297,23 +307,24 @@ Constraints:
 - HARD LIMIT: output at most 40 items.
 `.trim();
 
-    const input = [
+    const messages = [
       {
         role: "user",
-        content: [{ type: "input_text", text: instruction }],
+        content: [{ type: "text", text: instruction }],
       },
     ];
 
     for (const url of images) {
-      input[0].content.push({ type: "input_image", image_url: url });
+      messages[0].content.push({ type: "image_url", image_url: { url: url } });
     }
 
-    const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input,
+    // 使用标准的 chat.completions.create
+    const resp = await client.chat.completions.create({
+      model: "gpt-4o-mini", // 推荐使用最新的 mini 模型
+      messages: messages,
       temperature: 0,
-      text: { format: { type: "json_object" } },
-      max_output_tokens: 2400,
+      response_format: { type: "json_object" },
+      max_tokens: 2400,
     });
 
     let raw = extractOutputText(resp);
@@ -338,8 +349,14 @@ Constraints:
     const itemsIn = Array.isArray(data?.items) ? data.items : [];
     let fixedItems = itemsIn
       .map((it) => {
-        const name = normalizeName(it?.name);
-        if (!name || looksNonFood(name)) return null;
+        // 核心修改：优先使用 genericName (不带商标的名称) 作为最终的 name
+        const rawGeneric = normalizeName(it?.genericName);
+        const rawSpecific = normalizeName(it?.name);
+        
+        // 如果 AI 提取了通用名，就用通用名；否则回退到原始名称
+        const finalName = rawGeneric || rawSpecific;
+
+        if (!finalName || looksNonFood(finalName)) return null;
 
         const quantity = typeof it?.quantity === "number" && Number.isFinite(it.quantity) ? it.quantity : 1;
         const shelfLifeDays = clampInt(it?.shelfLifeDays, 1, 365, 7);
@@ -347,8 +364,8 @@ Constraints:
         if (predictedExpiryDate < purchaseDateOut) predictedExpiryDate = purchaseDateOut;
 
         return {
-          name,
-          genericName: normalizeName(it?.genericName) || name,
+          name: finalName, // 这里现在只包含无商标的食材名
+          // genericName: rawGeneric, // 可选：如果前端不需要展示原始识别名，可以不返回
           quantity,
           unit: normalizeUnit(it?.unit),
           storageLocation: normalizeStorageLocation(it?.storageLocation),
