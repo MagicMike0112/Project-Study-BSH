@@ -91,7 +91,7 @@ Constraints:
 `;
 
   const response = await client.chat.completions.create({
-    model: "gpt-4o-mini", // 使用较快模型
+    model: "gpt-4o-mini", 
     messages: [
       {
         role: "system",
@@ -125,71 +125,6 @@ Constraints:
   });
 }
 
-// ========= 分支 B：周报分析与建议 (Diet Analysis) =========
-// 🟢 新增功能：后端 AI 进行分类和分析
-async function handleDietAnalysis(body, res) {
-  const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
-  const studentMode = Boolean(body.studentMode);
-
-  // 如果这一周啥都没吃
-  if (consumedItems.length === 0) {
-    return res.status(200).json({
-      insight: "It seems you haven't logged any meals this week. Start cooking to get insights!",
-      suggestions: [],
-      category_breakdown: {}
-    });
-  }
-
-  const itemsStr = consumedItems.join(", ");
-
-  const prompt = `
-You are a smart nutrition assistant${studentMode ? " for a busy student on a budget" : ""}.
-User consumed these items this week: "${itemsStr}".
-
-Task 1: Categorize the items and count them based on these EXACT keys. Do not invent new keys.
-- "Fresh Produce" (Vegetables, Fruits, Herbs, Salad)
-- "Protein" (Meat, Fish, Eggs, Tofu, Beans, Lentils)
-- "Dairy" (Milk, Cheese, Yogurt, Butter)
-- "Carbs" (Rice, Bread, Pasta, Potato, Grains, Noodle)
-- "Snacks" (Chips, Chocolate, Nuts, Processed snacks, Sweets)
-- "Drinks" (Juice, Soda, Alcohol, Coffee, Tea)
-- "Other" (Spices, Oil, Sauces, anything else)
-
-Task 2: Provide a short, fun insight (max 2 sentences) about their diet balance. Be encouraging but honest.
-
-Task 3: Suggest 3-5 items to buy next week to improve their diet.
-${studentMode ? "Focus on cheap, shelf-stable, or easy-to-cook items." : "Focus on healthy, fresh produce."}
-
-Return ONLY JSON format:
-{
-  "category_breakdown": { "Fresh Produce": 3, "Protein": 2, ... },
-  "insight": "Your short analysis here.",
-  "suggestions": [
-    { "name": "Item Name", "category": "Category", "reason": "Why?" }
-  ]
-}
-`;
-
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "You are a precise JSON API. Always respond with valid JSON only." },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const raw = response.choices[0]?.message?.content ?? "{}";
-  try {
-    const data = JSON.parse(raw);
-    return res.status(200).json(data);
-  } catch (e) {
-    console.error("Diet analysis JSON parse error:", e);
-    return res.status(500).json({ error: "Failed to parse AI response" });
-  }
-}
-
-// ========= 辅助函数：菜谱生成 =========
 function clampInt(n, min, max, fallback) {
   const x = Number.parseInt(n, 10);
   if (!Number.isFinite(x)) return fallback;
@@ -217,7 +152,8 @@ function normalizeTools(tools) {
   return out;
 }
 
-// ========= 分支 C：生成菜谱 (Recipe Generation) =========
+// ========= 分支 B：生成菜谱 (Recipe Generation) =========
+// 支持 Student Mode, Servings, Oven Plan
 async function handleRecipeGeneration(body, res) {
   const ingredients = Array.isArray(body.ingredients) ? body.ingredients : [];
   const extraIngredients = Array.isArray(body.extraIngredients)
@@ -227,6 +163,7 @@ async function handleRecipeGeneration(body, res) {
   const specialRequest =
     typeof body.specialRequest === "string" ? body.specialRequest.trim() : "";
   
+  // 🟢 读取参数
   const studentMode = Boolean(body.studentMode);
   const servings = body.servings || 2; 
 
@@ -251,6 +188,7 @@ User did not specify extra constraints.
 Keep recipes generic but realistic for a European home kitchen.
 `;
 
+  // 🟢 学生模式指令
   const studentBlock = studentMode
     ? `
 *** STUDENT MODE ACTIVATED ***
@@ -315,7 +253,7 @@ No markdown, no extra text.
 `;
 
   const response = await client.chat.completions.create({
-    model: "gpt-4o-mini", 
+    model: "gpt-4o-mini",
     messages: [
       {
         role: "system",
@@ -395,6 +333,75 @@ No markdown, no extra text.
   return res.status(200).json({ recipes: cleaned });
 }
 
+// ========= 分支 C：周报分析与智能分类 (Diet Analysis) =========
+async function handleDietAnalysis(body, res) {
+  const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
+  const studentMode = Boolean(body.studentMode);
+
+  if (consumedItems.length === 0) {
+    return res.status(200).json({
+      insight: "It seems you haven't logged any meals this week. Start cooking to get AI insights!",
+      suggestions: [],
+      categorization: {} 
+    });
+  }
+
+  // 去重以节省 Token，但保留原始列表可能对频率分析有用（这里选择发去重版）
+  const uniqueItems = [...new Set(consumedItems)];
+  const itemsStr = uniqueItems.join(", ");
+
+  const prompt = `
+You are a playful nutrition assistant${studentMode ? " for a busy student on a budget" : ""}.
+The user has consumed the following items this week: "${itemsStr}".
+
+Your Tasks:
+1. Insight: Provide a short, fun, 1-2 sentence summary of their diet balance.
+2. Suggestions: Suggest 3-5 ingredients they should add to their shopping list to balance their diet next week.
+3. Categorization (CRITICAL): Map EACH item in the input list to EXACTLY ONE of these categories for a pie chart:
+   [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, Condiments, Other].
+   
+   Examples:
+   - "Banana" -> "Fruits"
+   - "Onion" -> "Veggies"
+   - "Tofu" -> "Protein"
+   - "Milk" -> "Dairy"
+   - "Rice" -> "Carbs"
+   - "Coke" -> "Drinks"
+
+Return ONLY JSON:
+{
+  "insight": "Your analysis here.",
+  "suggestions": [
+    { "name": "Broccoli", "category": "Veggies", "reason": "More fiber needed!" },
+    { "name": "Chicken", "category": "Protein", "reason": "Good protein source." }
+  ],
+  "categorization": {
+    "Banana": "Fruits",
+    "Onion": "Veggies",
+    "Milk": "Dairy"
+  }
+}
+`;
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: "You are a precise JSON API." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  try {
+    const data = JSON.parse(raw);
+    return res.status(200).json(data);
+  } catch (e) {
+    console.error("AI Parse Error", e);
+    return res.status(500).json({ error: "Failed to parse AI response" });
+  }
+}
+
 // ========= 主入口 (Main Handler) =========
 export default async function handler(req, res) {
   // ---- CORS ----
@@ -408,13 +415,12 @@ export default async function handler(req, res) {
   try {
     const body = await readBody(req);
 
-    // 🟢 路由逻辑：判断请求意图
-    // 1. Diet Analysis
+    // 🟢 路由分发
     if (body.action === 'analyze_diet') {
       return await handleDietAnalysis(body, res);
     }
     
-    // 2. Expiry Prediction
+    // 检查是否是保质期预测请求
     const hasExpiryPayload =
       typeof body?.name !== "undefined" &&
       typeof body?.location !== "undefined" &&
@@ -424,7 +430,7 @@ export default async function handler(req, res) {
       return await handleExpiryPrediction(body, res);
     }
 
-    // 3. Default: Recipe Generation
+    // 默认：生成菜谱
     return await handleRecipeGeneration(body, res);
   } catch (err) {
     console.error("API error:", err);
