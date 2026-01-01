@@ -91,7 +91,7 @@ Constraints:
 `;
 
   const response = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-4.1-mini", // 或 gpt-4o-mini
     messages: [
       {
         role: "system",
@@ -152,7 +152,7 @@ function normalizeTools(tools) {
   return out;
 }
 
-// ========= 分支 B：生成菜谱（+ 打通 oven：输出 ovenPlan） =========
+// ========= 分支 B：生成菜谱（支持 Servings + Student Mode） =========
 async function handleRecipeGeneration(body, res) {
   const ingredients = Array.isArray(body.ingredients) ? body.ingredients : [];
   const extraIngredients = Array.isArray(body.extraIngredients)
@@ -161,6 +161,10 @@ async function handleRecipeGeneration(body, res) {
 
   const specialRequest =
     typeof body.specialRequest === "string" ? body.specialRequest.trim() : "";
+  
+  // 🟢 1. 读取参数
+  const studentMode = Boolean(body.studentMode);
+  const servings = body.servings || 2; // 默认 2 人
 
   const allList = [...ingredients, ...extraIngredients];
   if (allList.length === 0) {
@@ -183,11 +187,29 @@ User did not specify extra constraints.
 Keep recipes generic but realistic for a European home kitchen.
 `;
 
+  // 🟢 2. 学生模式 Prompt
+  const studentBlock = studentMode
+    ? `
+*** STUDENT MODE ACTIVATED ***
+The user is likely a student with limited budget, time, and equipment.
+STRICT Rules for Student Mode:
+1. CHEAP: Prioritize budget-friendly ingredients.
+2. LAZY/FAST: Recipes should be very quick (under 20 mins preferred) or "dump and forget".
+3. MINIMAL TOOLS: Prefer Microwave, Kettle, or One-Pot/One-Pan recipes.
+4. SIMPLE: Maximum 3-5 main steps.
+5. FILLING: Ensure high satiety per euro.
+`
+    : "";
+
   const prompt = `
 You are a cooking assistant that helps people reduce food waste.
 
 Available ingredients (today's pantry):
 ${all}
+
+Cooking Context:
+- Target Servings: ${servings} people (Adjust quantities in description/steps conceptually).
+${studentBlock}
 
 ${preferenceBlock}
 
@@ -195,12 +217,12 @@ Your job:
 - Propose 3 different recipes.
 - You do NOT need to use all ingredients in every recipe.
 - Prioritize perishable/expiring ingredients in at least one recipe.
-- Keep recipes realistic and not too complex.
+- Keep recipes realistic.
 
 IMPORTANT UI requirement:
 - We show two separate pills in the app:
   1) timePill: time only (e.g. "25 min")
-  2) toolPill: tools only (e.g. "1 pan", "Oven", "Oven + pan")
+  2) toolPill: tools only (e.g. "1 pan", "Oven", "Oven + pan", "Microwave")
 
 Oven integration requirement:
 - If a recipe needs an oven, set ovenPlan.required=true and provide:
@@ -220,7 +242,7 @@ For EACH recipe return fields:
 - expiringCount (integer, rough estimate of expiring ingredients used)
 - ingredients (string[] only what is actually used in THIS recipe)
 - steps (string[] 4–6 concise steps; if ovenPlan.required=true, include a step to preheat to tempC)
-- description (string 1–2 sentences)
+- description (string 1–2 sentences, mentioning it serves ${servings})
 
 Return ONLY JSON:
 {
@@ -230,7 +252,7 @@ No markdown, no extra text.
 `;
 
   const response = await client.chat.completions.create({
-    model: "gpt-4.1-mini",
+    model: "gpt-4.1-mini", // 如果没有权限，请改回 gpt-4o-mini 或 gpt-3.5-turbo
     messages: [
       {
         role: "system",
@@ -252,14 +274,14 @@ No markdown, no extra text.
 
   const recipes = Array.isArray(data.recipes) ? data.recipes : [];
 
-  // ---- 轻度清洗：确保 ovenPlan / pills / tools 可用，避免前端炸 ----
+  // ---- 清洗数据 ----
   const cleaned = recipes.map((r, idx) => {
     const m = (r && typeof r === "object") ? r : {};
 
     const id = String(m.id || `r${idx + 1}`);
     const title = String(m.title || "Untitled");
 
-    const timePill = String(m.timePill || m.timeLabel || "20 min"); // 兼容旧字段
+    const timePill = String(m.timePill || m.timeLabel || "20 min"); 
     const toolPill = String(m.toolPill || "1 pan");
 
     const tools = normalizeTools(m.tools);
@@ -267,7 +289,6 @@ No markdown, no extra text.
     const ovenPlanIn = (m.ovenPlan && typeof m.ovenPlan === "object") ? m.ovenPlan : {};
     const required = Boolean(ovenPlanIn.required);
 
-    // 如果 AI 说 required=true 但 tools 里没 oven，补上
     const tools2 = required && !tools.includes("oven") ? ["oven", ...tools] : tools;
 
     const tempC = required ? clampInt(ovenPlanIn.tempC, 60, 260, 200) : null;
@@ -311,6 +332,62 @@ No markdown, no extra text.
   return res.status(200).json({ recipes: cleaned });
 }
 
+// ========= 分支 C：周报分析与建议 (新增) =========
+async function handleDietAnalysis(body, res) {
+  const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
+  const studentMode = Boolean(body.studentMode);
+
+  // 如果这一周啥都没吃
+  if (consumedItems.length === 0) {
+    return res.status(200).json({
+      insight: "It seems you haven't logged any meals this week. Start cooking to get insights!",
+      suggestions: []
+    });
+  }
+
+  const itemsStr = consumedItems.join(", ");
+
+  const prompt = `
+You are a helpful kitchen assistant${studentMode ? " for a busy student on a budget" : ""}.
+User consumed these items this week: "${itemsStr}".
+
+Your Task:
+1. Insight: Give a short, fun, 1-sentence summary of their diet.
+2. Suggestions: Suggest 3-5 items to add to the shopping list. 
+   
+Logic for suggestions:
+- **Restock Staples**: If they consumed staples (like milk, eggs, rice, oil), suggest buying them again.
+- **Balance Diet**: If they missed a food group (e.g. no veggies), suggest cheap & easy options.
+- ${studentMode ? "Focus on budget-friendly and shelf-stable items." : "Focus on fresh and healthy items."}
+
+Return ONLY JSON:
+{
+  "insight": "Your short analysis here.",
+  "suggestions": [
+    { "name": "Eggs", "category": "dairy", "reason": "You used a lot this week, time to restock!" },
+    { "name": "Spinach", "category": "vegetable", "reason": "Add some greens to your diet." }
+  ]
+}
+`;
+
+  const response = await client.chat.completions.create({
+    model: "gpt-4.1-mini", // 或 gpt-4o-mini
+    messages: [
+      { role: "system", content: "You are a precise JSON API." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const raw = response.choices[0]?.message?.content ?? "{}";
+  try {
+    const data = JSON.parse(raw);
+    return res.status(200).json(data);
+  } catch (e) {
+    return res.status(500).json({ error: "Failed to parse AI response" });
+  }
+}
+
 // ========= 主入口 =========
 export default async function handler(req, res) {
   // ---- CORS ----
@@ -324,6 +401,12 @@ export default async function handler(req, res) {
   try {
     const body = await readBody(req);
 
+    // 🟢 1. 优先检查 action 是否为周报分析
+    if (body.action === 'analyze_diet') {
+      return await handleDietAnalysis(body, res);
+    }
+
+    // 🟢 2. 检查是否为保质期预测
     const hasExpiryPayload =
       typeof body?.name !== "undefined" &&
       typeof body?.location !== "undefined" &&
@@ -333,6 +416,7 @@ export default async function handler(req, res) {
       return await handleExpiryPrediction(body, res);
     }
 
+    // 🟢 3. 默认为生成菜谱
     return await handleRecipeGeneration(body, res);
   } catch (err) {
     console.error("API error:", err);
