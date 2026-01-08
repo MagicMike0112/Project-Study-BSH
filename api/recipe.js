@@ -28,7 +28,7 @@ async function readBody(req) {
   });
 }
 
-// ========= 分支 A：保质期预测 (Expiry Prediction) =========
+// ========= 分支 A：保质期预测 (Expiry Prediction - 优化版) =========
 async function handleExpiryPrediction(body, res) {
   const name = (body.name || "").toString().trim();
   const location = (body.location || "").toString().trim();
@@ -60,34 +60,38 @@ async function handleExpiryPrediction(body, res) {
     }
   }
 
+  // 🟢 优化后的 Prompt：增加上下文消歧义和安全原则
   const prompt = `
-You are a food shelf-life safety assistant.
-Your task is to ESTIMATE a safe remaining shelf life in DAYS for a food item,
-based on its product name, storage location, purchase date, and optional open date.
+You are a strict food safety assistant.
+Your task is to ESTIMATE a safe remaining shelf life in DAYS for a food item.
 
-User input:
-- product name: "${name}"
-- storage location: "${location}"
-- purchase date: "${purchasedDate}"
-- open date (may be empty): "${openDate || "N/A"}"
+User Input:
+- Product Name: "${name}"
+- Storage Location: "${location}"
+- Purchase Date: "${purchasedDate}"
+- Open Date: "${openDate || "N/A"}"
 
-Reference date rules:
-- If an OPEN DATE is provided and valid, you MUST use the OPEN DATE as the reference date.
-- Otherwise, use the PURCHASE DATE as the reference date.
-- In this case, the reference date is the ${baseDateLabel}.
+CRITICAL LOGIC FOR ACCURACY:
+1. **Disambiguation via Location (Context Awareness)**:
+   Many food names are ambiguous. You MUST check the 'Storage Location' to decide what the item is.
+   - Example: "Paprika" in **Fridge** = Fresh Bell Pepper (Max 1-2 weeks).
+   - Example: "Paprika" in **Pantry** = Dried Spice Powder (1-2 years).
+   - Example: "Milk" in **Fridge** = Fresh Milk (1 week). "Milk" in **Pantry** = UHT/Powder (Months).
 
-Assumptions:
-- Ordinary household in Europe, normal domestic fridge/freezer.
-- Opened items shorten shelf life significantly.
-- Be conservative. When unsure, choose a shorter, safer time.
+2. **Safety First Principle**:
+   - If the product could be either fresh (perishable) or dried (stable), and the location is unclear or ambiguous, **ALWAYS assume it is the FRESH/PERISHABLE version**.
+   - It is better to predict a shorter date (safety) than a longer one (risk of food poisoning).
 
-Output format (IMPORTANT):
-Return ONLY a JSON object, with NO extra text:
-{ "days": <positive integer> }
+3. **Fresh Produce Rules**:
+   - Fresh vegetables/fruits in a fridge typically last **3 to 14 days**. NEVER predict months for fresh produce unless frozen.
 
+4. **Opened Status**:
+   - If 'Open Date' is provided, ignore the standard shelf life and use the "after opening" limit (e.g., jarred sauce lasts 3-5 days after opening, even if expiry is next year).
+
+Output format:
+Return ONLY a JSON object: { "days": <integer> }
 Constraints:
-- "days" is counted FROM the reference date.
-- NEVER exceed 365 days.
+- "days" is counted FROM the ${baseDateLabel}.
 `;
 
   const response = await client.chat.completions.create({
@@ -112,13 +116,15 @@ Constraints:
   }
 
   let days = Number.parseInt(data.days, 10);
-  if (!Number.isFinite(days) || days <= 0) days = 7;
-  if (days > 365) days = 365;
+  if (!Number.isFinite(days) || days <= 0) days = 7; // 默认保底
+  // 移除强制的 365 天上限，因为如果真的是干货（如判定为调料），确实可能超过一年，但在 Prompt 里已经做了鲜货的限制。
+  // 仍然保留一个合理的上限防止数据溢出
+  if (days > 730) days = 730; 
 
-  const predicted = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+  const predictedExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
 
   return res.status(200).json({
-    predictedExpiry: predicted.toISOString(),
+    predictedExpiry: predictedExpiry.toISOString(),
     days,
     referenceDate: baseDate.toISOString(),
     referenceType: baseDateLabel,
