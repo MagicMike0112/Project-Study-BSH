@@ -1,63 +1,65 @@
 // lib/main.dart
-import 'package:flutter/material.dart' as flutter;
+import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/services.dart'; 
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart'; // 🟢 新增：状态管理
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'repositories/inventory_repository.dart'; // 🟢 新增：引入仓库
+import 'repositories/inventory_repository.dart';
 import 'screens/auth_root.dart';
 import 'services/notification_service.dart';
+// 🟢 1. 引入长辈模式主页
+import 'screens/senior_home.dart';
 
+// 🎨 标准配色 (BSH Blue)
 class BshColors {
-  static const primary = flutter.Color(0xFF004A77); // BSH Blue
-  static const secondary = flutter.Color(0xFF50738A);
-  static const surface = flutter.Color(0xFFF6F8FA); // Light Grey-Blue bg
-  static const eco = flutter.Color(0xFF4B8F6F);
-  static const warning = flutter.Color(0xFFE0A100);
-  static const danger = flutter.Color(0xFFB93A3A);
-  static const text = flutter.Color(0xFF1A1A1A);
+  static const primary = Color(0xFF004A77);
+  static const secondary = Color(0xFF50738A);
+  static const surface = Color(0xFFF8F9FA);
+  static const error = Color(0xFFBA1A1A);
+  static const text = Color(0xFF191C1E);
 }
 
-Future<void> main() async {
-  flutter.WidgetsFlutterBinding.ensureInitialized();
+// 👵 长辈模式配色
+class SeniorColors {
+  static const primary = Color(0xFF004A77);
+  static const surface = Color(0xFFFFFFFF);
+  static const text = Color(0xFF000000);
+}
 
-  // 1. 设置沉浸式状态栏 (透明背景，黑色图标)
+const double kDefaultRadius = 16.0;
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: flutter.Colors.transparent,
-    statusBarIconBrightness: Brightness.dark, // Android
-    statusBarBrightness: Brightness.light, // iOS
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.dark,
+    statusBarBrightness: Brightness.light,
   ));
 
-  // 2. 锁定竖屏
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
 
-  // 3. Supabase 初始化
   await Supabase.initialize(
     url: 'https://avsyxlgfqnrknvvbjxul.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3l4bGdmcW5ya252dmJqeHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTk2MjcsImV4cCI6MjA4MDkzNTYyN30.M7FfDZzjYvCt0hSz0W508oSGmzw7tcZ9E5vGyQlnCKY',
   );
 
-  // 4. 本地通知初始化
   if (!kIsWeb) {
     try {
       await NotificationService().init();
     } catch (e) {
-      flutter.debugPrint('Notification init failed: $e');
+      debugPrint('Notification init failed: $e');
     }
   }
 
-  // 🟢 5. 初始化库存仓库 (Offline First 核心步骤)
-  // 这行代码会先读取本地 SharedPreferences 缓存，确保界面秒开，
-  // 然后在后台静默启动 Supabase 网络同步。
   final inventoryRepo = await InventoryRepository.create();
 
-  // 🟢 6. 注入 Provider 并启动 App
-  flutter.runApp(
+  runApp(
     ChangeNotifierProvider.value(
       value: inventoryRepo,
       child: const SmartFoodApp(),
@@ -65,53 +67,120 @@ Future<void> main() async {
   );
 }
 
-class SmartFoodApp extends flutter.StatelessWidget {
+class SmartFoodApp extends StatelessWidget {
   const SmartFoodApp({super.key});
 
   @override
-  flutter.Widget build(flutter.BuildContext context) {
-    return flutter.MaterialApp(
-      title: 'Smart Food Home',
-      debugShowCheckedModeBanner: false,
-      
-      // 统一的主题配置
-      theme: flutter.ThemeData(
-        useMaterial3: true,
-        colorSchemeSeed: BshColors.primary,
-        scaffoldBackgroundColor: BshColors.surface,
-        
-        // 字体配置
-        textTheme: GoogleFonts.interTextTheme().apply(
-          bodyColor: BshColors.text,
-          displayColor: BshColors.text,
-        ),
-        
-        // AppBar 默认样式
-        appBarTheme: const flutter.AppBarTheme(
-          backgroundColor: BshColors.surface, 
-          elevation: 0,
-          scrolledUnderElevation: 0, 
-          centerTitle: false, 
-          titleTextStyle: flutter.TextStyle(
-            color: BshColors.text,
-            fontSize: 22,
-            fontWeight: flutter.FontWeight.w800, 
-            letterSpacing: -0.5,
-          ),
-          iconTheme: flutter.IconThemeData(color: BshColors.text),
-        ),
+  Widget build(BuildContext context) {
+    final repo = Provider.of<InventoryRepository>(context);
+    final isSenior = repo.isSeniorMode;
+    
+    final baseTextTheme = GoogleFonts.interTextTheme(Theme.of(context).textTheme);
 
-        // 按钮默认样式
-        filledButtonTheme: flutter.FilledButtonThemeData(
-          style: flutter.FilledButton.styleFrom(
-            shape: flutter.RoundedRectangleBorder(
-              borderRadius: flutter.BorderRadius.circular(16),
-            ),
-          ),
+    // === 标准主题 ===
+    final standardTheme = ThemeData(
+      brightness: Brightness.light,
+      primaryColor: BshColors.primary,
+      scaffoldBackgroundColor: BshColors.surface,
+      colorScheme: ColorScheme.fromSwatch(
+        primarySwatch: Colors.blue,
+        accentColor: BshColors.secondary,
+        backgroundColor: BshColors.surface,
+        errorColor: BshColors.error,
+      ).copyWith(
+        secondary: BshColors.secondary,
+      ),
+
+      textTheme: baseTextTheme.copyWith(
+        displayLarge: baseTextTheme.displayLarge?.copyWith(fontWeight: FontWeight.w800, color: BshColors.text),
+        headlineMedium: baseTextTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: BshColors.text),
+        titleLarge: baseTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: BshColors.text),
+        bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: BshColors.text),
+      ),
+
+      appBarTheme: const AppBarTheme(
+        backgroundColor: BshColors.surface,
+        elevation: 0,
+        centerTitle: false,
+        iconTheme: IconThemeData(color: BshColors.text),
+        titleTextStyle: TextStyle(color: BshColors.text, fontSize: 22, fontWeight: FontWeight.w700),
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kDefaultRadius)),
         ),
       ),
       
-      home: const AuthRoot(),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide.none),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: const BorderSide(color: BshColors.primary, width: 2)),
+      ),
+    );
+
+    // === 长辈主题 ===
+    final seniorTheme = ThemeData(
+      brightness: Brightness.light,
+      primaryColor: SeniorColors.primary,
+      scaffoldBackgroundColor: SeniorColors.surface,
+      
+      colorScheme: ColorScheme.fromSwatch(
+        primarySwatch: Colors.blue,
+        backgroundColor: SeniorColors.surface,
+      ).copyWith(
+        secondary: SeniorColors.primary,
+        onSurface: SeniorColors.text,
+      ),
+
+      textTheme: baseTextTheme.copyWith(
+        displayLarge: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: SeniorColors.text),
+        headlineMedium: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: SeniorColors.text),
+        titleLarge: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: SeniorColors.text),
+        bodyLarge: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: SeniorColors.text),
+        bodyMedium: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.black87),
+        labelLarge: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+      ),
+
+      appBarTheme: const AppBarTheme(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        centerTitle: false,
+        iconTheme: IconThemeData(color: Colors.black, size: 32),
+        titleTextStyle: TextStyle(color: Colors.black, fontSize: 26, fontWeight: FontWeight.w900),
+      ),
+
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+          backgroundColor: SeniorColors.primary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+        ),
+      ),
+
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding: const EdgeInsets.all(24),
+        labelStyle: const TextStyle(fontSize: 22, color: Colors.black),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black, width: 2)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black, width: 2)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: SeniorColors.primary, width: 3)),
+      ),
+    );
+
+    return MaterialApp(
+      title: 'Smart Food Home',
+      debugShowCheckedModeBanner: false,
+      theme: isSenior ? seniorTheme : standardTheme,
+      // 🟢 2. 路由分叉：长辈模式进入专用主页，否则进入普通主页
+      home: isSenior ? const SeniorHome() : const AuthRoot(),
     );
   }
 }

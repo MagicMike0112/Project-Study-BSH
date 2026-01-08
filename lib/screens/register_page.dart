@@ -12,7 +12,7 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
 
-  // 🟢 新增：Name 控制器
+  // 控制器
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _pwdCtrl = TextEditingController();
@@ -45,7 +45,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   void dispose() {
-    _nameCtrl.dispose(); // 别忘了销毁
+    _nameCtrl.dispose();
     _emailCtrl.dispose();
     _pwdCtrl.dispose();
     _pwd2Ctrl.dispose();
@@ -54,11 +54,17 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
+    // 隐藏键盘，避免遮挡 SnackBar 或 Loading
+    FocusScope.of(context).unfocus();
+
     if (!_formKey.currentState!.validate()) return;
 
     if (_pwdCtrl.text != _pwd2Ctrl.text) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match.')),
+        const SnackBar(
+          content: Text('Passwords do not match.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -69,13 +75,14 @@ class _RegisterPageState extends State<RegisterPage> {
       final email = _emailCtrl.text.trim();
       final pwd = _pwdCtrl.text;
 
-      // 使用 data 参数传递用户信息
+      // Supabase 注册
       await _supabase.auth.signUp(
         email: email,
         password: pwd,
-        emailRedirectTo: 'https://bshpwa.vercel.app',
+        // 如果是 Web PWA，这个链接没问题；如果是 App，建议配置 Deep Link
+        emailRedirectTo: 'https://bshpwa.vercel.app', 
         data: {
-          'display_name': name, // 🟢 这里的名字现在是用户自己填的了
+          'display_name': name,
           'gender': _gender,
           'age_group': _ageGroup,
           'country': _countryCtrl.text.trim(),
@@ -86,21 +93,28 @@ class _RegisterPageState extends State<RegisterPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sign-up successful. Please confirm your email via the link we sent.',
+            'Sign-up successful! Please check your email to confirm.',
           ),
+          backgroundColor: Colors.green,
         ),
       );
 
-      Navigator.pop(context, true);
+      Navigator.pop(context, true); // 返回 true 表示注册成功
     } on AuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
+        SnackBar(
+          content: Text(e.message),
+          backgroundColor: Colors.redAccent,
+        ),
       );
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unexpected error, please try again.')),
+        const SnackBar(
+          content: Text('Unexpected error, please try again.'),
+          backgroundColor: Colors.red,
+        ),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -112,6 +126,8 @@ class _RegisterPageState extends State<RegisterPage> {
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      // 🟢 确保键盘弹出时页面可以滚动
+      resizeToAvoidBottomInset: true,
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -127,7 +143,7 @@ class _RegisterPageState extends State<RegisterPage> {
         child: SafeArea(
           child: Stack(
             children: [
-              // 背景光晕
+              // --- 背景光晕特效 ---
               Positioned(
                 left: -80,
                 top: -60,
@@ -145,23 +161,21 @@ class _RegisterPageState extends State<RegisterPage> {
                 ),
               ),
 
-              // 顶部返回按钮
+              // --- 顶部返回按钮 ---
               Positioned(
                 top: 0,
                 left: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
-                    child: IconButton(
-                      tooltip: 'Back to Login',
-                      onPressed: _loading ? null : () => Navigator.pop(context),
-                      icon: const Icon(Icons.arrow_back),
-                    ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
+                  child: IconButton(
+                    tooltip: 'Back to Login',
+                    onPressed: _loading ? null : () => Navigator.pop(context),
+                    icon: const Icon(Icons.arrow_back),
                   ),
                 ),
               ),
 
+              // --- 主内容区域 ---
               Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
@@ -186,225 +200,230 @@ class _RegisterPageState extends State<RegisterPage> {
                         padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
                         child: Form(
                           key: _formKey,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Header
-                              const Text(
-                                'Create Account',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.5,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Join us to manage your food smarter.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
-                                  height: 1.4,
-                                ),
-                              ),
-                              const SizedBox(height: 24),
-
-                              // 🟢 1. Name Input Field (新增)
-                              _TechField(
-                                label: 'Name',
-                                hint: 'How should we call you?',
-                                icon: Icons.person_outline_rounded,
-                                controller: _nameCtrl,
-                                keyboardType: TextInputType.name,
-                                enabled: !_loading,
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return 'Please enter your name';
-                                  }
-                                  if (v.trim().length < 2) {
-                                    return 'Name is too short';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Email
-                              _TechField(
-                                label: 'Email',
-                                hint: 'name@example.com',
-                                icon: Icons.mail_outline_rounded,
-                                controller: _emailCtrl,
-                                keyboardType: TextInputType.emailAddress,
-                                enabled: !_loading,
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) {
-                                    return 'Please enter your email';
-                                  }
-                                  if (!v.contains('@')) {
-                                    return 'Email looks invalid';
-                                  }
-                                  return null;
-                                },
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Password
-                              _TechField(
-                                label: 'Password',
-                                hint: 'Min 6 chars',
-                                icon: Icons.lock_outline_rounded,
-                                controller: _pwdCtrl,
-                                enabled: !_loading,
-                                obscureText: _obscure1,
-                                suffix: IconButton(
-                                  icon: Icon(
-                                    _obscure1 ? Icons.visibility_off : Icons.visibility,
-                                    color: Colors.grey[600],
-                                    size: 20,
+                          child: AutofillGroup( // 🟢 启用表单自动填充组
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                // Header
+                                const Text(
+                                  'Create Account',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w900,
+                                    letterSpacing: -0.5,
+                                    color: Colors.black87,
                                   ),
-                                  onPressed: () => setState(() => _obscure1 = !_obscure1),
                                 ),
-                                validator: (v) => (v == null || v.length < 6)
-                                    ? 'At least 6 characters'
-                                    : null,
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Repeat Password
-                              _TechField(
-                                label: 'Repeat Password',
-                                hint: 'Confirm password',
-                                icon: Icons.lock_reset_rounded,
-                                controller: _pwd2Ctrl,
-                                enabled: !_loading,
-                                obscureText: _obscure2,
-                                suffix: IconButton(
-                                  icon: Icon(
-                                    _obscure2 ? Icons.visibility_off : Icons.visibility,
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Join us to manage your food smarter.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
                                     color: Colors.grey[600],
-                                    size: 20,
+                                    height: 1.4,
                                   ),
-                                  onPressed: () => setState(() => _obscure2 = !_obscure2),
                                 ),
-                                validator: (v) =>
-                                    (v != _pwdCtrl.text) ? 'Passwords do not match' : null,
-                              ),
-                              const SizedBox(height: 20),
+                                const SizedBox(height: 24),
 
-                              // Profile Details Section
-                              Row(
-                                children: [
-                                  Expanded(child: Divider(color: Colors.grey[300])),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                                    child: Text(
-                                      'PROFILE DETAILS',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.grey[500],
-                                        letterSpacing: 0.5,
+                                // 🟢 Name Input
+                                _TechField(
+                                  label: 'Name',
+                                  hint: 'How should we call you?',
+                                  icon: Icons.person_outline_rounded,
+                                  controller: _nameCtrl,
+                                  keyboardType: TextInputType.name,
+                                  autofillHints: const [AutofillHints.name], // 🟢 自动填充
+                                  textInputAction: TextInputAction.next,     // 🟢 下一项
+                                  enabled: !_loading,
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) return 'Please enter your name';
+                                    if (v.trim().length < 2) return 'Name is too short';
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+
+                                // 🟢 Email Input
+                                _TechField(
+                                  label: 'Email',
+                                  hint: 'name@example.com',
+                                  icon: Icons.mail_outline_rounded,
+                                  controller: _emailCtrl,
+                                  keyboardType: TextInputType.emailAddress,
+                                  autofillHints: const [AutofillHints.email],
+                                  textInputAction: TextInputAction.next,
+                                  enabled: !_loading,
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) return 'Please enter your email';
+                                    if (!v.contains('@')) return 'Email looks invalid';
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+
+                                // 🟢 Password Input
+                                _TechField(
+                                  label: 'Password',
+                                  hint: 'Min 6 chars',
+                                  icon: Icons.lock_outline_rounded,
+                                  controller: _pwdCtrl,
+                                  enabled: !_loading,
+                                  obscureText: _obscure1,
+                                  autofillHints: const [AutofillHints.newPassword],
+                                  textInputAction: TextInputAction.next,
+                                  suffix: IconButton(
+                                    icon: Icon(
+                                      _obscure1 ? Icons.visibility_off : Icons.visibility,
+                                      color: Colors.grey[600],
+                                      size: 20,
+                                    ),
+                                    onPressed: () => setState(() => _obscure1 = !_obscure1),
+                                  ),
+                                  validator: (v) => (v == null || v.length < 6)
+                                      ? 'At least 6 characters'
+                                      : null,
+                                ),
+                                const SizedBox(height: 12),
+
+                                // 🟢 Repeat Password
+                                _TechField(
+                                  label: 'Repeat Password',
+                                  hint: 'Confirm password',
+                                  icon: Icons.lock_reset_rounded,
+                                  controller: _pwd2Ctrl,
+                                  enabled: !_loading,
+                                  obscureText: _obscure2,
+                                  autofillHints: const [AutofillHints.newPassword],
+                                  textInputAction: TextInputAction.done, // 🟢 最后一项输入
+                                  suffix: IconButton(
+                                    icon: Icon(
+                                      _obscure2 ? Icons.visibility_off : Icons.visibility,
+                                      color: Colors.grey[600],
+                                      size: 20,
+                                    ),
+                                    onPressed: () => setState(() => _obscure2 = !_obscure2),
+                                  ),
+                                  validator: (v) =>
+                                      (v != _pwdCtrl.text) ? 'Passwords do not match' : null,
+                                ),
+                                const SizedBox(height: 20),
+
+                                // Divider
+                                Row(
+                                  children: [
+                                    Expanded(child: Divider(color: Colors.grey[300])),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                                      child: Text(
+                                        'PROFILE DETAILS',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.grey[500],
+                                          letterSpacing: 0.5,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                  Expanded(child: Divider(color: Colors.grey[300])),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
+                                    Expanded(child: Divider(color: Colors.grey[300])),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
 
-                              // Gender
-                              _TechDropdown(
-                                label: 'Gender',
-                                icon: Icons.wc_rounded,
-                                value: _gender,
-                                items: _genders,
-                                enabled: !_loading,
-                                onChanged: (v) => setState(() => _gender = v),
-                                validator: (v) => v == null ? 'Required' : null,
-                              ),
-                              const SizedBox(height: 12),
+                                // Gender Dropdown
+                                _TechDropdown(
+                                  label: 'Gender',
+                                  icon: Icons.wc_rounded,
+                                  value: _gender,
+                                  items: _genders,
+                                  enabled: !_loading,
+                                  onChanged: (v) => setState(() => _gender = v),
+                                  validator: (v) => v == null ? 'Required' : null,
+                                ),
+                                const SizedBox(height: 12),
 
-                              // Age Group
-                              _TechDropdown(
-                                label: 'Age Group',
-                                icon: Icons.cake_rounded,
-                                value: _ageGroup,
-                                items: _ageGroups,
-                                enabled: !_loading,
-                                onChanged: (v) => setState(() => _ageGroup = v),
-                                validator: (v) => v == null ? 'Required' : null,
-                              ),
-                              const SizedBox(height: 12),
+                                // Age Group Dropdown
+                                _TechDropdown(
+                                  label: 'Age Group',
+                                  icon: Icons.cake_rounded,
+                                  value: _ageGroup,
+                                  items: _ageGroups,
+                                  enabled: !_loading,
+                                  onChanged: (v) => setState(() => _ageGroup = v),
+                                  validator: (v) => v == null ? 'Required' : null,
+                                ),
+                                const SizedBox(height: 12),
 
-                              // Country
-                              _TechField(
-                                label: 'Country',
-                                hint: 'e.g. Germany',
-                                icon: Icons.public_rounded,
-                                controller: _countryCtrl,
-                                enabled: !_loading,
-                                validator: (v) => (v == null || v.trim().isEmpty)
-                                    ? 'Please tell us your country'
-                                    : null,
-                              ),
-                              const SizedBox(height: 32),
+                                // 🟢 Country Input
+                                _TechField(
+                                  label: 'Country',
+                                  hint: 'e.g. Germany',
+                                  icon: Icons.public_rounded,
+                                  controller: _countryCtrl,
+                                  textInputAction: TextInputAction.done,
+                                  enabled: !_loading,
+                                  // 这里也可以加上 AutofillHints.countryName，但 Flutter 某些版本支持有限
+                                  onFieldSubmitted: (_) => _register(), // 🟢 填完直接提交
+                                  validator: (v) => (v == null || v.trim().isEmpty)
+                                      ? 'Please tell us your country'
+                                      : null,
+                                ),
+                                const SizedBox(height: 32),
 
-                              // Sign Up Button
-                              SizedBox(
-                                height: 50,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(16),
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        scheme.primary,
-                                        scheme.primary.withOpacity(0.8),
+                                // Sign Up Button
+                                SizedBox(
+                                  height: 50,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(16),
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          scheme.primary,
+                                          scheme.primary.withOpacity(0.8),
+                                        ],
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: scheme.primary.withOpacity(0.25),
+                                          blurRadius: 16,
+                                          offset: const Offset(0, 8),
+                                        ),
                                       ],
                                     ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: scheme.primary.withOpacity(0.25),
-                                        blurRadius: 16,
-                                        offset: const Offset(0, 8),
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.transparent,
+                                        shadowColor: Colors.transparent,
+                                        foregroundColor: Colors.white,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(16),
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                  child: ElevatedButton(
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.transparent,
-                                      shadowColor: Colors.transparent,
-                                      foregroundColor: Colors.white,
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(16),
-                                      ),
+                                      onPressed: _loading ? null : _register,
+                                      child: _loading
+                                          ? const SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: CircularProgressIndicator(
+                                                color: Colors.white,
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                          : const Text(
+                                              'Create Account',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                fontSize: 16,
+                                                letterSpacing: 0.5,
+                                              ),
+                                            ),
                                     ),
-                                    onPressed: _loading ? null : _register,
-                                    child: _loading
-                                        ? const SizedBox(
-                                            height: 20,
-                                            width: 20,
-                                            child: CircularProgressIndicator(
-                                              color: Colors.white,
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Text(
-                                            'Create Account',
-                                            style: TextStyle(
-                                              fontWeight: FontWeight.w800,
-                                              fontSize: 16,
-                                              letterSpacing: 0.5,
-                                            ),
-                                          ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -421,7 +440,7 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 // --------------------------------------------------------
-// 复用组件 (TechField, TechDropdown, GlowOrb)
+// 复用组件 (已增强 Autofill 和 InputAction 支持)
 // --------------------------------------------------------
 
 class _TechField extends StatelessWidget {
@@ -434,6 +453,10 @@ class _TechField extends StatelessWidget {
   final bool obscureText;
   final String? Function(String?)? validator;
   final Widget? suffix;
+  // 🟢 新增参数
+  final Iterable<String>? autofillHints;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onFieldSubmitted;
 
   const _TechField({
     required this.label,
@@ -445,6 +468,9 @@ class _TechField extends StatelessWidget {
     this.obscureText = false,
     this.validator,
     this.suffix,
+    this.autofillHints,
+    this.textInputAction,
+    this.onFieldSubmitted,
   });
 
   @override
@@ -457,6 +483,11 @@ class _TechField extends StatelessWidget {
       enabled: enabled,
       obscureText: obscureText,
       validator: validator,
+      // 🟢 关键优化配置
+      autofillHints: autofillHints,
+      textInputAction: textInputAction,
+      onFieldSubmitted: onFieldSubmitted,
+      
       style: const TextStyle(fontSize: 15),
       decoration: InputDecoration(
         labelText: label,

@@ -34,15 +34,20 @@ class AddFoodPage extends StatefulWidget {
 }
 
 class _AddFoodPageState extends State<AddFoodPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  
   late TabController _tabController;
+
+  // 🟢 动画控制器 (语音波纹)
+  late AnimationController _rippleController;
+  late Animation<double> _rippleAnimation;
 
   // 表单字段
   final _formKey = GlobalKey<FormState>();
   late String _name;
   late double _qty;
   late String _unit;
-  double? _minQty; // 🟢 新增：最低库存
+  double? _minQty;
   late StorageLocation _location;
 
   // 日期字段
@@ -63,7 +68,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isProcessing = false;
   bool _isListening = false;
-  String _voiceHint = "Tap the mic to start.";
+  String _voiceHint = "Tap mic to start";
   final TextEditingController _voiceController = TextEditingController();
 
   // 扫描模式
@@ -84,11 +89,28 @@ class _AddFoodPageState extends State<AddFoodPage>
       initialIndex: widget.itemToEdit != null ? 0 : widget.initialTab,
     );
 
+    // 🟢 初始化呼吸动画
+    _rippleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _rippleAnimation = Tween<double>(begin: 1.0, end: 1.4).animate(
+      CurvedAnimation(parent: _rippleController, curve: Curves.easeInOut),
+    );
+    
+    _rippleController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        _rippleController.reverse();
+      } else if (status == AnimationStatus.dismissed) {
+        _rippleController.forward();
+      }
+    });
+
     final item = widget.itemToEdit;
     _name = item?.name ?? '';
     _qty = item?.quantity ?? 1.0;
     _unit = item?.unit ?? 'pcs';
-    _minQty = item?.minQuantity; // 🟢 初始化读取
+    _minQty = item?.minQuantity;
     _location = item?.location ?? StorageLocation.fridge;
 
     const allowedUnits = [
@@ -109,6 +131,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   @override
   void dispose() {
     _tabController.dispose();
+    _rippleController.dispose();
     _voiceController.dispose();
     _speech.stop();
     super.dispose();
@@ -158,7 +181,6 @@ class _AddFoodPageState extends State<AddFoodPage>
     if (picked != null) onPicked(picked);
   }
 
-  // 重置预测状态
   void _resetPrediction() {
     if (_predictedExpiryFromAi != null) {
       setState(() {
@@ -187,13 +209,12 @@ class _AddFoodPageState extends State<AddFoodPage>
     final DateTime? effectiveExpiry = _bestBefore ?? _expiry;
 
     final newItem = FoodItem(
-      // 确保这里传入了 ID
       id: widget.itemToEdit?.id ?? const Uuid().v4(),
       name: _name,
       location: _location,
       quantity: _qty,
       unit: _unit,
-      minQuantity: _minQty, // 🟢 保存 Min Stock
+      minQuantity: _minQty,
       purchasedDate: _purchased,
       openDate: _openDate,
       bestBeforeDate: _bestBefore,
@@ -210,7 +231,8 @@ class _AddFoodPageState extends State<AddFoodPage>
     if (mounted) Navigator.pop(context);
   }
 
-  Future<void> _runIngredientAi(String text, {required String source}) async {
+  // 🟢 核心修改：智能语音分析 (支持单品和多品)
+  Future<void> _processVoiceInputWithAi(String text) async {
     final trimmed = text.trim();
     if (trimmed.length < 2) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -222,11 +244,17 @@ class _AddFoodPageState extends State<AddFoodPage>
     setState(() => _isProcessing = true);
 
     try {
+      // 提示：后端需要能处理自然语言列表。
+      // 这里调用一个假设的智能接口，如果返回 items 数组则为多品，否则为单品
       final uri = Uri.parse('$kBackendBaseUrl/api/parse-ingredient');
+      
       final resp = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'text': trimmed}),
+        body: jsonEncode({
+          'text': trimmed,
+          'expectList': true // 🟢 告诉后端尝试解析列表
+        }),
       );
 
       if (resp.statusCode != 200) {
@@ -234,49 +262,106 @@ class _AddFoodPageState extends State<AddFoodPage>
       }
 
       final json = jsonDecode(resp.body) as Map<String, dynamic>;
-      final name = (json['name'] ?? '').toString();
-      final unit = (json['unit'] ?? 'pcs').toString();
-      final storageLocation = (json['storageLocation'] ?? 'fridge').toString();
 
-      double quantity = 1.0;
-      final qRaw = json['quantity'];
-      if (qRaw is num) quantity = qRaw.toDouble();
+      // 🟢 检查是否返回了多物品列表 (backend should return "items": [...] for lists)
+      if (json.containsKey('items') && json['items'] is List && (json['items'] as List).isNotEmpty) {
+        
+        // CASE A: 多品模式 -> 复用扫描预览页
+        final itemsRaw = json['items'] as List;
+        final scannedItems = itemsRaw.map((e) => _mapJsonToScannedItem(e)).toList();
 
-      setState(() {
-        if (name.isNotEmpty) _name = name;
-        _qty = quantity;
-        _unit = unit;
-
-        switch (storageLocation) {
-          case 'freezer': _location = StorageLocation.freezer; break;
-          case 'pantry': _location = StorageLocation.pantry; break;
-          default: _location = StorageLocation.fridge;
+        if (mounted) {
+          setState(() => _isProcessing = false); // 提前结束 loading 以显示 sheet
+          await _showScannedItemsPreview(scannedItems);
         }
 
-        _resetPrediction();
-        _tabController.animateTo(0);
-      });
+      } else {
+        
+        // CASE B: 单品模式 -> 填入表单
+        final name = (json['name'] ?? '').toString();
+        final unit = (json['unit'] ?? 'pcs').toString();
+        final storageLocation = (json['storageLocation'] ?? 'fridge').toString();
+        
+        double quantity = 1.0;
+        final qRaw = json['quantity'];
+        if (qRaw is num) quantity = qRaw.toDouble();
 
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(source == 'voice'
-              ? 'Form filled by AI from voice.'
-              : 'Form filled by AI from text.'),
-        ),
-      );
+        setState(() {
+          if (name.isNotEmpty) _name = name;
+          _qty = quantity;
+          _unit = unit;
+
+          switch (storageLocation) {
+            case 'freezer': _location = StorageLocation.freezer; break;
+            case 'pantry': _location = StorageLocation.pantry; break;
+            default: _location = StorageLocation.fridge;
+          }
+
+          // 如果后端顺便返回了预测日期
+          if (json['predictedExpiry'] != null) {
+             try {
+               final d = DateTime.parse(json['predictedExpiry']);
+               _predictedExpiryFromAi = d;
+               _expiry = d;
+               _bestBefore = d;
+             } catch(_) {}
+          } else {
+             _resetPrediction();
+          }
+
+          _tabController.animateTo(0); // 切换回 Manual 页面查看填好的表单
+        });
+
+        if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Form filled from voice.')),
+          );
+        }
+      }
+
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('AI parse failed: $e')),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('AI parse failed: $e')),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isProcessing = false);
     }
   }
 
-  Future<void> _applyVoiceWithAi() async {
-    await _runIngredientAi(_voiceController.text, source: 'voice');
+  // Helper: 将后端通用的 Item JSON 转为本地 ScannedItem 对象
+  _ScannedItem _mapJsonToScannedItem(dynamic json) {
+     final m = json as Map<String, dynamic>;
+     final name = (m['name'] ?? '').toString().trim();
+     double qty = 1;
+     if (m['quantity'] is num) qty = (m['quantity'] as num).toDouble();
+     
+     StorageLocation loc = StorageLocation.fridge;
+     if (m['storageLocation'] == 'freezer') loc = StorageLocation.freezer;
+     if (m['storageLocation'] == 'pantry') loc = StorageLocation.pantry;
+
+     DateTime purchaseDate = DateTime.now();
+     // 如果语音里提到了 "bought yesterday"，后端可能返回 purchaseDate
+     if (m['purchaseDate'] != null) {
+       try { purchaseDate = DateTime.parse(m['purchaseDate']); } catch (_) {}
+     }
+
+     DateTime? predictedExpiry;
+     if (m['predictedExpiry'] is String) {
+       try { predictedExpiry = DateTime.parse(m['predictedExpiry']); } catch (_) {}
+     }
+
+     return _ScannedItem(
+       name: name.isEmpty ? 'Unknown' : name,
+       quantity: qty,
+       unit: (m['unit'] ?? 'pcs').toString(),
+       location: loc,
+       category: (m['category'] ?? 'voice').toString(),
+       purchaseDate: purchaseDate,
+       confidence: 0.9, // 语音通常比较准
+       predictedExpiry: predictedExpiry,
+     );
   }
 
   Future<void> _predictExpiryWithAi() async {
@@ -323,6 +408,7 @@ class _AddFoodPageState extends State<AddFoodPage>
       setState(() {
         _predictedExpiryFromAi = predictedDate;
         _expiry = predictedDate; 
+        _bestBefore = predictedDate; // 自动填入
         _predictionError = null;
       });
       
@@ -341,6 +427,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     }
   }
 
+  // 📸 Camera
   Future<void> _takePhoto() async {
     final ok = await requireLogin(context);
     if (!ok) return;
@@ -356,101 +443,56 @@ class _AddFoodPageState extends State<AddFoodPage>
     );
     if (xfile == null) return;
 
-    await _scanImageWithAi(xfile, mode: _scanMode);
+    await _processScanImages([xfile], mode: _scanMode);
   }
 
+  // 🖼️ Gallery
   Future<void> _pickFromGallery() async {
     final ok = await requireLogin(context);
     if (!ok) return;
 
-    final xfile = await _picker.pickImage(
-      source: ImageSource.gallery,
+    final List<XFile> images = await _picker.pickMultiImage(
       maxWidth: 1280,
       maxHeight: 1280,
       imageQuality: 70,
     );
-    if (xfile == null) return;
 
-    await _scanImageWithAi(xfile, mode: _scanMode);
+    if (images.isEmpty) return;
+
+    List<XFile> processedImages = images;
+    if (images.length > 4) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Max 4 images allowed. Selecting first 4.')),
+        );
+      }
+      processedImages = images.sublist(0, 4);
+    }
+
+    await _processScanImages(processedImages, mode: _scanMode);
   }
 
-  Future<void> _scanImageWithAi(XFile xfile, {required StorageScanMode mode}) async {
-    final ok = await requireLogin(context);
-    if (!ok) return;
-
+  /// 核心处理函数：并行处理多张图片
+  Future<void> _processScanImages(List<XFile> xfiles, {required StorageScanMode mode}) async {
     setState(() {
       _isProcessing = true;
       _activeProcessingScanMode = mode;
     });
 
     try {
-      final bytes = await xfile.readAsBytes();
-      final base64Str = base64Encode(bytes);
-      final uri = Uri.parse('$kBackendBaseUrl/api/scan-inventory');
+      final futures = xfiles.map((file) => _analyzeSingleImage(file, mode)).toList();
+      final results = await Future.wait(futures);
+      
+      final allItems = results.expand((i) => i).toList();
 
-      final resp = await http.post(
-        uri,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'imageBase64': base64Str,
-          'mode': mode == StorageScanMode.receipt ? 'receipt' : 'fridge',
-        }),
-      );
-
-      if (resp.statusCode != 200) throw Exception('Server error: ${resp.statusCode}');
-
-      final root = jsonDecode(resp.body) as Map<String, dynamic>;
-      DateTime purchaseDate = DateTime.now();
-      if (root['purchaseDate'] is String) {
-        try {
-          purchaseDate = DateTime.parse('${root['purchaseDate'].trim()}T00:00:00.000Z');
-        } catch (_) {}
-      }
-
-      final itemsJson = root['items'] as List<dynamic>? ?? const [];
-      if (itemsJson.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items detected.')));
+      if (allItems.isEmpty) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No items detected in images.')));
         return;
       }
 
-      final max = purchaseDate.add(const Duration(days: 365));
-      final scannedItems = itemsJson.map((e) {
-        final m = (e as Map).cast<String, dynamic>();
-        final name = (m['name'] ?? '').toString().trim();
-        double qty = 1;
-        if (m['quantity'] is num) qty = (m['quantity'] as num).toDouble();
-        
-        StorageLocation loc = StorageLocation.fridge;
-        if (m['storageLocation'] == 'freezer') loc = StorageLocation.freezer;
-        if (m['storageLocation'] == 'pantry') loc = StorageLocation.pantry;
-
-        DateTime? predictedExpiry;
-        if (m['predictedExpiry'] is String) {
-          try {
-            predictedExpiry = DateTime.parse(m['predictedExpiry']);
-          } catch (_) {}
-        }
-
-        if (predictedExpiry != null) {
-          if (predictedExpiry.isBefore(purchaseDate)) {
-            predictedExpiry = purchaseDate;
-          } else if (predictedExpiry.isAfter(max)) predictedExpiry = max;
-        }
-
-        return _ScannedItem(
-          name: name.isEmpty ? 'Unknown' : name,
-          quantity: qty,
-          unit: (m['unit'] ?? 'pcs').toString(),
-          location: loc,
-          category: (m['category'] ?? 'scan').toString(),
-          purchaseDate: purchaseDate,
-          confidence: (m['confidence'] as num?)?.toDouble() ?? 0.0,
-          predictedExpiry: predictedExpiry,
-        );
-      }).toList();
-
       if (!mounted) return;
-      await _showScannedItemsPreview(scannedItems);
+      await _showScannedItemsPreview(allItems);
+      
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Scan failed: $e')));
     } finally {
@@ -463,6 +505,34 @@ class _AddFoodPageState extends State<AddFoodPage>
     }
   }
 
+  /// Helper: 处理单张图片的 API 调用
+  Future<List<_ScannedItem>> _analyzeSingleImage(XFile xfile, StorageScanMode mode) async {
+    final bytes = await xfile.readAsBytes();
+    final base64Str = base64Encode(bytes);
+    final uri = Uri.parse('$kBackendBaseUrl/api/scan-inventory');
+
+    final resp = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'imageBase64': base64Str,
+        'mode': mode == StorageScanMode.receipt ? 'receipt' : 'fridge',
+      }),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception('Server error: ${resp.statusCode}');
+    }
+
+    final root = jsonDecode(resp.body) as Map<String, dynamic>;
+    // 复用通用的映射逻辑 (虽然有点小差异，但字段结构类似)
+    if (root['items'] is List) {
+       return (root['items'] as List).map((e) => _mapJsonToScannedItem(e)).toList();
+    }
+    return [];
+  }
+
+  // 语音监听逻辑
   Future<void> _toggleListening() async {
     if (_isProcessing) return;
 
@@ -470,15 +540,49 @@ class _AddFoodPageState extends State<AddFoodPage>
       final status = await Permission.microphone.request();
       if (!status.isGranted) return;
 
-      final available = await _speech.initialize();
+      final available = await _speech.initialize(
+        onError: (e) => setState(() {
+          _isListening = false;
+          _voiceHint = "Error: ${e.errorMsg}";
+          _rippleController.stop();
+          _rippleController.reset();
+        }),
+        onStatus: (status) {
+          if (status == 'done' || status == 'notListening') {
+            if (mounted && _isListening) {
+              setState(() {
+                _isListening = false;
+                _voiceHint = "Tap mic to start";
+                _rippleController.stop();
+                _rippleController.reset();
+              });
+            }
+          }
+        },
+      );
+
       if (available) {
         setState(() {
           _isListening = true;
-          _voiceHint = "Listening...";
+          _voiceHint = "I'm listening...";
+          _voiceController.clear();
         });
-        _speech.listen(onResult: (res) {
-          setState(() => _voiceController.text = res.recognizedWords);
-        });
+        _rippleController.forward();
+
+        _speech.listen(
+          onResult: (res) {
+            setState(() {
+              _voiceController.text = res.recognizedWords;
+              if (res.finalResult) {
+                 _voiceHint = "Got it! Tap to analyze.";
+              }
+            });
+          },
+          pauseFor: const Duration(seconds: 3),
+          listenFor: const Duration(seconds: 30),
+          cancelOnError: true,
+          partialResults: true,
+        );
       }
     } else {
       setState(() {
@@ -486,6 +590,8 @@ class _AddFoodPageState extends State<AddFoodPage>
         _voiceHint = "Tap mic to start.";
       });
       _speech.stop();
+      _rippleController.stop();
+      _rippleController.reset();
     }
   }
 
@@ -584,7 +690,6 @@ class _AddFoodPageState extends State<AddFoodPage>
                     ),
                   ],
                 ),
-                // 🟢 🟢 🟢 新增：最低库存设置 🟢 🟢 🟢
                 const SizedBox(height: 16),
                 TextFormField(
                   initialValue: _minQty?.toString() ?? '',
@@ -720,8 +825,8 @@ class _AddFoodPageState extends State<AddFoodPage>
           const SizedBox(height: 16),
           _buildBigActionButton(
             icon: Icons.photo_library_rounded,
-            label: 'Upload',
-            subtitle: 'Choose from gallery',
+            label: 'Upload (Max 4)',
+            subtitle: 'Choose multiple from gallery',
             color: Colors.grey.shade800,
             isOutlined: true,
             onTap: _pickFromGallery,
@@ -730,7 +835,7 @@ class _AddFoodPageState extends State<AddFoodPage>
           const SizedBox(height: 40),
           Text(
             _scanMode == StorageScanMode.receipt 
-              ? 'AI will extract items from your receipt.'
+              ? 'AI will extract items from your receipt(s).'
               : 'AI will identify items in your fridge or pantry.',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
@@ -742,74 +847,130 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   // --- Voice Tab ---
   Widget _buildVoiceTab() {
-    final canSend = _voiceController.text.trim().length > 2 && !_isProcessing;
+    final hasText = _voiceController.text.trim().length > 2;
+    
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const SizedBox(height: 40),
+          const SizedBox(height: 60),
+          
           GestureDetector(
             onTap: _toggleListening,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 300),
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                color: _isListening ? Colors.red.withOpacity(0.1) : Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _isListening ? Colors.red : Colors.grey.shade300,
-                  width: _isListening ? 4 : 2,
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (_isListening)
+                  AnimatedBuilder(
+                    animation: _rippleAnimation,
+                    builder: (context, child) {
+                      return Container(
+                        width: 100 * _rippleAnimation.value,
+                        height: 100 * _rippleAnimation.value,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: _primaryColor.withOpacity(0.2 - (_rippleAnimation.value - 1.0) / 2),
+                        ),
+                      );
+                    },
+                  ),
+                
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  width: 100,
+                  height: 100,
+                  decoration: BoxDecoration(
+                    color: _isListening ? _primaryColor : Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _isListening 
+                            ? _primaryColor.withOpacity(0.4) 
+                            : Colors.grey.shade300,
+                        blurRadius: _isListening ? 20 : 10,
+                        spreadRadius: _isListening ? 5 : 2,
+                        offset: const Offset(0, 4)
+                      )
+                    ],
+                  ),
+                  child: Icon(
+                    _isListening ? Icons.graphic_eq_rounded : Icons.mic_rounded,
+                    size: 48,
+                    color: _isListening ? Colors.white : _primaryColor,
+                  ),
                 ),
-                boxShadow: [
-                  if (_isListening)
-                    BoxShadow(color: Colors.red.withOpacity(0.3), blurRadius: 20, spreadRadius: 5)
-                ],
-              ),
-              child: Icon(
-                _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
-                size: 40,
-                color: _isListening ? Colors.red : Colors.grey.shade600,
+              ],
+            ),
+          ),
+          
+          const SizedBox(height: 30),
+          
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 300),
+            child: Text(
+              _voiceHint,
+              key: ValueKey(_voiceHint),
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18, 
+                fontWeight: FontWeight.w600, 
+                color: _isListening ? _primaryColor : Colors.grey.shade700
               ),
             ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            _voiceHint,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey.shade700),
-          ),
+          
+          const SizedBox(height: 10),
+          if (!_isListening && !hasText)
+            Text(
+              'Try saying: "3 apples, milk, and 1kg of rice"',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
+
           const SizedBox(height: 40),
           
           Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: hasText ? _primaryColor.withOpacity(0.5) : Colors.grey.shade200),
             ),
             child: TextField(
               controller: _voiceController,
-              minLines: 3,
-              maxLines: 5,
+              minLines: 2,
+              maxLines: 4,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, color: Colors.black87),
               decoration: const InputDecoration(
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.all(16),
-                hintText: 'e.g. "I bought 500g chicken breast and put it in the freezer"',
+                hintText: 'Transcript will appear here...',
+                hintStyle: TextStyle(color: Colors.black12),
               ),
             ),
           ),
           
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            height: 50,
-            child: FilledButton.icon(
-              onPressed: canSend ? _applyVoiceWithAi : null,
-              icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text('Auto-Fill Form'),
-              style: FilledButton.styleFrom(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          const SizedBox(height: 30),
+          
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: hasText ? 1.0 : 0.0,
+            child: SizedBox(
+              width: double.infinity,
+              height: 56,
+              child: FilledButton.icon(
+                onPressed: (hasText && !_isProcessing) 
+                    ? () => _processVoiceInputWithAi(_voiceController.text) 
+                    : null,
+                icon: _isProcessing 
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) 
+                    : const Icon(Icons.auto_awesome_rounded),
+                label: Text(_isProcessing ? 'Analyzing...' : 'Analyze & Fill'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _primaryColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  elevation: 2,
+                ),
               ),
             ),
           ),
@@ -955,8 +1116,8 @@ class _AddFoodPageState extends State<AddFoodPage>
                           )
                         ],
                       ),
-                      if (_bestBefore != null)
-                        const Text('Manual date will override this', style: TextStyle(fontSize: 10, color: Colors.orange)),
+                      if (_bestBefore != null && _bestBefore != _predictedExpiryFromAi)
+                         const Text('Manual date will override this', style: TextStyle(fontSize: 10, color: Colors.orange)),
                     ],
                   ),
                 ),
@@ -1110,12 +1271,12 @@ class _AddFoodPageState extends State<AddFoodPage>
               ),
               const SizedBox(height: 24),
               Text(
-                isReceipt ? 'Scanning Receipt...' : 'Analyzing...',
+                isReceipt ? 'Scanning Receipts...' : 'Analyzing...',
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
               ),
               const SizedBox(height: 8),
               Text(
-                'AI is identifying items and expiry dates.',
+                'AI is processing your images/voice and identifying items.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey.shade600),
               ),

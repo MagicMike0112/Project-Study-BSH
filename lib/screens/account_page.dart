@@ -2,16 +2,19 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // For Haptics
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
+// 🟢 确保 pubspec.yaml 中有 url_launcher
 import 'package:url_launcher/url_launcher.dart';
 
 import '../repositories/inventory_repository.dart';
 import 'family_page.dart';
 import 'notification_settings_page.dart';
-// 🟢 修复 1: 引入正确的登录页面
-import 'login_page.dart'; 
+import 'login_page.dart';
+// 🟢 引入我们的原生 Toast 封装
+import '../utils/bsh_toast.dart';
 
 class AccountPage extends StatefulWidget {
   final InventoryRepository repo;
@@ -32,7 +35,7 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   static const String _backendBase = 'https://project-study-bsh.vercel.app';
-  static const Color _primaryColor = Color(0xFF005F87);
+  static const Color _primaryColor = Color(0xFF004A77);
 
   bool _hcLoading = false;
   bool _hcConnected = false;
@@ -40,22 +43,62 @@ class _AccountPageState extends State<AccountPage> {
   String? _hcError;
   List<Map<String, dynamic>> _hcAppliances = const [];
 
+  bool _studentMode = false;
+
   @override
   void initState() {
     super.initState();
-    final qp = Uri.base.queryParameters;
-    if (qp['hc'] == 'connected') {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        await _refreshHomeConnectStatus();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Home Connect connected ✅')),
-        );
-      });
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    _initStudentMode();
+
+    // 检查 Home Connect 回调
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final qp = Uri.base.queryParameters;
+      if (qp['hc'] == 'connected') {
+        _refreshHomeConnectStatus().then((_) {
+          if (mounted) {
+            BSHToast.show(context, title: 'Home Connect Linked ✅', type: BSHToastType.success);
+          }
+        });
+      } else {
         _refreshHomeConnectStatus();
-      });
+      }
+    });
+  }
+
+  void _initStudentMode() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      final meta = user.userMetadata ?? {};
+      if (meta.containsKey('student_mode')) {
+        setState(() {
+          _studentMode = meta['student_mode'] == true;
+        });
+      } else {
+        final ageVal = meta['age'];
+        if (ageVal != null) {
+          final age = int.tryParse(ageVal.toString()) ?? 25;
+          if (age < 24) {
+            setState(() => _studentMode = true);
+          }
+        }
+      }
+    }
+  }
+
+  Future<void> _toggleStudentMode(bool value) async {
+    setState(() => _studentMode = value);
+    HapticFeedback.selectionClick();
+    
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user != null) {
+        // 兼容写法：直接传 Map
+        await Supabase.instance.client.auth.updateUser(
+          UserAttributes(data: {'student_mode': value}),
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to save student mode preference: $e');
     }
   }
 
@@ -66,38 +109,38 @@ class _AccountPageState extends State<AccountPage> {
     final session = client.auth.currentSession;
 
     if (session == null) {
-      if (!mounted) return;
-      setState(() {
-        _hcConnected = false;
-        _hcInfo = null;
-        _hcError = null;
-        _hcAppliances = const [];
-      });
+      if (mounted) {
+        setState(() {
+          _hcConnected = false;
+          _hcInfo = null;
+          _hcError = null;
+          _hcAppliances = const [];
+        });
+      }
       return;
     }
 
-    setState(() { _hcLoading = true; _hcError = null; });
+    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
 
     try {
       final r = await http.get(
-        Uri.parse('$_backendBase/api/hc?action=status'), // 🟢 修改
+        Uri.parse('$_backendBase/api/hc?action=status'), 
         headers: {'Authorization': 'Bearer ${session.accessToken}'},
       );
       final data = jsonDecode(r.body) as Map<String, dynamic>;
       if (r.statusCode != 200 || data['ok'] != true) throw Exception(data['error'] ?? 'Failed');
 
-      if (!mounted) return;
-      setState(() {
-        _hcConnected = (data['connected'] == true);
-        _hcInfo = (data['info'] is Map<String, dynamic>) ? (data['info'] as Map<String, dynamic>) : null;
-        if (!_hcConnected) _hcAppliances = const [];
-      });
+      if (mounted) {
+        setState(() {
+          _hcConnected = (data['connected'] == true);
+          _hcInfo = (data['info'] is Map<String, dynamic>) ? (data['info'] as Map<String, dynamic>) : null;
+          if (!_hcConnected) _hcAppliances = const [];
+        });
+      }
     } catch (e) {
-      if (!mounted) return;
-      setState(() { _hcConnected = false; _hcInfo = null; _hcError = e.toString(); });
+      if (mounted) setState(() { _hcConnected = false; _hcInfo = null; _hcError = e.toString(); });
     } finally {
-      if (!mounted) return;
-      setState(() => _hcLoading = false);
+      if (mounted) setState(() => _hcLoading = false);
     }
   }
 
@@ -106,7 +149,7 @@ class _AccountPageState extends State<AccountPage> {
     final session = client.auth.currentSession;
     if (session == null) { _handleLogin(); return; } 
 
-    setState(() { _hcLoading = true; _hcError = null; });
+    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
 
     try {
       final r = await http.post(
@@ -122,12 +165,12 @@ class _AccountPageState extends State<AccountPage> {
       
       await launchUrl(Uri.parse(authorizeUrl), mode: LaunchMode.externalApplication);
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _hcError = e.toString());
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Bind failed: $e')));
+      if (mounted) {
+        setState(() => _hcError = e.toString());
+        BSHToast.show(context, title: 'Connection Failed', type: BSHToastType.error);
+      }
     } finally {
-      if (!mounted) return;
-      setState(() => _hcLoading = false);
+      if (mounted) setState(() => _hcLoading = false);
     }
   }
 
@@ -135,7 +178,7 @@ class _AccountPageState extends State<AccountPage> {
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) return;
 
-    setState(() { _hcLoading = true; _hcError = null; });
+    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
     try {
       final r = await http.delete(
         Uri.parse('$_backendBase/api/hc?action=disconnect'),
@@ -143,14 +186,11 @@ class _AccountPageState extends State<AccountPage> {
       );
       if (r.statusCode != 200) throw Exception('Failed');
       await _refreshHomeConnectStatus();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Disconnected')));
+      if (mounted) BSHToast.show(context, title: 'Disconnected', type: BSHToastType.info);
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _hcError = e.toString());
+      if (mounted) setState(() => _hcError = e.toString());
     } finally {
-      if (!mounted) return;
-      setState(() => _hcLoading = false);
+      if (mounted) setState(() => _hcLoading = false);
     }
   }
 
@@ -159,7 +199,7 @@ class _AccountPageState extends State<AccountPage> {
     if (session == null) { _handleLogin(); return; }
     if (!_hcConnected) return;
 
-    setState(() { _hcLoading = true; _hcError = null; });
+    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
     try {
       final r = await http.get(
         Uri.parse('$_backendBase/api/hc?action=appliances'),
@@ -171,15 +211,12 @@ class _AccountPageState extends State<AccountPage> {
       final list = (data['homeappliances'] as List?) ?? const [];
       final parsed = list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
       
-      if (!mounted) return;
-      setState(() => _hcAppliances = parsed);
+      if (mounted) setState(() => _hcAppliances = parsed);
       _showApplianceListSheet();
     } catch (e) {
-      if (!mounted) return;
-      setState(() => _hcError = e.toString());
+      if (mounted) setState(() => _hcError = e.toString());
     } finally {
-      if (!mounted) return;
-      setState(() => _hcLoading = false);
+      if (mounted) setState(() => _hcLoading = false);
     }
   }
 
@@ -214,7 +251,10 @@ class _AccountPageState extends State<AccountPage> {
                           title: Text(a['name'] ?? 'Unknown'),
                           subtitle: Text('ID: ${a['haId']}'),
                           trailing: const Icon(Icons.copy, size: 16),
-                          onTap: () {},
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: a['haId'].toString()));
+                            BSHToast.show(context, title: 'ID Copied', type: BSHToastType.info);
+                          },
                         );
                       },
                     ),
@@ -227,14 +267,9 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  // 🟢 核心修复：处理登录跳转逻辑
   void _handleLogin() {
     HapticFeedback.mediumImpact();
-    // 1. 尝试调用父组件传入的回调（如果有的话）
     widget.onLogin();
-    
-    // 2. 显式跳转到 LoginPage，确保按钮有反应
-    // allowSkip: false 表示从这里进入是专门为了登录，不显示"跳过"按钮
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const LoginPage(allowSkip: false)),
     );
@@ -244,6 +279,14 @@ class _AccountPageState extends State<AccountPage> {
 
   @override
   Widget build(BuildContext context) {
+    final repo = Provider.of<InventoryRepository>(context);
+    final isSenior = repo.isSeniorMode;
+
+    // 🟢 Dynamic Theme Values
+    final bgColor = isSenior ? Colors.white : const Color(0xFFF8F9FC);
+    final sectionTitleColor = isSenior ? Colors.black : Colors.grey[500];
+    final sectionTitleSize = isSenior ? 16.0 : 12.0;
+
     return StreamBuilder<AuthState>(
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
@@ -252,59 +295,105 @@ class _AccountPageState extends State<AccountPage> {
         final String email = session?.user.email ?? '';
         final String name = session?.user.userMetadata?['full_name'] ?? 'User';
 
-        if (loggedIn && !_hcConnected && !_hcLoading) {
-           // _refreshHomeConnectStatus(); // 慎用，避免死循环
-        }
-
         return Scaffold(
-          backgroundColor: const Color(0xFFF8F9FC),
+          backgroundColor: bgColor,
           appBar: AppBar(
-            title: const Text('Account', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
-            backgroundColor: const Color(0xFFF8F9FC),
+            title: Text(
+              isSenior ? 'My Account' : 'Account', 
+              style: TextStyle(
+                fontWeight: FontWeight.w700, 
+                color: Colors.black87,
+                fontSize: isSenior ? 26 : 20, 
+              )
+            ),
+            backgroundColor: bgColor,
             elevation: 0,
             centerTitle: false,
           ),
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             children: [
-              // 1. Profile Section
-              _buildProfileCard(context, loggedIn, name, email),
-
+              _buildProfileCard(context, loggedIn, name, email, isSenior),
               const SizedBox(height: 32),
-
-              // 2. Household Section
+              
               if (loggedIn) ...[
-                _buildSectionTitle(context, 'Household'),
+                _buildSectionTitle('Household', isSenior, sectionTitleColor!, sectionTitleSize),
                 const SizedBox(height: 12),
-                _buildFamilyCard(context),
+                _buildFamilyCard(context, isSenior),
                 const SizedBox(height: 32),
               ],
-
-              // 3. Integration Section
-              _buildSectionTitle(context, 'Integrations'),
+              
+              _buildSectionTitle('Integrations', isSenior, sectionTitleColor!, sectionTitleSize),
               const SizedBox(height: 12),
-              _buildHomeConnectCard(context, loggedIn),
+              _buildHomeConnectCard(context, loggedIn, isSenior),
               
               const SizedBox(height: 32),
-
-              // 4. General Settings
-              _buildSectionTitle(context, 'Preferences'),
+              
+              _buildSectionTitle('Preferences', isSenior, sectionTitleColor!, sectionTitleSize),
               const SizedBox(height: 12),
               _SettingsContainer(
+                isSenior: isSenior,
                 children: [
                   _SettingsTile(
+                    isSenior: isSenior,
                     icon: Icons.notifications_rounded,
                     iconColor: Colors.orange,
                     title: 'Notifications',
-                    subtitle: 'Expiry alerts & reminders',
+                    subtitle: isSenior ? null : 'Expiry alerts & reminders',
                     onTap: () {
-                        Navigator.of(context).push(
+                      Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const NotificationSettingsPage()),
                       );
                     },
                   ),
-                  _Divider(),
+                  _Divider(isSenior: isSenior),
+                  
+                  // 🟢 Senior Mode Switch
+                  _SettingsTile(
+                    isSenior: isSenior,
+                    icon: Icons.accessibility_new_rounded,
+                    iconColor: Colors.teal,
+                    title: isSenior ? 'Senior Mode (On)' : 'Senior Mode',
+                    subtitle: isSenior ? 'Large Text & High Contrast' : 'Large text & high contrast',
+                    trailing: Switch.adaptive(
+                      value: isSenior,
+                      activeColor: _primaryColor,
+                      onChanged: (val) {
+                        HapticFeedback.mediumImpact();
+                        repo.toggleSeniorMode(val);
+                        BSHToast.show(
+                          context, 
+                          title: val ? "Senior Mode Enabled" : "Standard Mode Restored",
+                          type: BSHToastType.info
+                        );
+                      },
+                    ),
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      repo.toggleSeniorMode(!isSenior);
+                    },
+                  ),
+                  
+                  _Divider(isSenior: isSenior),
+
+                  _SettingsTile(
+                    isSenior: isSenior,
+                    icon: Icons.school_rounded,
+                    iconColor: Colors.indigo,
+                    title: 'Student Mode',
+                    subtitle: isSenior ? null : 'Budget-friendly recipes & tips 🎓',
+                    trailing: Switch.adaptive(
+                      value: _studentMode,
+                      activeColor: _primaryColor,
+                      onChanged: _toggleStudentMode,
+                    ),
+                    onTap: () => _toggleStudentMode(!_studentMode),
+                  ),
+                  
+                  _Divider(isSenior: isSenior),
+                  
                   const _SettingsTile(
+                    isSenior: false, // Loyalty cards usually standard UI
                     icon: Icons.card_giftcard_rounded,
                     iconColor: Colors.purple,
                     title: 'Loyalty Cards',
@@ -313,34 +402,33 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                 ],
               ),
-
+              
               const SizedBox(height: 32),
-
-              // 5. About
-              _buildSectionTitle(context, 'About'),
+              _buildSectionTitle('About', isSenior, sectionTitleColor!, sectionTitleSize),
               const SizedBox(height: 12),
               _SettingsContainer(
+                isSenior: isSenior,
                 children: [
                   const _SettingsTile(
+                    isSenior: false,
                     icon: Icons.privacy_tip_rounded,
                     iconColor: Colors.blueGrey,
                     title: 'Privacy Policy',
                     onTap: null,
                   ),
-                  _Divider(),
+                  _Divider(isSenior: isSenior),
                   _SettingsTile(
+                    isSenior: isSenior,
                     icon: Icons.info_outline_rounded,
                     iconColor: Colors.blueGrey,
                     title: 'Version',
-                    trailing: Text('1.0.0 (Beta)', style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+                    trailing: Text('1.0.0 (Beta)', style: TextStyle(color: Colors.grey[500], fontSize: isSenior ? 16 : 13)),
                     onTap: null,
                   ),
                 ],
               ),
-
               const SizedBox(height: 40),
-
-              // 6. Logout
+              
               if (loggedIn)
                 Center(
                   child: TextButton.icon(
@@ -348,11 +436,17 @@ class _AccountPageState extends State<AccountPage> {
                       HapticFeedback.mediumImpact();
                       widget.onLogout();
                     },
-                    icon: Icon(Icons.logout_rounded, size: 20, color: Colors.grey[600]),
-                    label: Text('Sign Out', style: TextStyle(color: Colors.grey[600], fontWeight: FontWeight.w600)),
+                    icon: Icon(Icons.logout_rounded, size: isSenior ? 28 : 20, color: Colors.grey[600]),
+                    label: Text(
+                      'Sign Out', 
+                      style: TextStyle(
+                        color: Colors.grey[600], 
+                        fontWeight: FontWeight.w600,
+                        fontSize: isSenior ? 20 : 14
+                      )
+                    ),
                   ),
                 ),
-              
               const SizedBox(height: 40),
             ],
           ),
@@ -363,36 +457,43 @@ class _AccountPageState extends State<AccountPage> {
 
   // --- Components ---
 
-  Widget _buildSectionTitle(BuildContext context, String title) {
+  Widget _buildSectionTitle(String title, bool isSenior, Color color, double size) {
     return Padding(
       padding: const EdgeInsets.only(left: 4),
       child: Text(
-        title.toUpperCase(),
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey[500], letterSpacing: 1.2),
+        isSenior ? title : title.toUpperCase(),
+        style: TextStyle(
+          fontSize: size, 
+          fontWeight: FontWeight.w700, 
+          color: color, 
+          letterSpacing: isSenior ? 0 : 1.2
+        ),
       ),
     );
   }
 
-  Widget _buildProfileCard(BuildContext context, bool loggedIn, String name, String email) {
+  Widget _buildProfileCard(BuildContext context, bool loggedIn, String name, String email, bool isSenior) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: EdgeInsets.all(isSenior ? 24 : 20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isSenior ? Colors.yellow.shade50 : Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8))],
+        border: isSenior ? Border.all(color: Colors.black, width: 2) : null,
+        boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8))],
       ),
       child: Row(
         children: [
           Container(
-            width: 60, height: 60,
+            width: isSenior ? 70 : 60, height: isSenior ? 70 : 60,
             decoration: BoxDecoration(
               color: loggedIn ? const Color(0xFFE3F2FD) : const Color(0xFFF5F5F5),
               shape: BoxShape.circle,
+              border: isSenior ? Border.all(color: Colors.black) : null,
             ),
             child: Icon(
               loggedIn ? Icons.person_rounded : Icons.person_off_rounded,
               color: loggedIn ? const Color(0xFF1565C0) : Colors.grey[400],
-              size: 30,
+              size: isSenior ? 40 : 30,
             ),
           ),
           const SizedBox(width: 16),
@@ -402,12 +503,12 @@ class _AccountPageState extends State<AccountPage> {
               children: [
                 Text(
                   loggedIn ? 'Hello, $name' : 'Guest Account',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87),
+                  style: TextStyle(fontSize: isSenior ? 22 : 16, fontWeight: FontWeight.w700, color: Colors.black87),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   loggedIn ? email : 'Sign in to sync your data',
-                  style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  style: TextStyle(fontSize: isSenior ? 16 : 13, color: isSenior ? Colors.black87 : Colors.grey[600]),
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                 ),
               ],
@@ -415,77 +516,57 @@ class _AccountPageState extends State<AccountPage> {
           ),
           if (!loggedIn)
             FilledButton(
-              // 🟢 使用修复后的 handler
               onPressed: _handleLogin,
-              style: FilledButton.styleFrom(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), padding: const EdgeInsets.symmetric(horizontal: 16)),
-              child: const Text('Log In'),
+              style: FilledButton.styleFrom(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), 
+                padding: EdgeInsets.symmetric(horizontal: isSenior ? 24 : 16, vertical: isSenior ? 16 : 0)
+              ),
+              child: Text('Log In', style: TextStyle(fontSize: isSenior ? 18 : 14)),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildFamilyCard(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
+  Widget _buildFamilyCard(BuildContext context, bool isSenior) {
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FamilyPage(repo: widget.repo))),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          onTap: () {
-            HapticFeedback.lightImpact();
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => FamilyPage(repo: widget.repo)),
-            );
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: _primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.home_rounded, color: _primaryColor, size: 24),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('My Family', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
-                      const SizedBox(height: 2),
-                      Text(widget.repo.currentFamilyName, style: TextStyle(fontSize: 13, color: Colors.grey[600])),
-                    ],
-                  ),
-                ),
-                Icon(Icons.arrow_forward_ios_rounded, color: Colors.grey[300], size: 16),
-              ],
-            ),
-          ),
+          border: isSenior ? Border.all(color: Colors.black, width: 2) : null,
+          boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16)],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.home_rounded, color: _primaryColor, size: 30),
+            const SizedBox(width: 16),
+            Expanded(child: Text(widget.repo.currentFamilyName, style: TextStyle(fontSize: isSenior ? 20 : 16, fontWeight: FontWeight.bold))),
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn) {
+  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn, bool isSenior) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: loggedIn && _hcConnected ? _primaryColor.withOpacity(0.1) : Colors.transparent),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
+        border: isSenior 
+            ? Border.all(color: Colors.black, width: 2) 
+            : Border.all(color: loggedIn && _hcConnected ? _primaryColor.withOpacity(0.1) : Colors.transparent),
+        boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
       ),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(24),
           onTap: () async {
-            if (!loggedIn) { _handleLogin(); return; } // 🟢 Use local handler
+            if (!loggedIn) { _handleLogin(); return; } 
             if (_hcConnected) {
               await showModalBottomSheet(
                 context: context,
@@ -509,7 +590,7 @@ class _AccountPageState extends State<AccountPage> {
             }
           },
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: EdgeInsets.all(isSenior ? 24 : 20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -517,24 +598,28 @@ class _AccountPageState extends State<AccountPage> {
                   children: [
                     Container(
                       padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: _primaryColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                      child: const Icon(Icons.power_settings_new_rounded, color: _primaryColor, size: 24),
+                      decoration: BoxDecoration(
+                        color: _primaryColor.withOpacity(0.1), 
+                        borderRadius: BorderRadius.circular(12),
+                        border: isSenior ? Border.all(color: Colors.black) : null,
+                      ),
+                      child: Icon(Icons.power_settings_new_rounded, color: _primaryColor, size: isSenior ? 32 : 24),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Home Connect', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                          Text('Home Connect', style: TextStyle(fontSize: isSenior ? 20 : 16, fontWeight: FontWeight.w700, color: Colors.black87)),
                           const SizedBox(height: 2),
                           if (_hcLoading) const Text('Connecting...', style: TextStyle(fontSize: 13, color: Colors.grey))
-                          else if (_hcConnected) Text('Active & Synced', style: TextStyle(fontSize: 13, color: Colors.green[600], fontWeight: FontWeight.w600))
-                          else const Text('Tap to connect', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                          else if (_hcConnected) Text('Active & Synced', style: TextStyle(fontSize: isSenior ? 16 : 13, color: Colors.green[600], fontWeight: FontWeight.w600))
+                          else Text('Tap to connect', style: TextStyle(fontSize: isSenior ? 16 : 13, color: Colors.grey)),
                         ],
                       ),
                     ),
                     if (_hcLoading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    else Icon(_hcConnected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded, color: _hcConnected ? Colors.green : Colors.grey[300], size: _hcConnected ? 28 : 16),
+                    else Icon(_hcConnected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded, color: _hcConnected ? Colors.green : (isSenior ? Colors.black : Colors.grey[300]), size: _hcConnected ? 28 : 16),
                   ],
                 ),
                 if (_hcError != null) Padding(padding: const EdgeInsets.only(top: 16), child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.red.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.red.withOpacity(0.1))), child: Row(children: [Icon(Icons.error_outline_rounded, size: 16, color: Colors.red[700]), const SizedBox(width: 8), Expanded(child: Text(_hcError!, style: TextStyle(color: Colors.red[900], fontSize: 12)))]))),
@@ -547,33 +632,62 @@ class _AccountPageState extends State<AccountPage> {
   }
 }
 
-// 辅助组件
 class _SettingsContainer extends StatelessWidget {
   final List<Widget> children;
-  const _SettingsContainer({required this.children});
+  final bool isSenior;
+  const _SettingsContainer({required this.children, required this.isSenior});
+  
   @override
   Widget build(BuildContext context) {
-    return Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))]), child: Column(children: children));
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white, 
+        borderRadius: BorderRadius.circular(24), 
+        border: isSenior ? Border.all(color: Colors.black, width: 2) : null,
+        boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))]
+      ), 
+      child: Column(children: children)
+    );
   }
 }
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
-  final Color iconColor;
+  final Color? iconColor;
   final String title;
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
-  const _SettingsTile({required this.icon, required this.iconColor, required this.title, this.subtitle, this.trailing, this.onTap});
+  final bool isSenior;
+
+  const _SettingsTile({required this.icon, this.iconColor, required this.title, this.subtitle, this.trailing, this.onTap, this.isSenior = false});
+  
   @override
   Widget build(BuildContext context) {
-    return Material(color: Colors.transparent, child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(24), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16), child: Row(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: iconColor.withOpacity(0.1), borderRadius: BorderRadius.circular(12)), child: Icon(icon, color: iconColor, size: 20)), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: onTap != null ? Colors.black87 : Colors.grey[400])), if (subtitle != null) ...[const SizedBox(height: 2), Text(subtitle!, style: TextStyle(fontSize: 12, color: Colors.grey[500]))]])), if (trailing != null) trailing! else if (onTap != null) Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey[300])]))));
+    return ListTile(
+      leading: Container(
+        padding: const EdgeInsets.all(10), 
+        decoration: BoxDecoration(
+          color: (iconColor ?? Colors.grey).withOpacity(0.1), 
+          borderRadius: BorderRadius.circular(12),
+          border: isSenior ? Border.all(color: Colors.black) : null,
+        ), 
+        child: Icon(icon, color: iconColor, size: isSenior ? 28 : 20)
+      ), 
+      title: Text(title, style: TextStyle(fontSize: isSenior ? 18 : 15, fontWeight: FontWeight.w600)), 
+      subtitle: subtitle != null ? Text(subtitle!, style: TextStyle(fontSize: isSenior ? 14 : 12)) : null,
+      trailing: trailing ?? (onTap != null ? const Icon(Icons.chevron_right) : null),
+      onTap: onTap,
+      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: isSenior ? 12 : 8),
+    );
   }
 }
 
 class _Divider extends StatelessWidget {
+  final bool isSenior;
+  const _Divider({required this.isSenior});
   @override
   Widget build(BuildContext context) {
-    return Divider(height: 1, thickness: 1, color: Colors.grey.withOpacity(0.05), indent: 70);
+    return Divider(height: 1, thickness: isSenior ? 2 : 1, color: isSenior ? Colors.black : Colors.grey.withOpacity(0.05), indent: 70);
   }
 }

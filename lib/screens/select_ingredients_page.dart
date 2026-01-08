@@ -92,7 +92,6 @@ class RecipeArchiveStore {
     await sp.setString(_kRecipeArchiveKey, encoded);
   }
 
-  // 🟢 新增：检查是否已收藏
   static Future<bool> hasRecipe(String recipeId) async {
     final list = await load();
     return list.any((e) => e.recipe.id == recipeId);
@@ -126,6 +125,10 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   final List<String> _extraIngredients = [];
   bool _addExtrasToInventory = false;
 
+  // 🟢 Settings State
+  int _servings = 2;
+  bool _isStudentMode = false;
+
   final TextEditingController _extraController = TextEditingController();
   final TextEditingController _specialRequestController = TextEditingController();
   bool _hasChanged = false;
@@ -136,6 +139,16 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
     _activeItems = widget.repo.getActiveItems();
     for (final item in widget.preselectedExpiring) {
       _selectedIds.add(item.id);
+    }
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final sp = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _isStudentMode = sp.getBool('student_mode') ?? false;
+      });
     }
   }
 
@@ -153,6 +166,12 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
       } else {
         _selectedIds.add(item.id);
       }
+    });
+  }
+
+  void _updateServings(int delta) {
+    setState(() {
+      _servings = (_servings + delta).clamp(1, 10);
     });
   }
 
@@ -215,6 +234,8 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
           items: selected,
           extraIngredients: List.unmodifiable(_extraIngredients),
           specialRequest: special,
+          servings: _servings,
+          studentMode: _isStudentMode,
           onInventoryUpdated: () {
             _hasChanged = true;
             setState(() {
@@ -253,6 +274,39 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
               ),
               const SizedBox(height: 16),
 
+              if (_isStudentMode) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [Colors.indigo.shade400, Colors.indigo.shade600]),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(color: Colors.indigo.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                        child: const Icon(Icons.school_rounded, color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Student Mode Active', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
+                            Text('Prioritizing cheap, fast & easy recipes.', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               _SectionCard(
                 title: 'Archive',
                 subtitle: 'View saved recipe ideas',
@@ -261,6 +315,49 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                   title: 'Open Recipe Archive',
                   subtitle: 'Your saved collection',
                   onTap: _openArchive,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              _SectionCard(
+                title: 'Cooking Settings',
+                child: Row(
+                  children: [
+                    const Icon(Icons.people_outline, color: Colors.grey),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Number of People', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                          Text('Adjusts portion sizes', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.remove, size: 18),
+                            onPressed: () => _updateServings(-1),
+                            color: _servings > 1 ? Colors.black87 : Colors.grey,
+                          ),
+                          Text('$_servings', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          IconButton(
+                            icon: const Icon(Icons.add, size: 18),
+                            onPressed: () => _updateServings(1),
+                            color: _servings < 10 ? Colors.black87 : Colors.grey,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 16),
@@ -291,6 +388,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                               expiryText: leftText,
                               urgency: urgency,
                               selected: selected,
+                              addedBy: item.ownerName,
                               onTap: () => _toggleSelected(item),
                             ),
                           );
@@ -516,9 +614,10 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
                                   repo: widget.repo,
                                   usedItems: const [],
                                   onInventoryUpdated: null,
+                                  initialServings: 2, // 默认值，因为归档不包含人数
                                 ),
                               ),
-                            ).then((_) => _reload()); // 🟢 返回时刷新，以防详情页取消了收藏
+                            ).then((_) => _reload());
                           },
                           onRemove: () => _removeOne(r.id),
                         ),
@@ -538,8 +637,19 @@ class RecipeGeneratorSheet extends StatefulWidget {
   final List<String> extraIngredients;
   final String? specialRequest;
   final VoidCallback? onInventoryUpdated;
+  final int servings;
+  final bool studentMode;
 
-  const RecipeGeneratorSheet({super.key, required this.repo, required this.items, required this.extraIngredients, this.specialRequest, this.onInventoryUpdated});
+  const RecipeGeneratorSheet({
+    super.key,
+    required this.repo,
+    required this.items,
+    required this.extraIngredients,
+    this.specialRequest,
+    this.onInventoryUpdated,
+    this.servings = 2,
+    this.studentMode = false,
+  });
 
   @override
   State<RecipeGeneratorSheet> createState() => _RecipeGeneratorSheetState();
@@ -555,7 +665,14 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
     try {
       final ingredients = widget.items.map((i) => '${i.name} (${i.quantity} ${i.unit})').toList();
       final uri = Uri.parse('$_backendBase/api/recipe');
-      final body = <String, dynamic>{'ingredients': ingredients, 'extraIngredients': widget.extraIngredients};
+
+      final body = <String, dynamic>{
+        'ingredients': ingredients,
+        'extraIngredients': widget.extraIngredients,
+        'servings': widget.servings,
+        'studentMode': widget.studentMode,
+      };
+
       if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) body['specialRequest'] = widget.specialRequest!.trim();
 
       final resp = await http.post(uri, headers: {'Content-Type': 'application/json'}, body: jsonEncode(body));
@@ -597,7 +714,28 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
       _SectionCard(title: 'Review Selection', subtitle: 'AI will prioritize these expiring items.', child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (widget.items.isEmpty) const _EmptyHint(icon: Icons.info_outline, title: 'No Items', subtitle: 'Please select ingredients first.')
         else Wrap(spacing: 8, runSpacing: 8, children: widget.items.map((i) => Chip(label: Text(i.name), backgroundColor: Colors.white, side: BorderSide(color: Colors.grey.shade300))).toList()),
+        
         if (widget.extraIngredients.isNotEmpty) ...[const SizedBox(height: 16), const Text('Extras', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)), const SizedBox(height: 8), Wrap(spacing: 8, runSpacing: 8, children: widget.extraIngredients.map((e) => Chip(label: Text(e), backgroundColor: Colors.white, side: BorderSide(color: Colors.grey.shade300))).toList())],
+        
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.blue.shade100)),
+          child: Row(
+            children: [
+              const Icon(Icons.settings_outlined, color: Colors.blue, size: 20),
+              const SizedBox(width: 8),
+              Text('Cooking for ${widget.servings} people', style: TextStyle(color: Colors.blue.shade900, fontWeight: FontWeight.w600)),
+              if (widget.studentMode) ...[
+                const SizedBox(width: 8),
+                Container(width: 1, height: 16, color: Colors.blue.shade200),
+                const SizedBox(width: 8),
+                 Text('Student Mode ON', style: TextStyle(color: Colors.indigo.shade800, fontWeight: FontWeight.w800, fontSize: 12)),
+              ]
+            ],
+          ),
+        ),
+
         if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) ...[const SizedBox(height: 16), Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.amber.withOpacity(0.3))), child: Row(children: [const Icon(Icons.star, color: Colors.orange, size: 18), const SizedBox(width: 8), Expanded(child: Text('Note: ${widget.specialRequest!}', style: TextStyle(color: Colors.brown.shade700)))],),)],
       ])),
       const Spacer(),
@@ -619,7 +757,16 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
       const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Suggestions for you', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20))),
       Expanded(child: GridView.builder(itemCount: _recipes.length, gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 16, crossAxisSpacing: 16, childAspectRatio: 0.75), itemBuilder: (context, index) {
         final recipe = _recipes[index];
-        return _RecipeCard(recipe: recipe, onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecipeDetailPage(recipe: recipe, repo: widget.repo, usedItems: widget.items, onInventoryUpdated: widget.onInventoryUpdated))));
+        return _RecipeCard(
+          recipe: recipe, 
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => RecipeDetailPage(
+            recipe: recipe, 
+            repo: widget.repo, 
+            usedItems: widget.items, 
+            onInventoryUpdated: widget.onInventoryUpdated,
+            initialServings: widget.servings, // 🟢 传递参数
+          )))
+        );
       })),
     ]);
   }
@@ -632,7 +779,17 @@ class RecipeDetailPage extends StatefulWidget {
   final InventoryRepository repo;
   final List<FoodItem> usedItems;
   final VoidCallback? onInventoryUpdated;
-  const RecipeDetailPage({super.key, required this.recipe, required this.repo, required this.usedItems, this.onInventoryUpdated});
+  final int initialServings; // 🟢
+
+  const RecipeDetailPage({
+    super.key,
+    required this.recipe,
+    required this.repo,
+    required this.usedItems,
+    this.onInventoryUpdated,
+    this.initialServings = 2,
+  });
+
   @override
   State<RecipeDetailPage> createState() => _RecipeDetailPageState();
 }
@@ -642,7 +799,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   bool _hcActionLoading = false;
   bool _archiving = false;
   bool _isSaved = false;
-  bool _isOvenReady = false; // 🟢 新增：烤箱就绪状态
+  bool _isOvenReady = false;
 
   @override
   void initState() {
@@ -652,9 +809,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
 
   Future<void> _checkSavedStatus() async {
     final saved = await RecipeArchiveStore.hasRecipe(widget.recipe.id);
-    if (mounted) {
-      setState(() => _isSaved = saved);
-    }
+    if (mounted) setState(() => _isSaved = saved);
   }
 
   Future<String?> _getSupabaseAccessTokenOrNull() async {
@@ -662,7 +817,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     final session = client.auth.currentSession;
     return session?.accessToken;
   }
-  
+
   Future<void> _toggleArchive() async {
     setState(() => _archiving = true);
     try {
@@ -688,10 +843,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   }
 
   Future<String> _findOvenHaId(String token) async {
-    final r = await http.get(
-      Uri.parse('$_backendBase/api/hc?action=appliances'), 
-      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'}
-    );
+    final r = await http.get(Uri.parse('$_backendBase/api/hc?action=appliances'), headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'});
     if (r.statusCode != 200) throw Exception('Fetch appliances failed: ${r.statusCode} ${r.body}');
     final obj = jsonDecode(r.body) as Map<String, dynamic>;
     final list = (obj['homeappliances'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
@@ -700,34 +852,27 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   }
 
   Future<void> _preheatOven() async {
-    // 如果已经预热成功，点击不再重复发送请求，或者您可以逻辑改为“停止预热”
-    if (_isOvenReady) return; 
-
+    if (_isOvenReady) return;
     final ok = await requireLogin(context); if (!ok) return;
     final token = await _getSupabaseAccessTokenOrNull(); if (token == null) return;
     int? temp = widget.recipe.ovenTempC ?? widget.recipe.inferOvenTempFromText();
     if (temp == null) { temp = await _askTempC(context); if (temp == null) return; }
-    
     setState(() => _hcActionLoading = true);
     try {
       final haId = await _findOvenHaId(token);
       final r = await http.post(
-        Uri.parse('$_backendBase/api/hc?action=preheat'), 
-        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'}, 
+        Uri.parse('$_backendBase/api/hc?action=preheat'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
         body: jsonEncode({
-          'haId': haId, 
-          'temperatureC': temp, 
+          'haId': haId,
+          'temperatureC': temp,
           'programKey': 'Cooking.Oven.Program.HeatingMode.PreHeating'
         })
       );
       if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
-      
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Oven preheating to $temp°C ✅')));
-      
-      // 🟢 成功后更新状态
       setState(() => _isOvenReady = true);
-
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Preheat failed: $e')));
@@ -741,11 +886,99 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     return Icons.handyman_outlined;
   }
 
+  // 🟢 核心优化：多步确认流程 (消耗确认 -> 剩菜确认 -> 执行)
+  Future<void> _handleFinishCooking() async {
+    // 1. 确认消耗量 (Smart Usage Review)
+    // 返回 map: { itemId: usedQuantity }
+    final usageMap = await showModalBottomSheet<Map<String, double>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _IngredientUsageSheet(items: widget.usedItems),
+    );
+
+    if (usageMap == null) return; // 用户取消
+
+    // 2. 确认剩菜 (Meal Prep)
+    // 即使消耗量很少，也可能做了很多份，所以总是询问
+    if (!mounted) return;
+    final prepResult = await showModalBottomSheet<_MealPrepResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _MealPrepDialog(totalServings: widget.initialServings),
+    );
+
+    if (prepResult == null) return; // 用户取消
+
+    // 3. 执行逻辑 (Inventory Updates)
+    
+    // A. 扣减原材料
+    for (final item in widget.usedItems) {
+      final usedQty = usageMap[item.id] ?? 0.0;
+      
+      // 如果用户标记为“未使用” (0)，则跳过
+      if (usedQty <= 0.01) continue;
+
+      // 记录影响 (Impact)
+      await widget.repo.recordImpactForAction(item, 'eat', overrideQty: usedQty);
+
+      // 计算剩余
+      final remaining = item.quantity - usedQty;
+
+      if (remaining <= 0.01) {
+        // 吃光了 -> 标记为 Consumed
+        await widget.repo.updateStatus(item.id, FoodStatus.consumed);
+      } else {
+        // 没吃光 -> 更新数量
+        final updatedItem = item.copyWith(quantity: remaining);
+        await widget.repo.updateItem(updatedItem);
+      }
+    }
+
+    // B. 处理剩菜入库
+    if (prepResult.savedServings > 0) {
+      final now = DateTime.now();
+      // 冰箱+3天，冷冻+30天
+      final daysToAdd = prepResult.location == StorageLocation.freezer ? 30 : 3;
+      
+      final leftoverItem = FoodItem(
+        id: const Uuid().v4(),
+        name: 'Leftover: ${widget.recipe.title}',
+        category: 'cooked_meal',
+        quantity: prepResult.savedServings.toDouble(),
+        unit: 'servings',
+        location: prepResult.location,
+        purchasedDate: now,
+        predictedExpiry: now.add(Duration(days: daysToAdd)),
+        status: FoodStatus.good,
+        ownerName: 'Me',
+        source: 'meal_prep',
+      );
+
+      await widget.repo.addItem(leftoverItem);
+    }
+
+    // 4. 反馈与退出
+    widget.onInventoryUpdated?.call();
+    if (!mounted) return;
+    
+    final msg = prepResult.savedServings > 0
+        ? 'Inventory updated & leftovers saved! 🍱'
+        : 'Inventory updated! 😋';
+    
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      backgroundColor: Colors.green.shade700,
+      behavior: SnackBarBehavior.floating,
+    ));
+    
+    Navigator.pop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final recipe = widget.recipe;
-    
-    // 🟢 定义预热状态的颜色和图标
     final ovenColor = _isOvenReady ? Colors.green : Colors.deepOrange;
     final ovenBgColor = _isOvenReady ? Colors.green.shade50 : Colors.orange.shade50;
     final ovenBorderColor = _isOvenReady ? Colors.green.shade100 : Colors.orange.shade100;
@@ -753,22 +986,19 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     return Scaffold(
       backgroundColor: AppStyle.bg,
       appBar: AppBar(
-        title: const Text('Recipe Details', style: TextStyle(fontWeight: FontWeight.w700)), 
-        backgroundColor: AppStyle.bg, 
-        elevation: 0, 
+        title: const Text('Recipe Details', style: TextStyle(fontWeight: FontWeight.w700)),
+        backgroundColor: AppStyle.bg,
+        elevation: 0,
         actions: [
           IconButton(
             onPressed: _archiving ? null : _toggleArchive,
-            icon: Icon(
-              _isSaved ? Icons.bookmark : Icons.bookmark_border,
-              color: _isSaved ? AppStyle.primary : Colors.black87,
-            ),
+            icon: Icon(_isSaved ? Icons.bookmark : Icons.bookmark_border, color: _isSaved ? AppStyle.primary : Colors.black87),
           )
         ]
       ),
-      body: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 32), children: [
+      body: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 100), children: [
         Hero(
-          tag: 'recipe_img_${recipe.id}', 
+          tag: 'recipe_img_${recipe.id}',
           child: Container(
             height: 180, width: double.infinity,
             decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(24)),
@@ -777,16 +1007,18 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
         ),
         const SizedBox(height: 20),
         Text(recipe.title, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, height: 1.2)),
+        const SizedBox(height: 8),
+        Text('Yields ${widget.initialServings} servings', style: TextStyle(color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [_InfoPill(icon: Icons.schedule, text: recipe.timeLabel, bg: Colors.grey.shade200, fg: Colors.black87), _InfoPill(icon: _toolIcon(recipe.appliancesLabel), text: recipe.appliancesLabel, bg: Colors.grey.shade200, fg: Colors.black87)]),
         const SizedBox(height: 24),
         if (recipe.description != null) ...[Text(recipe.description!, style: TextStyle(color: Colors.grey[700], height: 1.5, fontSize: 15)), const SizedBox(height: 24)],
-        
+
         if (recipe.usesOven) ...[
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: ovenBgColor, // 🟢 动态背景色
+              color: ovenBgColor,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: ovenBorderColor)
             ),
@@ -794,15 +1026,14 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(children: [
-                  Icon(Icons.smart_toy_outlined, color: ovenColor), // 🟢 动态图标色
+                  Icon(Icons.smart_toy_outlined, color: ovenColor),
                   const SizedBox(width: 8),
                   Text('Smart Kitchen', style: TextStyle(fontWeight: FontWeight.bold, color: ovenColor))
                 ]),
                 const SizedBox(height: 12),
                 _ActionTile(
-                  // 🟢 状态改变：图标变对号，文字变 Ready
                   icon: _isOvenReady ? Icons.check_circle_rounded : Icons.local_fire_department_rounded,
-                  iconColor: _isOvenReady ? Colors.green : AppStyle.primary, // 🟢 传入自定义颜色
+                  iconColor: _isOvenReady ? Colors.green : AppStyle.primary,
                   title: _isOvenReady ? 'Oven is Ready' : 'Preheat Oven',
                   subtitle: _isOvenReady ? 'Target temperature reached' : 'Tap to start',
                   loading: _hcActionLoading,
@@ -813,21 +1044,373 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
             )
           )
         ],
-        
+
         const SizedBox(height: 24),
         _SectionCard(title: 'Ingredients', child: Column(children: recipe.ingredients.map((ing) => Padding(padding: const EdgeInsets.only(bottom: 12), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.only(top: 6), child: Icon(Icons.circle, size: 6, color: AppStyle.primary)), const SizedBox(width: 12), Expanded(child: Text(ing, style: const TextStyle(fontSize: 15, height: 1.4)))]))).toList())),
         const SizedBox(height: 24),
-        _SectionCard(title: 'Instructions', child: Column(children: recipe.steps.asMap().entries.map((e) => Container(margin: const EdgeInsets.only(bottom: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: 28, height: 28, alignment: Alignment.center, decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), shape: BoxShape.circle), child: Text('${e.key + 1}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppStyle.primary))), const SizedBox(width: 12), Expanded(child: Text(e.value, style: const TextStyle(height: 1.5, fontSize: 15)))]))).toList())),
-        const SizedBox(height: 32),
-        if (widget.usedItems.isNotEmpty) SizedBox(width: double.infinity, height: 56, child: FilledButton.icon(onPressed: () async {
-          final shouldUpdate = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('Finished Cooking?'), content: const Text('Update inventory?'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('No')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Update'))]));
-          if (shouldUpdate == true) {
-            for (final item in widget.usedItems) { await widget.repo.recordImpactForAction(item, 'eat'); await widget.repo.updateStatus(item.id, FoodStatus.consumed); }
-            widget.onInventoryUpdated?.call();
-            if (context.mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Inventory updated ✅'))); Navigator.pop(context); }
-          }
-        }, icon: const Icon(Icons.check_circle_outline), label: const Text('I Cooked This'), style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))))),
+
+        const Padding(
+          padding: EdgeInsets.only(bottom: 12, left: 4),
+          child: Text('Instructions', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+        ),
+        ListView.separated(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: recipe.steps.length,
+          separatorBuilder: (ctx, i) => const SizedBox(height: 16),
+          itemBuilder: (ctx, i) {
+            final stepText = recipe.steps[i];
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: AppStyle.softShadow,
+                border: Border.all(color: Colors.grey.shade100),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppStyle.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'STEP ${i + 1}',
+                          style: const TextStyle(
+                            color: AppStyle.primary,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    stepText,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      height: 1.6,
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
       ]),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: SizedBox(
+            height: 56,
+            child: widget.usedItems.isNotEmpty
+              ? FilledButton.icon(
+                  onPressed: _handleFinishCooking, // 🟢 调用新的逻辑
+                  icon: const Icon(Icons.check_circle_outline),
+                  label: const Text('I Cooked This'),
+                  style: FilledButton.styleFrom(backgroundColor: Colors.green.shade600, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                )
+              : null,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// 🟢 新增：消耗量确认 Sheet
+class _IngredientUsageSheet extends StatefulWidget {
+  final List<FoodItem> items;
+  const _IngredientUsageSheet({required this.items});
+
+  @override
+  State<_IngredientUsageSheet> createState() => _IngredientUsageSheetState();
+}
+
+class _IngredientUsageSheetState extends State<_IngredientUsageSheet> {
+  late Map<String, double> _usageMap;
+
+  @override
+  void initState() {
+    super.initState();
+    // 默认认为全用了 (Low operation cost)
+    _usageMap = {
+      for (var item in widget.items) item.id: item.quantity
+    };
+  }
+
+  void _updateUsage(String id, double maxQty, double fraction) {
+    setState(() {
+      _usageMap[id] = (maxQty * fraction);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Review Ingredients Usage', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 8),
+          const Text('Adjust if you didn\'t use everything (e.g. Oil, Spices).', style: TextStyle(color: Colors.grey)),
+          const SizedBox(height: 20),
+          
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: widget.items.length,
+              separatorBuilder: (ctx, i) => const Divider(height: 24),
+              itemBuilder: (ctx, i) {
+                final item = widget.items[i];
+                final usedQty = _usageMap[item.id]!;
+                final isFull = (usedQty - item.quantity).abs() < 0.01;
+                final isZero = usedQty <= 0.01;
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(item.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                        ),
+                        Text(
+                          isFull ? 'All' : '-${usedQty.toStringAsFixed(1)} ${item.unit}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: isZero ? Colors.grey : (isFull ? Colors.red : Colors.orange),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Quick chips for high accuracy with low clicks
+                    Row(
+                      children: [
+                        _UsageChip(label: 'None', selected: isZero, onTap: () => setState(() => _usageMap[item.id] = 0)),
+                        const SizedBox(width: 8),
+                        _UsageChip(label: '¼', selected: false, onTap: () => _updateUsage(item.id, item.quantity, 0.25)),
+                        const SizedBox(width: 8),
+                        _UsageChip(label: '½', selected: false, onTap: () => _updateUsage(item.id, item.quantity, 0.5)),
+                        const SizedBox(width: 8),
+                        _UsageChip(label: 'All', selected: isFull, onTap: () => setState(() => _usageMap[item.id] = item.quantity)),
+                      ],
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          
+          const SizedBox(height: 24),
+          SafeArea(
+            child: FilledButton(
+              onPressed: () {
+                Navigator.pop(context, _usageMap);
+              },
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                backgroundColor: AppStyle.primary,
+              ),
+              child: const Text('Confirm Usage', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UsageChip extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _UsageChip({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppStyle.primary : Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label, 
+          style: TextStyle(
+            color: selected ? Colors.white : Colors.grey.shade700, 
+            fontWeight: FontWeight.w600,
+            fontSize: 12
+          )
+        ),
+      ),
+    );
+  }
+}
+
+// 🟢 新增：备餐结果类
+class _MealPrepResult {
+  final int savedServings;
+  final StorageLocation location;
+  _MealPrepResult(this.savedServings, this.location);
+}
+
+// 🟢 新增：备餐选择对话框
+class _MealPrepDialog extends StatefulWidget {
+  final int totalServings;
+  const _MealPrepDialog({required this.totalServings});
+
+  @override
+  State<_MealPrepDialog> createState() => _MealPrepDialogState();
+}
+
+class _MealPrepDialogState extends State<_MealPrepDialog> {
+  int _savedServings = 0;
+  StorageLocation _location = StorageLocation.fridge;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Did you finish it all?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          const Text('Or did you meal prep for later?', style: TextStyle(color: Colors.grey), textAlign: TextAlign.center),
+          const SizedBox(height: 24),
+          
+          // Servings Slider
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text('Leftovers to save:', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+              Container(
+                decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.remove),
+                      onPressed: _savedServings > 0 ? () => setState(() => _savedServings--) : null,
+                    ),
+                    Text('$_savedServings', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      onPressed: _savedServings < widget.totalServings ? () => setState(() => _savedServings++) : null,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          
+          if (_savedServings > 0) ...[
+            const SizedBox(height: 24),
+            const Text('Where will you store it?', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _StorageOption(
+                    label: 'Fridge',
+                    sub: '+3 Days',
+                    icon: Icons.kitchen_rounded,
+                    selected: _location == StorageLocation.fridge,
+                    onTap: () => setState(() => _location = StorageLocation.fridge),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _StorageOption(
+                    label: 'Freezer',
+                    sub: '+1 Month',
+                    icon: Icons.ac_unit_rounded,
+                    selected: _location == StorageLocation.freezer,
+                    onTap: () => setState(() => _location = StorageLocation.freezer),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 32),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context, _MealPrepResult(_savedServings, _location));
+            },
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              backgroundColor: _savedServings > 0 ? AppStyle.primary : Colors.green.shade600,
+            ),
+            child: Text(
+              _savedServings > 0 ? 'Save Leftovers' : 'Ate Everything!',
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StorageOption extends StatelessWidget {
+  final String label;
+  final String sub;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _StorageOption({required this.label, required this.sub, required this.icon, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: selected ? AppStyle.primary.withOpacity(0.1) : Colors.white,
+          border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade300, width: 2),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: selected ? AppStyle.primary : Colors.grey),
+            const SizedBox(height: 8),
+            Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: selected ? AppStyle.primary : Colors.black87)),
+            Text(sub, style: TextStyle(fontSize: 12, color: selected ? AppStyle.primary : Colors.grey)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -918,7 +1501,7 @@ class _RecipeCard extends StatelessWidget {
   final RecipeSuggestion recipe;
   final VoidCallback onTap;
   const _RecipeCard({required this.recipe, required this.onTap});
-  
+
   @override
   Widget build(BuildContext context) {
     return InkWell(
@@ -928,9 +1511,9 @@ class _RecipeCard extends StatelessWidget {
         decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Hero(
-            tag: 'recipe_img_${recipe.id}', 
+            tag: 'recipe_img_${recipe.id}',
             child: Container(
-              height: 100, width: double.infinity, 
+              height: 100, width: double.infinity,
               decoration: const BoxDecoration(borderRadius: BorderRadius.vertical(top: Radius.circular(20)), color: Color(0xFFF0F5FF)),
               child: Stack(children: [
                 Center(child: Icon(Icons.fastfood_rounded, size: 40, color: AppStyle.primary.withOpacity(0.3))),
@@ -979,7 +1562,7 @@ class _InputRow extends StatelessWidget {
     return Row(children: [
       Expanded(child: SizedBox(height: 48, child: TextField(
         controller: controller,
-        textInputAction: TextInputAction.done, 
+        textInputAction: TextInputAction.done,
         onSubmitted: (_) => onSubmit(),
         decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14), contentPadding: const EdgeInsets.symmetric(horizontal: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppStyle.primary)), filled: true, fillColor: Colors.white),
       ))),
@@ -996,7 +1579,7 @@ class _EntryTile extends StatelessWidget { final IconData icon; final String tit
 class _SectionCard extends StatelessWidget { final String title; final String? subtitle; final Widget child; const _SectionCard({required this.title, this.subtitle, required this.child}); @override Widget build(BuildContext context) { return Container(decoration: BoxDecoration(color: AppStyle.cardColor, borderRadius: BorderRadius.circular(AppStyle.cardRadius), boxShadow: AppStyle.softShadow), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), if (subtitle != null) ...[const SizedBox(height: 4), Text(subtitle!, style: TextStyle(fontSize: 13, color: Colors.grey[500], height: 1.3))]])), const SizedBox(height: 12), Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: child)])); } }
 class _HeroCard extends StatelessWidget { final int selectedCount; final int preselectedCount; const _HeroCard({required this.selectedCount, required this.preselectedCount}); @override Widget build(BuildContext context) { return Container(height: 150, decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF005F87), Color(0xFF0082B8)]), boxShadow: const [BoxShadow(color: Color(0x33005F87), blurRadius: 20, offset: Offset(0, 10))]), child: Stack(children: [Positioned(right: -20, top: -20, child: Icon(Icons.restaurant_menu, size: 140, color: Colors.white.withOpacity(0.1))), Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [Text('$selectedCount', style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w800, height: 1.0)), const SizedBox(width: 8), const Text('items selected', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))]), const SizedBox(height: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 14, color: Colors.white), const SizedBox(width: 6), Text(preselectedCount > 0 ? '$preselectedCount items expiring soon' : 'Pick items to cook', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))]))]))])); } }
 enum _Urgency { high, medium, low, neutral }
-class _InventoryPickTile extends StatelessWidget { final String name; final String qtyText; final String expiryText; final _Urgency urgency; final bool selected; final VoidCallback onTap; const _InventoryPickTile({required this.name, required this.qtyText, required this.expiryText, required this.urgency, required this.selected, required this.onTap}); Color _badgeColor() { switch (urgency) { case _Urgency.high: return Colors.red; case _Urgency.medium: return Colors.orange; case _Urgency.low: return Colors.green; case _Urgency.neutral: return Colors.grey; } } @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: selected ? AppStyle.primary.withOpacity(0.04) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade200, width: selected ? 1.5 : 1)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: _badgeColor(), shape: BoxShape.circle)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: selected ? AppStyle.primary : Colors.black87)), const SizedBox(height: 2), Text('$qtyText • $expiryText', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))])), Container(width: 24, height: 24, decoration: BoxDecoration(color: selected ? AppStyle.primary : Colors.transparent, shape: BoxShape.circle, border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade300, width: 1.5)), child: selected ? const Icon(Icons.check, size: 16, color: Colors.white) : null)]))); } }
+class _InventoryPickTile extends StatelessWidget { final String name; final String qtyText; final String expiryText; final _Urgency urgency; final bool selected; final VoidCallback onTap; final String? addedBy; const _InventoryPickTile({required this.name, required this.qtyText, required this.expiryText, required this.urgency, required this.selected, required this.onTap, this.addedBy}); Color _badgeColor() { switch (urgency) { case _Urgency.high: return Colors.red; case _Urgency.medium: return Colors.orange; case _Urgency.low: return Colors.green; case _Urgency.neutral: return Colors.grey; } } @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: selected ? AppStyle.primary.withOpacity(0.04) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade200, width: selected ? 1.5 : 1)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: _badgeColor(), shape: BoxShape.circle)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: selected ? AppStyle.primary : Colors.black87)), const SizedBox(height: 2), Text('$qtyText • $expiryText', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))])), Container(width: 24, height: 24, decoration: BoxDecoration(color: selected ? AppStyle.primary : Colors.transparent, shape: BoxShape.circle, border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade300, width: 1.5)), child: selected ? const Icon(Icons.check, size: 16, color: Colors.white) : null)]))); } }
 class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1004,7 +1587,7 @@ class _ActionTile extends StatelessWidget {
   final bool loading;
   final VoidCallback? onTap;
   final Color bgColor;
-  final Color? iconColor; // 🟢 新增参数
+  final Color? iconColor;
 
   const _ActionTile({
     required this.icon,
@@ -1013,7 +1596,7 @@ class _ActionTile extends StatelessWidget {
     required this.loading,
     required this.onTap,
     this.bgColor = const Color(0xFFF5F7FA),
-    this.iconColor, // 🟢
+    this.iconColor,
   });
 
   @override
@@ -1034,11 +1617,10 @@ class _ActionTile extends StatelessWidget {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                // 🟢 背景色也跟随图标颜色稍微变化一点，或者保持原样
                 color: (iconColor ?? AppStyle.primary).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: iconColor ?? AppStyle.primary), // 🟢 使用传入的颜色
+              child: Icon(icon, color: iconColor ?? AppStyle.primary),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1064,7 +1646,6 @@ class _ActionTile extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              // 🟢 如果完成了（不可点击），隐藏箭头或者显示Check
               onTap == null && !loading
                   ? Icon(Icons.check, color: Colors.green.shade300)
                   : Icon(Icons.chevron_right, color: Colors.grey[400]),

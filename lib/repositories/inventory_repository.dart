@@ -1,3 +1,4 @@
+// lib/repositories/inventory_repository.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
@@ -5,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:http/http.dart' as http; // 🟢 1. 必须引入 http 包
 
 import '../models/food_item.dart';
 import '../utils/impact_calculator.dart';
@@ -28,7 +30,6 @@ class ShoppingItem {
     this.userId,
   });
 
-  // 用于上传到数据库的 JSON
   Map<String, dynamic> toDbJson(String familyId, String currentUserId) {
     return {
       'id': id,
@@ -41,7 +42,6 @@ class ShoppingItem {
     };
   }
 
-  // 用于本地缓存的 JSON
   Map<String, dynamic> toLocalJson(String familyId, String currentUserId) {
     var map = toDbJson(familyId, currentUserId);
     map['owner_name'] = ownerName;
@@ -61,7 +61,7 @@ class ShoppingItem {
 
     return ShoppingItem(
       id: json['id'].toString(),
-      name: json['name'],
+      name: json['name'] ?? 'Unknown',
       category: json['category'] ?? 'general',
       isChecked: json['is_checked'] ?? false,
       ownerName: extractName(json),
@@ -97,9 +97,9 @@ class ShoppingHistoryItem {
   factory ShoppingHistoryItem.fromJson(Map<String, dynamic> json) {
     return ShoppingHistoryItem(
       id: json['id'].toString(),
-      name: json['name'],
+      name: json['name'] ?? 'Unknown',
       category: json['category'] ?? 'general',
-      date: DateTime.parse(json['added_date']),
+      date: DateTime.tryParse(json['added_date'].toString()) ?? DateTime.now(),
     );
   }
 }
@@ -112,6 +112,9 @@ class ImpactEvent {
   final String unit;
   final double moneySaved;
   final double co2Saved;
+  
+  final String? itemName;
+  final String? itemCategory;
 
   ImpactEvent({
     required this.id,
@@ -121,6 +124,8 @@ class ImpactEvent {
     required this.unit,
     required this.moneySaved,
     required this.co2Saved,
+    this.itemName,
+    this.itemCategory,
   });
 
   Map<String, dynamic> toJson(String familyId, String userId) {
@@ -134,32 +139,41 @@ class ImpactEvent {
       'unit': unit,
       'money_saved': moneySaved,
       'co2_saved': co2Saved,
+      'item_name': itemName,
+      'item_category': itemCategory,
     };
   }
 
   factory ImpactEvent.fromJson(Map<String, dynamic> json) {
     return ImpactEvent(
       id: json['id'].toString(),
-      date: DateTime.parse(json['created_at']),
+      date: DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now(),
       type: ImpactType.values.firstWhere(
         (e) => e.name == (json['type'] as String),
         orElse: () => ImpactType.eaten,
       ),
-      quantity: (json['quantity'] as num).toDouble(),
+      quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
       unit: json['unit'] ?? '',
       moneySaved: (json['money_saved'] as num?)?.toDouble() ?? 0.0,
       co2Saved: (json['co2_saved'] as num?)?.toDouble() ?? 0.0,
+      itemName: json['item_name'],
+      itemCategory: json['item_category'],
     );
   }
 }
+
+enum ImpactType { eaten, fedToPet, trashed }
 
 class ExpiryService {
   DateTime predictExpiry(String? category, StorageLocation location, DateTime purchased, {DateTime? openDate, DateTime? bestBefore}) {
     int days = 7;
     if (location == StorageLocation.freezer) {
       days = 90;
-    } else if (location == StorageLocation.pantry) days = 14;
-    else if (location == StorageLocation.fridge) days = 5;
+    } else if (location == StorageLocation.pantry) {
+      days = 14;
+    } else if (location == StorageLocation.fridge) {
+      days = 5;
+    }
 
     if (bestBefore != null) {
       final ruleDate = purchased.add(Duration(days: days));
@@ -173,8 +187,6 @@ class ExpiryService {
     return purchased.add(Duration(days: days));
   }
 }
-
-enum ImpactType { eaten, fedToPet, trashed }
 
 // ================== The Repository ==================
 
@@ -190,13 +202,15 @@ class InventoryRepository extends ChangeNotifier {
   List<ShoppingHistoryItem> _shoppingHistory = [];
   List<ShoppingItem> _activeShoppingList = [];
   
-  // 🟢 新增：待办上传队列 (支持离线同步)
   List<Map<String, dynamic>> _pendingUploads = [];
 
   final ExpiryService _expiryService = ExpiryService();
 
   bool hasShownPetWarning = false;
   int _streakDays = 0;
+  
+  bool _isSeniorMode = false;
+  bool get isSeniorMode => _isSeniorMode;
 
   String? _currentFamilyId;
   String? _currentFamilyName;
@@ -234,6 +248,39 @@ class InventoryRepository extends ChangeNotifier {
     super.dispose();
   }
 
+  // 🟢 2. 新增：调用后端 API 预测保质期的方法
+  // 这就是解决 "Paprika 明年过期" 问题的关键
+  Future<DateTime?> predictExpiryDate(String name, String location, DateTime purchasedDate) async {
+    const String baseUrl = 'https://project-study-bsh.vercel.app'; 
+    
+    try {
+      debugPrint('🚀 Asking AI for expiry: $name in $location');
+      
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/recipe'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'name': name,
+          'location': location, 
+          'purchasedDate': purchasedDate.toIso8601String(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['predictedExpiry'] != null) {
+          debugPrint("✅ AI Prediction: ${data['days']} days for $name");
+          return DateTime.tryParse(data['predictedExpiry']);
+        }
+      } else {
+        debugPrint("❌ API Error: ${response.body}");
+      }
+    } catch (e) {
+      debugPrint("❌ Connection Error: $e");
+    }
+    return null; 
+  }
+
   void _cleanupRealtime() {
     if (_inventoryChannel != null) _supabase.removeChannel(_inventoryChannel!);
     if (_shoppingChannel != null) _supabase.removeChannel(_shoppingChannel!);
@@ -266,7 +313,7 @@ class InventoryRepository extends ChangeNotifier {
     _activeShoppingList = [];
     _shoppingHistory = [];
     _impactEvents = [];
-    _pendingUploads = []; // 清空待办
+    _pendingUploads = [];
     _sessionCompleter = null;
   }
 
@@ -325,11 +372,8 @@ class InventoryRepository extends ChangeNotifier {
     }
   }
 
-  // 🟢 确保创建家庭逻辑正确，适用于无家庭用户
   Future<void> _createNewDefaultFamily(String userId) async {
     try {
-      // 1. 在 families 表插入新记录，并立即返回 ID
-      // 注意：这需要 RLS 策略允许 'insert' 和查看自己 'created_by' 的记录
       final newFamily = await _supabase
           .from('families')
           .insert({'name': 'My Home', 'created_by': userId})
@@ -338,8 +382,6 @@ class InventoryRepository extends ChangeNotifier {
 
       final fid = newFamily['id'];
       
-      // 2. 将自己加入 family_members
-      // 注意：这需要 RLS 策略允许 'insert' user_id = auth.uid()
       await _supabase.from('family_members').insert({
         'family_id': fid,
         'user_id': userId,
@@ -351,8 +393,6 @@ class InventoryRepository extends ChangeNotifier {
       debugPrint('✅ Created and joined default family: $fid');
     } catch (e) {
       debugPrint('🚨 Failed to create default family: $e');
-      // 如果创建失败（比如网络问题），保持 _currentFamilyId 为 null，
-      // 后续操作会再次触发 _ensureFamily 重试
     }
   }
 
@@ -360,7 +400,6 @@ class InventoryRepository extends ChangeNotifier {
     await _ensureFamily();
     if (_currentFamilyId == null) return;
 
-    // 🟢 关键步骤：在拉取新数据前，先处理离线队列
     await _processPendingQueue();
 
     try {
@@ -373,13 +412,37 @@ class InventoryRepository extends ChangeNotifier {
         _supabase.from('impact_events').select().eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
       ]);
 
-      _items = (results[0] as List).map((e) {
+      // Merge Inventory
+      final serverItems = (results[0] as List).map((e) {
         try { return FoodItem.fromJson(_injectFallbackName(e)); } catch (_) { return null; }
       }).whereType<FoodItem>().toList();
 
-      _activeShoppingList = (results[1] as List).map((e) {
+      final pendingInventory = _pendingUploads
+          .where((e) => (e['meta_table'] == 'inventory_items' || e['meta_table'] == null))
+          .map((e) {
+             try { return FoodItem.fromJson(_injectFallbackName(e)); } catch(_) { return null; }
+          })
+          .whereType<FoodItem>()
+          .where((local) => !serverItems.any((server) => server.id == local.id))
+          .toList();
+      
+      _items = [...pendingInventory, ...serverItems];
+
+      // Merge Shopping List
+      final serverShopping = (results[1] as List).map((e) {
          try { return ShoppingItem.fromJson(_injectFallbackName(e)); } catch (_) { return null; }
       }).whereType<ShoppingItem>().toList();
+
+      final pendingShopping = _pendingUploads
+          .where((e) => e['meta_table'] == 'shopping_items')
+          .map((e) {
+             try { return ShoppingItem.fromJson(_injectFallbackName(e)); } catch (_) { return null; }
+          })
+          .whereType<ShoppingItem>()
+          .where((local) => !serverShopping.any((server) => server.id == local.id))
+          .toList();
+
+      _activeShoppingList = [...pendingShopping, ...serverShopping];
 
       _shoppingHistory = (results[2] as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
       _impactEvents = (results[3] as List).map((e) => ImpactEvent.fromJson(e)).toList();
@@ -405,8 +468,6 @@ class InventoryRepository extends ChangeNotifier {
        debugPrint("Warning: Operation performed without family context (Offline or Error)");
     }
   }
-
-  // ================== Realtime Logic ==================
 
   void _initRealtimeSubscription() {
     if (_currentFamilyId == null) return;
@@ -472,13 +533,17 @@ class InventoryRepository extends ChangeNotifier {
   Map<String, dynamic> _injectFallbackName(Map<String, dynamic> json) {
     if (json['user_profiles'] != null) return json;
     final uid = json['user_id']?.toString();
-    final name = (uid == _currentUserId) ? _currentUserName : (_familyMemberCache[uid] ?? 'Family');
+    String name = 'Family';
+    if (_currentUserId != null && uid == _currentUserId) {
+      name = _currentUserName ?? 'Me';
+    } else if (uid != null) {
+      name = _familyMemberCache[uid] ?? 'Family';
+    }
+    
     final newMap = Map<String, dynamic>.from(json);
     newMap['user_profiles'] = {'display_name': name};
     return newMap;
   }
-
-  // ================== Data Sanitization & Sync Logic ==================
 
   Map<String, dynamic> _cleanJsonForDb(Map<String, dynamic> rawJson) {
     final json = Map<String, dynamic>.from(rawJson);
@@ -486,7 +551,6 @@ class InventoryRepository extends ChangeNotifier {
     json.remove('owner_name');
     json.remove('ownerName'); 
     json.remove('display_name');
-    // 移除 meta_table 标记，防止发送到 supabase 报错
     json.remove('meta_table'); 
 
     if (_currentFamilyId != null) json['family_id'] = _currentFamilyId;
@@ -495,7 +559,6 @@ class InventoryRepository extends ChangeNotifier {
     return json;
   }
 
-  // 🟢 核心功能：处理离线积压的任务 (Sync & Merge)
   Future<void> _processPendingQueue() async {
     if (_pendingUploads.isEmpty) return;
     if (_currentFamilyId == null) return;
@@ -507,7 +570,7 @@ class InventoryRepository extends ChangeNotifier {
 
     for (var itemWithMeta in queue) {
       try {
-        final tableName = itemWithMeta['meta_table'] ?? 'inventory_items'; // 默认为 inventory_items
+        final tableName = itemWithMeta['meta_table'] ?? 'inventory_items';
         
         final itemJson = Map<String, dynamic>.from(itemWithMeta);
         itemJson['family_id'] = _currentFamilyId;
@@ -530,10 +593,8 @@ class InventoryRepository extends ChangeNotifier {
     }
   }
 
-  // 🟢 核心功能：将失败的操作加入队列
   Future<void> _queueOfflineAction(String tableName, Map<String, dynamic> rawJson) async {
     final payload = _cleanJsonForDb(rawJson);
-    
     payload['meta_table'] = tableName;
     
     final idx = _pendingUploads.indexWhere((e) => e['id'] == payload['id']);
@@ -609,6 +670,114 @@ class InventoryRepository extends ChangeNotifier {
     }
   }
 
+  Future<ImpactEvent?> useItemWithImpact(FoodItem item, String action, double usedQty) async {
+    if (usedQty <= 0) return null;
+    final double clamped = usedQty.clamp(0, item.quantity).toDouble();
+    
+    final event = await recordImpactForAction(item, action, overrideQty: clamped);
+
+    final remaining = item.quantity - clamped;
+    if (remaining <= 0.0001) {
+      await updateStatus(item.id, FoodStatus.consumed);
+    } else {
+      await updateItem(item.copyWith(quantity: remaining));
+    }
+    
+    return event;
+  }
+  
+  Future<void> undoConsume(FoodItem oldItem, String? eventId) async {
+    final idx = _items.indexWhere((i) => i.id == oldItem.id);
+    if (idx != -1) {
+      _items[idx] = oldItem; 
+    } else {
+      _items.insert(0, oldItem);
+    }
+
+    if (eventId != null) {
+      _impactEvents.removeWhere((e) => e.id == eventId);
+      _calculateStreakFromLocalEvents(); 
+    }
+
+    notifyListeners();
+    await _saveLocalCache();
+
+    try {
+      await _ensureFamily();
+      final itemPayload = _cleanJsonForDb(oldItem.toJson());
+      await _supabase.from('inventory_items').upsert(itemPayload);
+      if (eventId != null) {
+        await _supabase.from('impact_events').delete().eq('id', eventId);
+      }
+      debugPrint("✅ Undo successful");
+    } catch (e) {
+      debugPrint("❌ Undo failed (Queuing item update): $e");
+      await _queueOfflineAction('inventory_items', oldItem.toJson());
+    }
+  }
+
+  Future<ImpactEvent?> recordImpactForAction(FoodItem item, String action, {double? overrideQty}) async {
+    final qty = overrideQty ?? item.quantity;
+    final factors = ImpactCalculator.calculate(item.name, item.category, qty, item.unit);
+
+    double money = 0;
+    double co2 = 0;
+    ImpactType type;
+
+    switch (action) {
+      case 'eat':
+        type = ImpactType.eaten;
+        money = factors.pricePerKg;
+        co2 = factors.co2PerKg;
+        break;
+      case 'pet':
+        type = ImpactType.fedToPet;
+        money = factors.pricePerKg;
+        co2 = factors.co2PerKg;
+        break;
+      default:
+        type = ImpactType.trashed;
+        money = 0;
+        co2 = 0;
+        break;
+    }
+
+    if (type != ImpactType.trashed) {
+      final event = ImpactEvent(
+        id: const Uuid().v4(),
+        date: DateTime.now(),
+        type: type,
+        quantity: qty,
+        unit: item.unit,
+        moneySaved: money,
+        co2Saved: co2,
+        itemName: item.name,
+        itemCategory: item.category ?? 'general',
+      );
+
+      _impactEvents.insert(0, event);
+      _updateStreakOnConsumed();
+      _saveMeta();
+      notifyListeners();
+      await _saveLocalCache();
+
+      try {
+        await _ensureFamily();
+        if (_currentFamilyId != null && _currentUserId != null) {
+          final payload = _cleanJsonForDb(event.toJson(_currentFamilyId!, _currentUserId!));
+          await _supabase.from('impact_events').insert(payload);
+        }
+      } catch (e) {
+        debugPrint('Impact upload error (queuing offline): $e');
+        if (_currentFamilyId != null && _currentUserId != null) {
+          await _queueOfflineAction('impact_events', event.toJson(_currentFamilyId!, _currentUserId!));
+        }
+      }
+      return event;
+    }
+    return null;
+  }
+
   // ================== Shopping List ==================
 
   List<ShoppingItem> getShoppingList() => List.unmodifiable(_activeShoppingList);
@@ -623,7 +792,7 @@ class InventoryRepository extends ChangeNotifier {
       await _ensureFamily();
       if (_currentFamilyId == null) return;
       
-      final payload = _cleanJsonForDb(item.toDbJson(_currentFamilyId!, _currentUserId!));
+      final payload = _cleanJsonForDb(item.toDbJson(_currentFamilyId!, _currentUserId ?? ''));
       await _supabase.from('shopping_items').upsert(payload).timeout(const Duration(seconds: 5));
     } catch (e) {
       await _queueOfflineAction('shopping_items', item.toLocalJson(_currentFamilyId ?? '', _currentUserId ?? ''));
@@ -696,10 +865,15 @@ class InventoryRepository extends ChangeNotifier {
       final historyItem = ShoppingHistoryItem(id: const Uuid().v4(), name: item.name, category: item.category, date: now);
       _shoppingHistory.insert(0, historyItem);
       
-      _ensureFamily().then((_) {
+      _ensureFamily().then((_) async {
         if (_currentFamilyId != null) {
-          final payload = _cleanJsonForDb(historyItem.toJson(_currentFamilyId!, _currentUserId!));
-          _supabase.from('shopping_history').insert(payload).then((_){}).catchError((e){debugPrint("History upload fail:$e");});
+          final payload = _cleanJsonForDb(historyItem.toJson(_currentFamilyId!, _currentUserId ?? ''));
+          try {
+             await _supabase.from('shopping_history').insert(payload);
+          } catch (e) {
+             debugPrint("History upload fail (queuing offline): $e");
+             await _queueOfflineAction('shopping_history', historyItem.toJson(_currentFamilyId!, _currentUserId ?? ''));
+          }
         }
       });
     }
@@ -739,74 +913,6 @@ class InventoryRepository extends ChangeNotifier {
   int getSavedCount() => _impactEvents.where((e) => e.type != ImpactType.trashed).length;
   int getWastedCount() => _impactEvents.where((e) => e.type == ImpactType.trashed).length;
 
-  Future<void> useItemWithImpact(FoodItem item, String action, double usedQty) async {
-    if (usedQty <= 0) return;
-    final double clamped = usedQty.clamp(0, item.quantity).toDouble();
-    await recordImpactForAction(item, action, overrideQty: clamped);
-
-    final remaining = item.quantity - clamped;
-    if (remaining <= 0.0001) {
-      await updateStatus(item.id, FoodStatus.consumed);
-    } else {
-      await updateItem(item.copyWith(quantity: remaining));
-    }
-  }
-
-  Future<void> recordImpactForAction(FoodItem item, String action, {double? overrideQty}) async {
-    final qty = overrideQty ?? item.quantity;
-    final factors = ImpactCalculator.calculate(item.name, item.category, qty, item.unit);
-
-    double money = 0;
-    double co2 = 0;
-    ImpactType type;
-
-    switch (action) {
-      case 'eat':
-        type = ImpactType.eaten;
-        money = factors.pricePerKg;
-        co2 = factors.co2PerKg;
-        break;
-      case 'pet':
-        type = ImpactType.fedToPet;
-        money = factors.pricePerKg;
-        co2 = factors.co2PerKg;
-        break;
-      default:
-        type = ImpactType.trashed;
-        money = 0;
-        co2 = 0;
-        break;
-    }
-
-    if (type != ImpactType.trashed) {
-      final event = ImpactEvent(
-        id: const Uuid().v4(),
-        date: DateTime.now(),
-        type: type,
-        quantity: qty,
-        unit: item.unit,
-        moneySaved: money,
-        co2Saved: co2,
-      );
-
-      _impactEvents.insert(0, event);
-      _updateStreakOnConsumed();
-      _saveMeta();
-      notifyListeners();
-      await _saveLocalCache();
-
-      try {
-        await _ensureFamily();
-        if (_currentFamilyId != null && _currentUserId != null) {
-          final payload = _cleanJsonForDb(event.toJson(_currentFamilyId!, _currentUserId!));
-          await _supabase.from('impact_events').insert(payload);
-        }
-      } catch (e) { debugPrint('Impact error: $e'); }
-    }
-  }
-
-  // ================== Cache & Meta ==================
-
   Future<void> _checkAutoRefill(FoodItem item) async {
     if (item.minQuantity == null) return;
     if (item.quantity <= item.minQuantity!) {
@@ -827,8 +933,6 @@ class InventoryRepository extends ChangeNotifier {
       await prefs.setString('cache_shopping', jsonEncode(_activeShoppingList.map((e) => e.toLocalJson(fid, uid)).toList()));
       await prefs.setString('cache_history', jsonEncode(_shoppingHistory.map((e) => e.toJson(fid, uid)).toList()));
       await prefs.setString('cache_impact', jsonEncode(_impactEvents.map((e) => e.toJson(fid, uid)).toList()));
-      
-      // 🟢 保存待办队列到本地
       await prefs.setString('pending_uploads', jsonEncode(_pendingUploads));
     } catch (_) {}
   }
@@ -858,7 +962,6 @@ class InventoryRepository extends ChangeNotifier {
         _calculateStreakFromLocalEvents();
       }
       
-      // 🟢 加载待办队列
       final sPending = prefs.getString('pending_uploads');
       if (sPending != null) {
         _pendingUploads = List<Map<String, dynamic>>.from(jsonDecode(sPending));
@@ -872,6 +975,8 @@ class InventoryRepository extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     hasShownPetWarning = prefs.getBool('petWarningShown') ?? false;
     _streakDays = prefs.getInt('streakDays') ?? 0;
+    // 🟢 2. 加载长辈模式状态
+    _isSeniorMode = prefs.getBool('isSeniorMode') ?? false;
   }
 
   Future<void> _saveMeta() async {
@@ -879,9 +984,59 @@ class InventoryRepository extends ChangeNotifier {
     await prefs.setBool('petWarningShown', hasShownPetWarning);
     await prefs.setInt('streakDays', _streakDays);
   }
+  
+  // 🟢 3. 切换长辈模式
+  Future<void> toggleSeniorMode(bool value) async {
+    _isSeniorMode = value;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isSeniorMode', value);
+  }
 
-  void _calculateStreakFromLocalEvents() { if (_impactEvents.isNotEmpty) _streakDays = 1; }
-  void _updateStreakOnConsumed() { _streakDays++; }
+  void _calculateStreakFromLocalEvents() {
+    if (_impactEvents.isEmpty) {
+      _streakDays = 0;
+      return;
+    }
+
+    final activeDates = _impactEvents.map((e) {
+      return DateTime(e.date.year, e.date.month, e.date.day);
+    }).toSet().toList();
+
+    activeDates.sort((a, b) => b.compareTo(a));
+
+    if (activeDates.isEmpty) {
+      _streakDays = 0;
+      return;
+    }
+
+    final today = DateTime.now();
+    final todayDate = DateTime(today.year, today.month, today.day);
+    final yesterdayDate = todayDate.subtract(const Duration(days: 1));
+    
+    final lastActive = activeDates.first;
+    if (lastActive != todayDate && lastActive != yesterdayDate) {
+      _streakDays = 0;
+      return;
+    }
+
+    int streak = 1; 
+    for (int i = 0; i < activeDates.length - 1; i++) {
+      final current = activeDates[i];
+      final previous = activeDates[i + 1];
+      if (current.difference(previous).inDays == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    _streakDays = streak;
+  }
+
+  void _updateStreakOnConsumed() {
+    _calculateStreakFromLocalEvents();
+  }
+
   int getCurrentStreakDays() => _streakDays;
 
   Future<void> markPetWarningShown() async {
@@ -889,79 +1044,31 @@ class InventoryRepository extends ChangeNotifier {
     await _saveMeta();
   }
 
-  // ================== Family Features (Fixed Loading) ==================
-
-  // 🔍 DEBUG VERSION
   Future<List<Map<String, dynamic>>> getFamilyMembers() async {
     try {
-      debugPrint('\n--- 🕵️‍♂️ 开始诊断家庭成员查询 ---');
-      
-      // 1. 检查上下文
       await _ensureFamily();
-      debugPrint('👉 当前使用的 Family ID: $_currentFamilyId');
-      debugPrint('👉 当前登录用户 ID: $_currentUserId');
-      
-      if (_currentFamilyId == null) {
-        debugPrint('❌ 错误: Family ID 为空，无法查询');
-        return [];
-      }
+      if (_currentFamilyId == null) return [];
 
-      // 2. 测试性查询：先不查 user_profiles，只看 family_members 表有没有数据
-      // 这能帮我们判断是 "表里没数据/RLS拦截" 还是 "关联查询写错了"
-      try {
-        final simpleCheck = await _supabase
-            .from('family_members')
-            .select('user_id, role')
-            .eq('family_id', _currentFamilyId!);
-        debugPrint('📦 [基础检查] family_members 表中找到了 ${simpleCheck.length} 条记录');
-        if (simpleCheck.isEmpty) {
-          debugPrint('⚠️ 警告: 基础表查询为空！可能是 RLS 权限策略拦截，或者真的没数据。');
-        } else {
-          debugPrint('📄 记录详情: $simpleCheck');
-        }
-      } catch (e) {
-        debugPrint('🚨 [基础检查] 失败: $e');
-      }
-
-      // 3. 执行完整查询 (带关联)
-      debugPrint('🔄 正在执行完整关联查询...');
       final res = await _supabase
           .from('family_members')
           .select('user_id, role, user_profiles(display_name, email)') 
           .eq('family_id', _currentFamilyId!);
       
-      debugPrint('📦 [完整响应] Supabase 返回原始数据: $res');
+      if ((res as List).isEmpty) return [];
 
-      if ((res as List).isEmpty) {
-        debugPrint('❌ 结果列表为空。');
-        return [];
-      }
-
-      // 4. 解析数据
-      final list = (res as List).map((e) {
+      return (res as List).map((e) {
         final profile = e['user_profiles'];
-        debugPrint('👤 处理成员: ${e['user_id']}');
-        debugPrint('   - 关联的 Profile 数据: $profile');
-        
-        if (profile == null) {
-           debugPrint('   ⚠️ 警告: Profile 为 null。请检查外键关联或 user_profiles 的 RLS。');
-        }
-
         final profileMap = profile ?? {};
         return {
           'user_id': e['user_id'],
           'role': e['role'],
           'name': profileMap['display_name'] ?? profileMap['email'] ?? 'Member',
-          'email': profileMap['email'] ?? '', // 👈 确保这里取了 email
+          'email': profileMap['email'] ?? '',
         };
       }).toList();
 
-      debugPrint('✅ 最终返回列表长度: ${list.length}');
-      debugPrint('--- 诊断结束 ---\n');
-      return list;
-
     } catch (e) {
-      debugPrint('🚨 严重错误: getFamilyMembers 崩溃 -> $e');
+      debugPrint('getFamilyMembers error -> $e');
       return [];
     }
   }
@@ -972,11 +1079,9 @@ class InventoryRepository extends ChangeNotifier {
   }
 
   Future<String> createInviteCode() async {
-    // 🟢 强化：确保有家庭，如果没有，尝试初始化
     if (_currentFamilyId == null) {
         await _initFamilySession();
     }
-    // 如果还不行，那就真的是系统级错误（离线或服务器挂了）
     if (_currentFamilyId == null) throw Exception("System Error: No Family Context. Please check your connection.");
     
     final code = (100000 + Random().nextInt(900000)).toString();
@@ -996,21 +1101,18 @@ class InventoryRepository extends ChangeNotifier {
       final invite = await _supabase.from('family_invites').select().eq('code', code).gt('expires_at', DateTime.now().toIso8601String()).maybeSingle();
       if (invite == null) return false;
 
-      // 1. 插入成员记录
       await _supabase.from('family_members').insert({
         'family_id': invite['family_id'],
         'user_id': _currentUserId, 
         'role': 'member'
       });
       
-      // 2. 🟢 关键：强制重置状态，让 _initFamilySession 重新拉取最新的 family_id
+      final tempUid = _currentUserId;
       _resetState(); 
-      _currentFamilyId = null; // 显式置空，迫使 _initFamilySession 重新查询
+      _currentUserId = tempUid;
+      _currentFamilyId = null;
       
-      // 3. 重新初始化会话 (这时候数据库策略允许你查到新家庭了)
       await _initFamilySession();
-      
-      // 4. 拉取所有数据 (包括成员列表)
       await _fetchAllData();
       
       return true;
@@ -1023,11 +1125,11 @@ class InventoryRepository extends ChangeNotifier {
   Future<bool> leaveFamily() async {
     if (_currentUserId == null || _currentFamilyId == null) return false;
     try {
-      // 1. 退出当前家庭
       await _supabase.from('family_members').delete().eq('family_id', _currentFamilyId!).eq('user_id', _currentUserId!);
       
-      // 2. 清理本地状态
+      final tempUid = _currentUserId;
       _resetState();
+      
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('cache_inventory');
       await prefs.remove('cache_shopping');
@@ -1035,12 +1137,9 @@ class InventoryRepository extends ChangeNotifier {
       await prefs.remove('cache_impact');
       await prefs.remove('pending_uploads'); 
       
-      // 3. 🟢 关键修复：立即创建新家庭，确保用户有"家"可归，可以生成 code
-      // 这里不调用 _initFamilySession，因为它可能去查旧数据或者返回空
-      // 直接调用 _createNewDefaultFamily 来初始化新状态
+      _currentUserId = tempUid;
       await _createNewDefaultFamily(_currentUserId!);
       
-      // 4. 刷新数据（此时应该是一个空的新家庭）
       await _fetchAllData();
       return true;
     } catch (e) {

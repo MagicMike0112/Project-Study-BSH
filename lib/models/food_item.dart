@@ -1,10 +1,12 @@
 // lib/models/food_item.dart
 
-// 移除：import 'package:supabase_flutter/supabase_flutter.dart'; 
-// Model 类不需要依赖 Supabase 库，保持纯净，避免离线时报错
-
+// 1. 保留这三个核心 Enum，因为它们只属于 FoodItem
 enum StorageLocation { fridge, freezer, pantry }
 enum FoodStatus { good, consumed, discarded }
+
+// ⚠️ 注意：ImpactType 如果在 Repository 里也定义了，这里就不要定义。
+// 如果您的 Repository 报错说找不到 ImpactType，请把下面这行取消注释：
+// enum ImpactType { eaten, fedToPet, trashed } 
 
 class FoodItem {
   final String id;
@@ -23,8 +25,10 @@ class FoodItem {
   final String? category;
   final String? source;
   
-  // 🟢 新增字段：谁买的/谁添加的
+  // 🟢 谁买的/谁添加的
   final String? ownerName;
+  // 🟢 私有物品标记
+  final bool isPrivate; 
 
   FoodItem({
     required this.id,
@@ -40,7 +44,8 @@ class FoodItem {
     this.status = FoodStatus.good,
     this.category,
     this.source,
-    this.ownerName, // 🟢 新增参数
+    this.ownerName,
+    this.isPrivate = false,
   });
 
   // ================== Helper Getters ==================
@@ -48,7 +53,6 @@ class FoodItem {
   int get daysToExpiry {
     if (predictedExpiry == null) return 999;
     final now = DateTime.now();
-    // 只比较日期部分，忽略时分秒
     final today = DateTime(now.year, now.month, now.day);
     final expiry = DateTime(
       predictedExpiry!.year,
@@ -79,7 +83,8 @@ class FoodItem {
     FoodStatus? status,
     String? category,
     String? source,
-    String? ownerName, // 🟢 新增参数
+    String? ownerName,
+    bool? isPrivate,
   }) {
     return FoodItem(
       id: id ?? this.id,
@@ -95,7 +100,8 @@ class FoodItem {
       status: status ?? this.status,
       category: category ?? this.category,
       source: source ?? this.source,
-      ownerName: ownerName ?? this.ownerName, // 🟢 赋值
+      ownerName: ownerName ?? this.ownerName,
+      isPrivate: isPrivate ?? this.isPrivate,
     );
   }
 
@@ -104,9 +110,8 @@ class FoodItem {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      // 'user_id': ... 移除由 Repo 统一处理
       'name': name,
-      'location': location.name, // 存字符串: "fridge"
+      'location': location.name,
       'quantity': quantity,
       'unit': unit,
       'min_quantity': minQuantity,
@@ -117,15 +122,14 @@ class FoodItem {
       'status': status.name,
       'category': category,
       'source': source,
-      'owner_name': ownerName, // 🟢 序列化到本地缓存
+      'owner_name': ownerName,
+      'is_private': isPrivate,
     };
   }
 
   factory FoodItem.fromJson(Map<String, dynamic> json) {
-    // 内部 Helper：安全解析枚举
     StorageLocation parseLocation(dynamic value) {
       if (value == null) return StorageLocation.fridge;
-      // 兼容可能的大小写问题
       final s = value.toString().toLowerCase(); 
       if (s.contains('freezer')) return StorageLocation.freezer;
       if (s.contains('pantry')) return StorageLocation.pantry;
@@ -140,7 +144,6 @@ class FoodItem {
       return FoodStatus.good;
     }
 
-    // 内部 Helper：安全解析数字 (处理 int/double/String 混合的情况)
     double parseDouble(dynamic value, {double defaultValue = 0.0}) {
       if (value == null) return defaultValue;
       if (value is num) return value.toDouble();
@@ -161,13 +164,10 @@ class FoodItem {
       return null;
     }
 
-    // 🟢 智能解析名字逻辑
     String? extractName(Map<String, dynamic> data) {
-      // 1. 如果是从 Supabase 关联查询回来的 (user_profiles -> display_name)
       if (data['user_profiles'] != null && data['user_profiles'] is Map) {
         return data['user_profiles']['display_name'];
       }
-      // 2. 如果是从本地缓存读取的扁平结构
       if (data['owner_name'] != null) {
         return data['owner_name'];
       }
@@ -188,7 +188,8 @@ class FoodItem {
       status: parseStatus(json['status']),
       category: json['category'],
       source: json['source'],
-      ownerName: extractName(json), // 🟢 赋值
+      ownerName: extractName(json),
+      isPrivate: json['is_private'] ?? false,
     );
   }
 }

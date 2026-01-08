@@ -5,8 +5,11 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import 'dart:math' as math;
 
+import '../models/food_item.dart'; 
 import '../repositories/inventory_repository.dart';
-import '../widgets/profile_avatar_button.dart'; // 确保路径正确
+import '../utils/impact_helpers.dart'; 
+import '../widgets/profile_avatar_button.dart'; 
+import 'weekly_report_page.dart'; 
 
 enum ImpactRange { week, month, year }
 
@@ -35,13 +38,47 @@ class _ImpactPageState extends State<ImpactPage> {
 
   String _shortDate(DateTime d) => '${d.month}/${d.day}';
 
-  static const Color _backgroundColor = Color(0xFFF8F9FC);
-  static const Color _moneyColor = Color(0xFF005F87); 
-  static const Color _co2Color = Color(0xFF43A047);
+  static const Color _backgroundColor = Color(0xFFF4F6F9);
+  static const Color _moneyColor = Color(0xFF2D3436); 
+  static const Color _accentColor = Color(0xFF005F87);
 
   void _changeRange(ImpactRange r) {
-    HapticFeedback.selectionClick();
+    HapticFeedback.lightImpact();
     setState(() => _range = r);
+  }
+
+  // 🟢 核心修复：智能分类推断逻辑
+  // 即使数据库里存的是 "manual"，也能根据名字修修正为 "Veggies" 等
+  String _inferCategory(String? cat, String? name) {
+    final c = (cat ?? '').toLowerCase();
+    final n = (name ?? '').toLowerCase();
+
+    // 1. 优先匹配 Category 关键词 (如果 Category 比较明确)
+    if (c.contains('veg') || c.contains('salad')) return 'Veggies';
+    if (c.contains('fruit') || c.contains('berry')) return 'Fruits';
+    if (c.contains('meat') || c.contains('beef') || c.contains('pork') || c.contains('chicken') || c.contains('fish')) return 'Protein';
+    if (c.contains('dairy') || c.contains('cheese') || c.contains('milk') || c.contains('yogurt')) return 'Dairy';
+    if (c.contains('bread') || c.contains('rice') || c.contains('pasta') || c.contains('noodle') || c.contains('cereal')) return 'Carbs';
+    if (c.contains('snack') || c.contains('chip') || c.contains('chocolate')) return 'Snacks';
+    if (c.contains('drink') || c.contains('beverage') || c.contains('juice') || c.contains('coffee') || c.contains('tea')) return 'Drinks';
+
+    // 2. 如果 Category 没匹配到 (比如是 manual/other)，尝试匹配 Name 关键词 (补救措施)
+    // Veggies
+    if (n.contains('onion') || n.contains('carrot') || n.contains('potato') || n.contains('tomato') || n.contains('spinach') || n.contains('lettuce') || n.contains('cucumber') || n.contains('pepper') || n.contains('broccoli')) return 'Veggies';
+    // Fruits
+    if (n.contains('banana') || n.contains('apple') || n.contains('orange') || n.contains('grape') || n.contains('berry') || n.contains('lemon')) return 'Fruits';
+    // Protein
+    if (n.contains('egg') || n.contains('tofu') || n.contains('bean') || n.contains('sausage') || n.contains('ham')) return 'Protein';
+    // Carbs
+    if (n.contains('rice') || n.contains('bread') || n.contains('toast') || n.contains('bagel') || n.contains('pizza')) return 'Carbs';
+    // Dairy
+    if (n.contains('milk') || n.contains('butter') || n.contains('cream')) return 'Dairy';
+    // Drinks
+    if (n.contains('water') || n.contains('coke') || n.contains('soda') || n.contains('beer') || n.contains('wine')) return 'Drinks';
+
+    // 3. 兜底
+    if (c == 'manual' || c.isEmpty) return 'General';
+    return c; // 返回原始值作为最后的保底 (如 'Pantry')
   }
 
   @override
@@ -51,7 +88,6 @@ class _ImpactPageState extends State<ImpactPage> {
       builder: (context, child) {
         final start = _rangeStart();
         
-        // 筛选时间范围内的事件
         final events = widget.repo.impactEvents
             .where((e) => !e.date.isBefore(start))
             .toList();
@@ -62,173 +98,206 @@ class _ImpactPageState extends State<ImpactPage> {
         final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
         final savedCount = events.length;
 
-        // 宠物数据 (锁定为荷兰猪)
+        // --- 🟢 Top Savers (修复版) ---
+        final categoryMap = <String, double>{};
+        for (var e in events) {
+          if (e.type == ImpactType.eaten) {
+            // 使用智能分类器清洗数据，消除 "MANUAL"
+            final cat = _inferCategory(e.itemCategory, e.itemName);
+            categoryMap[cat] = (categoryMap[cat] ?? 0) + e.moneySaved;
+          }
+        }
+        final sortedCategories = categoryMap.entries.toList()
+          ..sort((a, b) => b.value.compareTo(a.value));
+        final topCategories = sortedCategories.take(3).toList();
+
+        // 宠物数据
         final petEvents = events.where((e) => e.type == ImpactType.fedToPet).toList();
         final petQty = petEvents.fold<double>(0, (sum, e) => sum + e.quantity);
         final totalQty = events.fold<double>(0, (sum, e) => sum + e.quantity);
         final petShare = totalQty == 0 ? 0.0 : (petQty / totalQty).clamp(0.0, 1.0);
 
-        // 🟢 图表数据准备 (同时准备 Money 和 CO2)
+        // 图表数据
         final dailyMoney = <DateTime, double>{};
-        final dailyCo2 = <DateTime, double>{};
-
         for (final e in events) {
           final d = DateTime(e.date.year, e.date.month, e.date.day);
           dailyMoney[d] = (dailyMoney[d] ?? 0) + e.moneySaved;
-          dailyCo2[d] = (dailyCo2[d] ?? 0) + e.co2Saved;
         }
 
-        final allDates = {...dailyMoney.keys, ...dailyCo2.keys}.toList()..sort();
-        
+        final allDates = dailyMoney.keys.toList()..sort();
         final moneySpots = <FlSpot>[];
-        final co2Spots = <FlSpot>[];
         final labels = <int, String>{};
 
         for (var i = 0; i < allDates.length; i++) {
           final d = allDates[i];
           final x = i.toDouble();
           moneySpots.add(FlSpot(x, dailyMoney[d] ?? 0));
-          co2Spots.add(FlSpot(x, dailyCo2[d] ?? 0));
           labels[i] = _shortDate(d);
         }
 
-        final bool hasEnoughData = moneySpots.length > 1;
+        final bool hasEnoughData = moneySpots.isNotEmpty;
 
         return Scaffold(
           backgroundColor: _backgroundColor,
-          appBar: AppBar(
-            title: const Text(
-              'Impact Dashboard',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87),
-            ),
-            backgroundColor: _backgroundColor,
-            elevation: 0,
-            centerTitle: false,
-            systemOverlayStyle: SystemUiOverlayStyle.dark,
-            actions: [
-              ProfileAvatarButton(repo: widget.repo),
-              const SizedBox(width: 16),
-            ],
-          ),
-          body: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-            children: [
-              // 0. 时间筛选
-              FadeInSlide(
-                index: 0,
-                child: _SlidingRangeSelector(
-                  currentRange: _range,
-                  onChanged: _changeRange,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // 1. Money Hero (核心资产卡片)
-              FadeInSlide(
-                index: 1,
-                child: _MoneyHeroCard(moneySaved: moneyTotal, savedCount: savedCount),
-              ),
-              
-              const SizedBox(height: 16),
-
-              // 2. Bento Grid (次级数据)
-              FadeInSlide(
-                index: 2,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: _StatBox(
-                        title: 'CO₂ Reduced',
-                        value: '${co2Total.toStringAsFixed(1)} kg',
-                        icon: Icons.cloud_off_rounded,
-                        color: _co2Color,
-                        bgColor: _co2Color.withOpacity(0.1),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _StatBox(
-                        title: 'Day Streak',
-                        value: '$streak',
-                        icon: Icons.local_fire_department_rounded,
-                        color: Colors.orange,
-                        bgColor: Colors.orange.withOpacity(0.1),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // 3. 荷兰猪专属卡片
-              FadeInSlide(
-                index: 3,
-                child: _GuineaPigCard(
-                  petQty: petQty,
-                  petShare: petShare,
-                ),
-              ),
-
-              const SizedBox(height: 32),
-
-              // 4. 数据可视化：趋势图 (Money + CO2)
-              if (hasEnoughData) ...[
-                // Money Chart
-                FadeInSlide(
-                  index: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 12),
-                    child: Text(
-                      'Savings Trend',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.grey[700],
-                      ),
+          body: CustomScrollView(
+            slivers: [
+              SliverAppBar(
+                expandedHeight: 100.0,
+                floating: false,
+                pinned: true,
+                backgroundColor: _backgroundColor,
+                elevation: 0,
+                systemOverlayStyle: SystemUiOverlayStyle.dark,
+                flexibleSpace: FlexibleSpaceBar(
+                  centerTitle: false,
+                  titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+                  title: const Text(
+                    'Your Impact',
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 28,
                     ),
                   ),
                 ),
-                FadeInSlide(
-                  index: 5,
-                  child: _ChartCard(
-                    spots: moneySpots,
-                    labels: labels,
-                    color: _moneyColor,
-                    unit: '€',
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
+                actions: [
+                  Center(child: ProfileAvatarButton(repo: widget.repo)),
+                  const SizedBox(width: 20),
+                ],
+              ),
 
-                // 🟢 CO2 Chart (新增)
-                FadeInSlide(
-                  index: 6,
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 12),
-                    child: Text(
-                      'CO₂ Reduction Trend',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        color: Colors.grey[700],
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      FadeInSlide(
+                        index: 0,
+                        child: _WeeklyReportBanner(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => WeeklyReportPage(repo: widget.repo),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 24),
+
+                      FadeInSlide(
+                        index: 1,
+                        child: _SlidingRangeSelector(
+                          currentRange: _range,
+                          onChanged: _changeRange,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      FadeInSlide(
+                        index: 2,
+                        child: _ImpactHeroCard(
+                          moneySaved: moneyTotal,
+                          savedCount: savedCount,
+                          rangeMode: _range.name, 
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+
+                      FadeInSlide(
+                        index: 3,
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: _StatBentoCard(
+                                title: 'CO₂ Avoided',
+                                value: '${co2Total.toStringAsFixed(1)} kg',
+                                subtitle: ImpactHelpers.getCo2Equivalent(co2Total), 
+                                icon: Icons.forest_rounded,
+                                color: const Color(0xFF43A047),
+                                bgColor: const Color(0xFFE8F5E9),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: _StatBentoCard(
+                                title: 'Streak',
+                                value: '$streak Days',
+                                subtitle: 'Keep it up!',
+                                icon: Icons.local_fire_department_rounded,
+                                color: Colors.deepOrange,
+                                bgColor: Colors.deepOrange.withOpacity(0.1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 24),
+
+                      // 🟢 Top Savers (分类榜单 - 现已智能修复)
+                      if (topCategories.isNotEmpty) ...[
+                        FadeInSlide(
+                          index: 4,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Top Savers',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _CategoryBreakdownCard(categories: topCategories),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+
+                      FadeInSlide(
+                        index: 5,
+                        child: _GuineaPigCard(
+                          petQty: petQty,
+                          petShare: petShare,
+                        ),
+                      ),
+
+                      const SizedBox(height: 32),
+
+                      if (hasEnoughData) ...[
+                        FadeInSlide(
+                          index: 6,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Savings Trend',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              _ChartCard(
+                                spots: moneySpots,
+                                labels: labels,
+                                color: _accentColor,
+                                unit: '€',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ] else if (events.isEmpty) ...[
+                        FadeInSlide(index: 6, child: _EmptyStateCard()),
+                      ],
+
+                      const SizedBox(height: 100), 
+                    ],
                   ),
                 ),
-                FadeInSlide(
-                  index: 7,
-                  child: _ChartCard(
-                    spots: co2Spots,
-                    labels: labels,
-                    color: _co2Color,
-                    unit: 'kg',
-                  ),
-                ),
-
-              ] else if (events.isEmpty) ...[
-                 FadeInSlide(index: 4, child: _EmptyStateCard()),
-              ],
-
-              const SizedBox(height: 40),
+              ),
             ],
           ),
         );
@@ -239,31 +308,106 @@ class _ImpactPageState extends State<ImpactPage> {
 
 // ===================== UI Components =====================
 
-// 1. Money Hero Card
-class _MoneyHeroCard extends StatelessWidget {
-  final double moneySaved;
-  final int savedCount;
-
-  const _MoneyHeroCard({required this.moneySaved, required this.savedCount});
+class _WeeklyReportBanner extends StatelessWidget {
+  final VoidCallback onTap;
+  const _WeeklyReportBanner({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final coffees = (moneySaved / 3.0).floor();
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.purple.withOpacity(0.1), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.purple.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.purple.shade50,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.auto_awesome, color: Colors.purple, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Weekly Recap Ready',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black87),
+                  ),
+                  Text(
+                    'Tap to view your diet insights',
+                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.purple,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.arrow_forward, size: 16, color: Colors.white),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImpactHeroCard extends StatelessWidget {
+  final double moneySaved;
+  final int savedCount;
+  final String rangeMode; 
+
+  const _ImpactHeroCard({
+    required this.moneySaved, 
+    required this.savedCount,
+    required this.rangeMode,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final equivalent = ImpactHelpers.getMoneyEquivalent(moneySaved);
+    final projection = ImpactHelpers.getProjectedSavings(moneySaved, rangeMode);
+    final title = ImpactHelpers.getSavingsTitle(moneySaved);
 
     return Container(
-      padding: const EdgeInsets.all(24),
+      width: double.infinity,
+      padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(32),
         gradient: const LinearGradient(
-          colors: [Color(0xFF004D70), Color(0xFF0083B0)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF0F2027),
+            Color(0xFF203A43),
+            Color(0xFF2C5364),
+          ],
         ),
-        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF005F87).withOpacity(0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: const Color(0xFF2C5364).withOpacity(0.4),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -271,84 +415,86 @@ class _MoneyHeroCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: Colors.white.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
-                  children: [
-                    Icon(Icons.wallet, color: Colors.white, size: 14),
-                    SizedBox(width: 6),
-                    Text(
-                      'SAVINGS',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  title.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.0,
+                  ),
                 ),
               ),
-              Icon(Icons.monetization_on_outlined, color: Colors.white.withOpacity(0.2), size: 24),
+              const Spacer(),
+              Icon(Icons.stars_rounded, color: Colors.amber.shade300, size: 28),
             ],
           ),
-          const SizedBox(height: 20),
-          Text(
-            '€${moneySaved.toStringAsFixed(2)}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 44,
-              fontWeight: FontWeight.w900,
-              height: 1.0,
-              letterSpacing: -1.0,
-            ),
-          ),
-          const SizedBox(height: 20),
-          
-          Container(height: 1, color: Colors.white.withOpacity(0.2)),
-          const SizedBox(height: 16),
-          
+          const SizedBox(height: 24),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$savedCount Items',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    Text(
-                      'Prevented from waste',
-                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
-                    ),
-                  ],
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text('€', style: TextStyle(color: Colors.white70, fontSize: 24, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                moneySaved.toStringAsFixed(0),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 64,
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                  letterSpacing: -2.0,
                 ),
               ),
-              Container(width: 1, height: 30, color: Colors.white.withOpacity(0.2)),
-              const SizedBox(width: 16),
-               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '≈ $coffees Coffees',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
-                    Text(
-                      'Value equivalent',
-                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
-                    ),
-                  ],
-                ),
+              const SizedBox(width: 4),
+              Padding(
+                padding: const EdgeInsets.only(top: 36),
+                child: Text('.${(moneySaved % 1 * 100).toStringAsFixed(0).padLeft(2, '0')}', style: const TextStyle(color: Colors.white70, fontSize: 24, fontWeight: FontWeight.bold)),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            projection,
+            style: TextStyle(color: Colors.greenAccent.shade100, fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.shopping_bag_outlined, color: Colors.white70, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        equivalent,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14),
+                      ),
+                      Text(
+                        'Based on $savedCount items saved',
+                        style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -356,17 +502,87 @@ class _MoneyHeroCard extends StatelessWidget {
   }
 }
 
-// 2. Stat Box
-class _StatBox extends StatelessWidget {
+class _CategoryBreakdownCard extends StatelessWidget {
+  final List<MapEntry<String, double>> categories;
+
+  const _CategoryBreakdownCard({required this.categories});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: categories.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final cat = entry.value.key;
+          final amount = entry.value.value;
+          
+          IconData icon = Icons.fastfood_rounded;
+          Color color = Colors.orange;
+          final c = cat.toLowerCase();
+          
+          if (c.contains('veg') || c.contains('fruit')) { icon = Icons.eco_rounded; color = Colors.green; }
+          else if (c.contains('meat') || c.contains('fish')) { icon = Icons.restaurant_rounded; color = Colors.redAccent; }
+          else if (c.contains('dairy') || c.contains('milk')) { icon = Icons.egg_rounded; color = Colors.blueAccent; }
+          else if (c.contains('snack') || c.contains('sweet')) { icon = Icons.cookie_rounded; color = Colors.purpleAccent; }
+          else if (c.contains('carb') || c.contains('rice')) { icon = Icons.breakfast_dining_rounded; color = Colors.amber; }
+          else if (c.contains('drink') || c.contains('coffee')) { icon = Icons.local_cafe_rounded; color = Colors.brown; }
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: idx == categories.length - 1 ? 0 : 16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, size: 20, color: color),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Text(
+                    cat.toUpperCase(),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  ),
+                ),
+                Text(
+                  '+€${amount.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: Colors.green),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+class _StatBentoCard extends StatelessWidget {
   final String title;
   final String value;
+  final String subtitle;
   final IconData icon;
   final Color color;
   final Color bgColor;
 
-  const _StatBox({
+  const _StatBentoCard({
     required this.title,
     required this.value,
+    required this.subtitle,
     required this.icon,
     required this.color,
     required this.bgColor,
@@ -375,14 +591,14 @@ class _StatBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
             offset: const Offset(0, 4),
           ),
         ],
@@ -391,23 +607,42 @@ class _StatBox extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: bgColor, shape: BoxShape.circle),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
+            ),
             child: Icon(icon, color: color, size: 20),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           Text(
             value,
             style: const TextStyle(
-              fontSize: 18,
+              fontSize: 20,
               fontWeight: FontWeight.w800,
               color: Colors.black87,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[500],
             ),
           ),
           const SizedBox(height: 2),
           Text(
-            title,
-            style: TextStyle(fontSize: 12, color: Colors.grey[500], fontWeight: FontWeight.w600),
+            subtitle,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: color.withOpacity(0.8),
+            ),
           ),
         ],
       ),
@@ -415,7 +650,6 @@ class _StatBox extends StatelessWidget {
   }
 }
 
-// 3. Guinea Pig Card
 class _GuineaPigCard extends StatelessWidget {
   final double petQty;
   final double petShare;
@@ -426,116 +660,65 @@ class _GuineaPigCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF8E1), // 暖黄色
+        color: const Color(0xFFFFFDE7), 
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.orange.withOpacity(0.1)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.orange.withOpacity(0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        border: Border.all(color: Colors.orange.withOpacity(0.1), width: 1.5),
       ),
-      child: Column(
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Text('🐹', style: TextStyle(fontSize: 32)),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Little Shi & Little Yuan', 
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                        color: Color(0xFF5D4037),
-                      ),
-                    ),
-                    Text(
-                      'Total Snacks: ${petQty.toStringAsFixed(1)} kg',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: const Color(0xFF5D4037).withOpacity(0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          // 增加进度条可视化
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Diet Share',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown[300]),
-                  ),
-                  Text(
-                    '${(petShare * 100).toStringAsFixed(0)}%',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.brown[700]),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: petShare,
-                  backgroundColor: Colors.brown.withOpacity(0.1),
-                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
-                  minHeight: 8,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
           Container(
-            padding: const EdgeInsets.all(12),
+            width: 60,
+            height: 60,
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.6),
-              borderRadius: BorderRadius.circular(12),
+              color: Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
             ),
-            child: Row(
+            child: const Center(child: Text('🐹', style: TextStyle(fontSize: 30))),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.lightbulb_outline_rounded, size: 16, color: Colors.brown[400]),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Did you know? Guinea pigs "popcorn" (jump in the air) when they are excited about veggies!',
-                    style: TextStyle(fontSize: 11, color: Colors.brown[600], fontStyle: FontStyle.italic),
+                const Text(
+                  'Little Shi & Yuan',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF5D4037)),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Enjoyed ${petQty.toStringAsFixed(1)}kg of leftovers',
+                  style: TextStyle(fontSize: 13, color: const Color(0xFF5D4037).withOpacity(0.7)),
+                ),
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: petShare,
+                    backgroundColor: Colors.orange.withOpacity(0.1),
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.orange),
+                    minHeight: 6,
                   ),
                 ),
               ],
             ),
-          )
+          ),
         ],
       ),
     );
   }
 }
 
-// 4. Chart Card (趋势图)
 class _ChartCard extends StatelessWidget {
   final List<FlSpot> spots;
   final Map<int, String> labels;
   final Color color;
-  final String unit; // 🟢 新增单位参数
+  final String unit; 
 
   const _ChartCard({
     required this.spots,
     required this.labels,
     required this.color,
-    required this.unit,
+    this.unit = '',
   });
 
   @override
@@ -544,12 +727,18 @@ class _ChartCard extends StatelessWidget {
     final safeMaxY = maxY <= 0 ? 5.0 : maxY;
 
     return Container(
-      height: 220,
-      padding: const EdgeInsets.fromLTRB(16, 24, 24, 10),
+      height: 240,
+      padding: const EdgeInsets.fromLTRB(0, 24, 24, 0),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: LineChart(
         LineChartData(
@@ -557,7 +746,11 @@ class _ChartCard extends StatelessWidget {
             show: true,
             drawVerticalLine: false,
             horizontalInterval: safeMaxY / 4,
-            getDrawingHorizontalLine: (value) => FlLine(color: Colors.grey[100], strokeWidth: 1, dashArray: [5, 5]),
+            getDrawingHorizontalLine: (value) => FlLine(
+              color: Colors.grey[100], 
+              strokeWidth: 1, 
+              dashArray: [5, 5]
+            ),
           ),
           titlesData: FlTitlesData(
             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -566,14 +759,17 @@ class _ChartCard extends StatelessWidget {
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
-                reservedSize: 24,
+                reservedSize: 32,
                 interval: 1,
                 getTitlesWidget: (value, meta) {
                   final idx = value.toInt();
                   if (idx == 0 || idx == labels.length - 1 || (labels.length > 4 && idx == labels.length ~/ 2)) {
                     return Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(labels[idx] ?? '', style: TextStyle(fontSize: 10, color: Colors.grey[400], fontWeight: FontWeight.w500)),
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        labels[idx] ?? '',
+                        style: TextStyle(fontSize: 11, color: Colors.grey[400], fontWeight: FontWeight.bold),
+                      ),
                     );
                   }
                   return const SizedBox.shrink();
@@ -592,7 +788,7 @@ class _ChartCard extends StatelessWidget {
               isCurved: true,
               curveSmoothness: 0.3,
               color: color,
-              barWidth: 3,
+              barWidth: 4,
               isStrokeCapRound: true,
               dotData: const FlDotData(show: false),
               belowBarData: BarAreaData(
@@ -600,26 +796,26 @@ class _ChartCard extends StatelessWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [color.withOpacity(0.15), color.withOpacity(0.0)],
+                  colors: [color.withOpacity(0.2), color.withOpacity(0.0)],
                 ),
               ),
             ),
           ],
-          // 🟢 悬浮提示增加单位
           lineTouchData: LineTouchData(
             touchTooltipData: LineTouchTooltipData(
+              tooltipRoundedRadius: 12,
+              tooltipPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              tooltipMargin: 16,
               getTooltipItems: (touchedSpots) {
                 return touchedSpots.map((spot) {
                   return LineTooltipItem(
                     '${spot.y.toStringAsFixed(1)} $unit',
-                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                    const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
                   );
                 }).toList();
               },
-              tooltipRoundedRadius: 8,
-              tooltipPadding: const EdgeInsets.all(8),
-              tooltipMargin: 10,
             ),
+            handleBuiltInTouches: true,
           ),
         ),
       ),
@@ -631,10 +827,29 @@ class _EmptyStateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(32),
+      padding: const EdgeInsets.all(40),
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), border: Border.all(color: Colors.black.withOpacity(0.03))),
-      child: Column(children: [Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]), const SizedBox(height: 16), Text("No data yet", style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey[800])), const SizedBox(height: 8), Text("Start using items to see your impact!", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], height: 1.5, fontSize: 13))]),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]),
+          const SizedBox(height: 16),
+          Text(
+            "No data yet",
+            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[800], fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Start saving food to see your impact!",
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey[500], fontSize: 13),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -648,12 +863,11 @@ class _SlidingRangeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 46,
+      height: 50,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Colors.grey[200],
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -663,16 +877,16 @@ class _SlidingRangeSelector extends StatelessWidget {
             children: [
               AnimatedAlign(
                 alignment: _getAlign(currentRange),
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutBack,
+                duration: const Duration(milliseconds: 250),
+                curve: Curves.fastOutSlowIn,
                 child: Container(
                   width: itemWidth,
                   height: double.infinity,
                   decoration: BoxDecoration(
-                    color: const Color(0xFF005F87),
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
-                      BoxShadow(color: const Color(0xFF005F87).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2)),
+                      BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 2)),
                     ],
                   ),
                 ),
@@ -690,7 +904,7 @@ class _SlidingRangeSelector extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.white : Colors.grey[500],
+                            color: isSelected ? Colors.black87 : Colors.grey[600],
                           ),
                           child: Text(_label(r)),
                         ),
@@ -728,7 +942,7 @@ class FadeInSlide extends StatefulWidget {
   final int index; 
   final Duration duration;
 
-  const FadeInSlide({super.key, required this.child, required this.index, this.duration = const Duration(milliseconds: 500)});
+  const FadeInSlide({super.key, required this.child, required this.index, this.duration = const Duration(milliseconds: 600)});
 
   @override
   State<FadeInSlide> createState() => _FadeInSlideState();
@@ -743,10 +957,10 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
   void initState() {
     super.initState();
     _controller = AnimationController(vsync: this, duration: widget.duration);
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutQuart);
     _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
     _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
-    Future.delayed(Duration(milliseconds: widget.index * 50), () {
+    Future.delayed(Duration(milliseconds: widget.index * 100), () {
       if (mounted) _controller.forward();
     });
   }

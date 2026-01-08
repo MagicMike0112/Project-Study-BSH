@@ -27,12 +27,13 @@ dependencies:
   url_launcher: ^6.3.1      # 支持 Wasm/Web
   connectivity_plus: ^6.1.0 # ⚠️ 修复关键点：6.0+ 版本解决了 Web 报错问题
 
+
   # --- 通知 & 时间 ---
   # ⚠️ 修复了重复定义和 "^latest" 错误
   flutter_local_notifications: ^18.0.1 
   timezone: ^0.9.4
   flutter_timezone: ^5.0.1
-
+  toastification: ^2.0.0
   # --- 工具 ---
   uuid: ^4.5.1
   intl: ^0.20.2
