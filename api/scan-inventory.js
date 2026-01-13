@@ -134,6 +134,49 @@ function normalizeName(s) {
   return String(s ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function stripPackagingWords(s) {
+  let t = String(s || "").trim();
+  if (!t) return t;
+  const patterns = [
+    /\b(pack|box|bag|bottle|can|cup|pcs|piece|pieces)\b/gi,
+    /\b(ml|l|g|kg)\b/gi,
+    /\b(x|×)\s*\d+\b/gi,
+  ];
+  for (const p of patterns) t = t.replace(p, " ");
+  return t.replace(/\s+/g, " ").trim();
+}
+
+function looksTooGeneric(name) {
+  const n = String(name || "").toLowerCase().trim();
+  const genericSet = new Set([
+    "probiotic drink",
+    "yogurt drink",
+    "milk drink",
+    "soft drink",
+    "soda",
+    "juice",
+    "tea",
+    "water",
+    "snack",
+    "chips",
+    "cookie",
+    "biscuit",
+    "candy",
+    "chocolate",
+    "noodles",
+  ]);
+  return genericSet.has(n) || n.length <= 4;
+}
+
+function refineName(rawGeneric, rawSpecific) {
+  const generic = String(rawGeneric || "").trim();
+  const specific = stripPackagingWords(rawSpecific);
+
+  if (generic && !looksTooGeneric(generic)) return generic;
+  if (specific) return specific;
+  return generic;
+}
+
 function normalizeUnit(s) {
   const u = String(s ?? "").trim().toLowerCase();
   if (!u) return "pcs";
@@ -354,7 +397,7 @@ Constraints:
         const rawSpecific = normalizeName(it?.name);
         
         // 如果 AI 提取了通用名，就用通用名；否则回退到原始名称
-        const finalName = rawGeneric || rawSpecific;
+        const finalName = refineName(rawGeneric, rawSpecific);
 
         if (!finalName || looksNonFood(finalName)) return null;
 

@@ -395,6 +395,7 @@ No markdown, no extra text.
 async function handleDietAnalysis(body, res) {
   const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
   const studentMode = Boolean(body.studentMode);
+  const history = body.history && typeof body.history === "object" ? body.history : null;
 
   if (consumedItems.length === 0) {
     return res.status(200).json({
@@ -408,13 +409,23 @@ async function handleDietAnalysis(body, res) {
   const uniqueItems = [...new Set(consumedItems)];
   const itemsStr = uniqueItems.join(", ");
 
+  const historyBlock = history
+    ? `
+Weekly comparison:
+This week summary: ${JSON.stringify(history.thisWeek || {})}
+Last week summary: ${JSON.stringify(history.lastWeek || {})}
+`
+    : "No history summary available.";
+
   const prompt = `
-You are a playful nutrition assistant${studentMode ? " for a busy student on a budget" : ""}.
+You are a professional nutrition assistant${studentMode ? " for a busy student on a budget" : ""}.
 The user has consumed the following items this week: "${itemsStr}".
 
+${historyBlock}
+
 Your Tasks:
-1. Insight: Provide a short, fun, 1-2 sentence summary of their diet balance.
-2. Suggestions: Suggest 3-5 ingredients they should add to their shopping list to balance their diet next week.
+1. Insight: Provide a concise, professional 2-3 sentence assessment focused on THIS WEEK. If last week data exists, mention 1-2 meaningful changes (e.g., less veggies, more snacks).
+2. Suggestions: Suggest 3-5 ingredients they should add to their shopping list to improve balance next week. Prioritize practical, everyday items.
 3. Categorization (CRITICAL): Map EACH item in the input list to EXACTLY ONE of these categories for a pie chart:
    [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, Condiments, Other].
    
