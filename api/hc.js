@@ -36,7 +36,13 @@ async function handleConnect(req, res, userId) {
   const body = await readJson(req);
   const scopes = Array.isArray(body.scopes) && body.scopes.length
     ? body.scopes
-    : ["IdentifyAppliance", "FridgeFreezer-Images"];
+    : [
+        "IdentifyAppliance",
+        "Oven-Control",
+        "Oven-Monitor",
+        "FridgeFreezer-Images",
+        "FridgeFreezer-Monitor",
+      ];
   const returnTo = body.returnTo || process.env.APP_RETURN_URL_DEFAULT || "https://bshpwa.vercel.app/#/account?hc=connected";
   const state = signState({ userId, returnTo, t: Date.now() });
 
@@ -187,6 +193,24 @@ async function handleProgramsAvailable(req, res, userId) {
   return res.status(200).json({ ok: true, haId, programs, raw: data });
 }
 
+async function handleStopOven(req, res, userId) {
+  if (req.method !== "POST") return res.status(405).end();
+  const body = await readJson(req);
+  let haId = body?.haId || null;
+
+  if (!haId) {
+    const listResp = await hcFetchJson(userId, "/api/homeappliances", { method: "GET" });
+    const list = listResp?.data?.homeappliances || listResp?.homeappliances || [];
+    const oven = list.find((x) => String(x?.type || "").toLowerCase() === "oven");
+    if (!oven?.haId) return res.status(400).json({ ok: false, error: "No oven found" });
+    haId = oven.haId;
+  }
+
+  const path = `/api/homeappliances/${encodeURIComponent(haId)}/programs/active`;
+  const raw = await hcFetchJson(userId, path, { method: "DELETE" });
+  return res.status(200).json({ ok: true, haId, raw });
+}
+
 async function handlePingSupabase(req, res) {
   // Ping doesn't need userId
   const controller = new AbortController();
@@ -228,6 +252,7 @@ export default async function handler(req, res) {
       case 'fridgeImages': return await handleFridgeImages(req, res, userId);
       case 'fridgeImage': return await handleFridgeImage(req, res, userId);
       case 'preheat': return await handlePreheat(req, res, userId);
+      case 'stopOven': return await handleStopOven(req, res, userId);
       case 'programs': return await handleProgramsAvailable(req, res, userId);
       default: return res.status(400).json({ ok: false, error: `Unknown action: ${action}` });
     }
