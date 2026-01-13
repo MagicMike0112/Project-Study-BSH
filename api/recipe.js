@@ -5,6 +5,8 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const IMAGE_GEN_VERSION = "imggen_v3_no_response_format";
+
 // 允许的前端域名（你的 PWA 域名）
 const ALLOWED_ORIGIN = "https://bshpwa.vercel.app";
 
@@ -180,7 +182,7 @@ async function generateRecipeImage(title, ingredients) {
     const url = resp?.data?.[0]?.url;
     if (url) return url;
 
-    console.error("image gen empty", { title });
+    console.error("image gen empty", { title, version: IMAGE_GEN_VERSION });
     return null;
   } catch (err) {
     const status = err?.status || err?.response?.status;
@@ -188,6 +190,7 @@ async function generateRecipeImage(title, ingredients) {
       title,
       status,
       message: err?.message,
+      version: IMAGE_GEN_VERSION,
     });
     return null;
   }
@@ -373,7 +376,7 @@ No markdown, no extra text.
 
   const includeImages = body.includeImages !== false;
   if (!includeImages) {
-    return res.status(200).json({ recipes: cleaned });
+    return res.status(200).json({ recipes: cleaned, imageGenVersion: IMAGE_GEN_VERSION });
   }
 
   const images = await Promise.all(
@@ -385,7 +388,7 @@ No markdown, no extra text.
     imageUrl: images[idx],
   }));
 
-  return res.status(200).json({ recipes: withImages });
+  return res.status(200).json({ recipes: withImages, imageGenVersion: IMAGE_GEN_VERSION });
 }
 
 // ========= 分支 C：周报分析与智能分类 (Diet Analysis) =========
