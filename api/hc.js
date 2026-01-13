@@ -115,14 +115,16 @@ async function handleFridgeImages(req, res, userId) {
 async function handleFridgeImage(req, res, userId) {
   if (req.method !== "GET") return res.status(405).end();
   const haId = req.query?.haId ? String(req.query.haId) : "";
+  const imageKey = req.query?.imageKey ? String(req.query.imageKey) : "";
   const imageId = req.query?.imageId ? String(req.query.imageId) : "";
-  if (!haId || !imageId) return res.status(400).json({ ok: false, error: "Missing haId or imageId" });
+  const key = imageKey || imageId;
+  if (!haId || !key) return res.status(400).json({ ok: false, error: "Missing haId or imageKey" });
 
   const row = await getTokensForUser(userId);
   if (!row?.access_token) return res.status(409).json({ ok: false, error: "Home Connect not connected" });
 
   const base = row.hc_host || HC_HOST;
-  const url = `${base}/api/homeappliances/${encodeURIComponent(haId)}/images/${encodeURIComponent(imageId)}`;
+  const url = `${base}/api/homeappliances/${encodeURIComponent(haId)}/images/${encodeURIComponent(key)}`;
   const r = await fetch(url, {
     headers: {
       Authorization: `Bearer ${row.access_token}`,
