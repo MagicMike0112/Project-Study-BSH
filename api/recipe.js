@@ -159,25 +159,46 @@ function normalizeTools(tools) {
 }
 
 async function generateRecipeImage(title, ingredients) {
-  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+  // 1. 修改默认模型为 mini
+  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini";
+  
+  // 2. 保持 512x512 (这对 mini 来说是最快且最便宜的尺寸)
   const size = process.env.OPENAI_IMAGE_SIZE || "512x512";
-  const rawQuality = process.env.OPENAI_IMAGE_QUALITY || "auto";
-  const quality = rawQuality === "standard" ? "auto" : rawQuality;
-  const prompt = `A clean, appetizing food photo of "${title}", soft natural light, top-down, minimal background. Ingredients: ${ingredients.join(", ")}.`;
+  
+  // 3. 修改质量逻辑：默认为 "low"。
+  // 对于缩略图，"low" 足够清晰且成本最低。
+  // 之前的 "standard"/"auto" 逻辑可能不适用于新模型参数，建议简化。
+  const quality = process.env.OPENAI_IMAGE_QUALITY || "low";
+
+  // 4. 优化 Prompt (可选建议)：
+  // 针对 mini 模型，由其是小尺寸，建议加上 "Close-up" (特写)，
+  // 否则生成的食物可能会在画面中显得很小。
+  const prompt = `Close-up food photography of "${title}", delicious, soft natural light, top-down view. Ingredients: ${ingredients.join(", ")}.`;
+
   try {
     const resp = await client.images.generate({
       model,
       prompt,
       size,
       quality,
+      // 5. 显式请求 base64，否则 API 默认只返回 url
+      // 如果你更喜欢 URL，可以改为 "url" 或者删除这一行
+      response_format: "b64_json", 
     });
+
+    // 优先处理 Base64
     const b64 = resp?.data?.[0]?.b64_json;
     if (b64) return `data:image/png;base64,${b64}`;
+
+    // 降级处理 URL
     const url = resp?.data?.[0]?.url;
     if (url) return url;
+
     console.error("image gen empty", { title });
     return null;
+
   } catch (err) {
+    // 错误处理逻辑保持不变
     const status = err?.status || err?.response?.status;
     console.error("image gen failed", {
       title,
