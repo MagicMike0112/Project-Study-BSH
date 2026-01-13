@@ -159,50 +159,34 @@ function normalizeTools(tools) {
 }
 
 async function generateRecipeImage(title, ingredients) {
-  // 1. 模型：继续使用 Mini 以保持低成本
-  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini";
-  
-  // 2.【关键修正】尺寸：必须至少是 1024x1024
-  // 模型不支持 512x512，强行传会报 400 错误
-  const size = "1024x1024"; 
-  
-  // 3. 质量：
-  // 建议保持 "low" 或 "standard" (取决于具体的 API 定义，通常 mini 默认就是低成本档)
-  // 如果 API 对 "low" 也报错，请改回 "standard"
-  const quality = process.env.OPENAI_IMAGE_QUALITY || "standard";
-
-  const prompt = `Close-up food photography of "${title}", delicious, soft natural light, top-down view. Ingredients: ${ingredients.join(", ")}.`;
+  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
+  const rawSize = process.env.OPENAI_IMAGE_SIZE || "auto";
+  const size = rawSize === "512x512" ? "auto" : rawSize;
+  const rawQuality = process.env.OPENAI_IMAGE_QUALITY || "auto";
+  const quality = rawQuality === "standard" ? "auto" : rawQuality;
+  const prompt = `A clean, appetizing food photo of "${title}", soft natural light, top-down, minimal background. Ingredients: ${ingredients.join(", " )}.`;
 
   try {
     const resp = await client.images.generate({
       model,
       prompt,
-      size,      // 这里现在是 1024x1024
+      size,
       quality,
-      response_format: "b64_json", 
     });
 
     const b64 = resp?.data?.[0]?.b64_json;
-    if (b64) {
-      // 提示：虽然这里返回的是 1024x1024 的大图，
-      // 但您可以在前端 <img> 标签里强制设置 width="512" height="512"
-      // 或者在保存到数据库/S3之前，用 sharp 等库将其 resize 为 512。
-      return `data:image/png;base64,${b64}`;
-    }
+    if (b64) return `data:image/png;base64,${b64}`;
 
     const url = resp?.data?.[0]?.url;
     if (url) return url;
 
     console.error("image gen empty", { title });
     return null;
-
   } catch (err) {
     const status = err?.status || err?.response?.status;
-    // 打印更详细的错误信息以便调试
     console.error("image gen failed", {
       title,
       status,
-      code: err?.code,     // 查看具体的错误码
       message: err?.message,
     });
     return null;
