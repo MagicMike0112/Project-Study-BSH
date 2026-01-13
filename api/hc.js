@@ -34,7 +34,9 @@ async function handleStatus(req, res, userId) {
 async function handleConnect(req, res, userId) {
   if (req.method !== "POST") return res.status(405).end();
   const body = await readJson(req);
-  const scopes = Array.isArray(body.scopes) && body.scopes.length ? body.scopes : ["IdentifyAppliance", "Oven"];
+  const scopes = Array.isArray(body.scopes) && body.scopes.length
+    ? body.scopes
+    : ["IdentifyAppliance", "FridgeFreezer-Images"];
   const returnTo = body.returnTo || process.env.APP_RETURN_URL_DEFAULT || "https://bshpwa.vercel.app/#/account?hc=connected";
   const state = signState({ userId, returnTo, t: Date.now() });
 
