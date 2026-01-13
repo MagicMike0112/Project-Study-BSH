@@ -159,7 +159,7 @@ function normalizeTools(tools) {
 }
 
 async function generateRecipeImage(title, ingredients) {
-  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini";
+  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
   const size = process.env.OPENAI_IMAGE_SIZE || "512x512";
   const quality = process.env.OPENAI_IMAGE_QUALITY || "standard";
   const prompt = `A clean, appetizing food photo of "${title}", soft natural light, top-down, minimal background. Ingredients: ${ingredients.join(", ")}.`;
