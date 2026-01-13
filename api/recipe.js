@@ -159,38 +159,37 @@ function normalizeTools(tools) {
 }
 
 async function generateRecipeImage(title, ingredients) {
-  // 1. 修改默认模型为 mini
+  // 1. 模型：继续使用 Mini 以保持低成本
   const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini";
   
-  // 2. 保持 512x512 (这对 mini 来说是最快且最便宜的尺寸)
-  const size = process.env.OPENAI_IMAGE_SIZE || "512x512";
+  // 2.【关键修正】尺寸：必须至少是 1024x1024
+  // 模型不支持 512x512，强行传会报 400 错误
+  const size = "1024x1024"; 
   
-  // 3. 修改质量逻辑：默认为 "low"。
-  // 对于缩略图，"low" 足够清晰且成本最低。
-  // 之前的 "standard"/"auto" 逻辑可能不适用于新模型参数，建议简化。
-  const quality = process.env.OPENAI_IMAGE_QUALITY || "low";
+  // 3. 质量：
+  // 建议保持 "low" 或 "standard" (取决于具体的 API 定义，通常 mini 默认就是低成本档)
+  // 如果 API 对 "low" 也报错，请改回 "standard"
+  const quality = process.env.OPENAI_IMAGE_QUALITY || "standard";
 
-  // 4. 优化 Prompt (可选建议)：
-  // 针对 mini 模型，由其是小尺寸，建议加上 "Close-up" (特写)，
-  // 否则生成的食物可能会在画面中显得很小。
   const prompt = `Close-up food photography of "${title}", delicious, soft natural light, top-down view. Ingredients: ${ingredients.join(", ")}.`;
 
   try {
     const resp = await client.images.generate({
       model,
       prompt,
-      size,
+      size,      // 这里现在是 1024x1024
       quality,
-      // 5. 显式请求 base64，否则 API 默认只返回 url
-      // 如果你更喜欢 URL，可以改为 "url" 或者删除这一行
       response_format: "b64_json", 
     });
 
-    // 优先处理 Base64
     const b64 = resp?.data?.[0]?.b64_json;
-    if (b64) return `data:image/png;base64,${b64}`;
+    if (b64) {
+      // 提示：虽然这里返回的是 1024x1024 的大图，
+      // 但您可以在前端 <img> 标签里强制设置 width="512" height="512"
+      // 或者在保存到数据库/S3之前，用 sharp 等库将其 resize 为 512。
+      return `data:image/png;base64,${b64}`;
+    }
 
-    // 降级处理 URL
     const url = resp?.data?.[0]?.url;
     if (url) return url;
 
@@ -198,11 +197,12 @@ async function generateRecipeImage(title, ingredients) {
     return null;
 
   } catch (err) {
-    // 错误处理逻辑保持不变
     const status = err?.status || err?.response?.status;
+    // 打印更详细的错误信息以便调试
     console.error("image gen failed", {
       title,
       status,
+      code: err?.code,     // 查看具体的错误码
       message: err?.message,
     });
     return null;
