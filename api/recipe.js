@@ -174,8 +174,16 @@ async function generateRecipeImage(title, ingredients) {
     const b64 = resp?.data?.[0]?.b64_json;
     if (b64) return `data:image/png;base64,${b64}`;
     const url = resp?.data?.[0]?.url;
-    return url || null;
-  } catch (_) {
+    if (url) return url;
+    console.error("image gen empty", { title });
+    return null;
+  } catch (err) {
+    const status = err?.status || err?.response?.status;
+    console.error("image gen failed", {
+      title,
+      status,
+      message: err?.message,
+    });
     return null;
   }
 }
