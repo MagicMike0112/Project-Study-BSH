@@ -169,7 +169,6 @@ async function generateRecipeImage(title, ingredients) {
       prompt,
       size,
       quality,
-      response_format: "b64_json",
     });
     const b64 = resp?.data?.[0]?.b64_json;
     if (b64) return `data:image/png;base64,${b64}`;
