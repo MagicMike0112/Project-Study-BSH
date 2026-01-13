@@ -1,14 +1,17 @@
 // api/shop-by-recipe.js
 import OpenAI from "openai";
+import { applyCors, handleOptions } from "./_lib/cors.js";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export default async function handler(req, res) {
+  applyCors(req, res);
+  if (handleOptions(req, res)) return;
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const { text, imagesBase64, currentInventory } = req.body;
 
   const systemPrompt = `
-You are a culinary logistics assistant. Your goal is to convert recipes into a structured shopping list.
+You are a culinary assistant. Your goal is to convert recipes into a structured shopping list and a structured recipe.
 
 **Inventory Awareness & Semantic Matching:**
 You will be provided with a list of items currently in the user's kitchen (currentInventory). 
@@ -22,6 +25,8 @@ Instructions:
 1. Identify all necessary ingredients and seasonings.
 2. For each ingredient, determine if it's likely already in the 'currentInventory'.
 3. Assign a category: "Vegetables", "Meat", "Dairy", "Pantry", "Grains", or "Other".
+4. Generate a clear recipe using the provided text and any visible steps in images.
+5. Infer appliances (e.g., ["oven", "stove", "microwave"]) and ovenTempC if mentioned.
 
 Output Format (JSON ONLY):
 {
@@ -32,7 +37,16 @@ Output Format (JSON ONLY):
       "inStock": boolean,
       "reason": string // e.g., "Found 'Haitian Light Soy Sauce' in inventory"
     }
-  ]
+  ],
+  "recipe": {
+    "title": "Dish Name",
+    "description": "1-2 sentence summary",
+    "timeLabel": "30 min",
+    "ingredients": ["..."],
+    "steps": ["..."],
+    "appliances": ["oven"],
+    "ovenTempC": 180
+  }
 }
 `.trim();
 

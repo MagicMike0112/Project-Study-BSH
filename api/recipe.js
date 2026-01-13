@@ -158,6 +158,28 @@ function normalizeTools(tools) {
   return out;
 }
 
+async function generateRecipeImage(title, ingredients) {
+  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1-mini";
+  const size = process.env.OPENAI_IMAGE_SIZE || "512x512";
+  const quality = process.env.OPENAI_IMAGE_QUALITY || "standard";
+  const prompt = `A clean, appetizing food photo of "${title}", soft natural light, top-down, minimal background. Ingredients: ${ingredients.join(", ")}.`;
+  try {
+    const resp = await client.images.generate({
+      model,
+      prompt,
+      size,
+      quality,
+      response_format: "b64_json",
+    });
+    const b64 = resp?.data?.[0]?.b64_json;
+    if (b64) return `data:image/png;base64,${b64}`;
+    const url = resp?.data?.[0]?.url;
+    return url || null;
+  } catch (_) {
+    return null;
+  }
+}
+
 // ========= 分支 B：生成菜谱 (Recipe Generation) =========
 // 支持 Student Mode, Servings, Oven Plan
 async function handleRecipeGeneration(body, res) {
@@ -336,7 +358,21 @@ No markdown, no extra text.
     };
   });
 
-  return res.status(200).json({ recipes: cleaned });
+  const includeImages = body.includeImages !== false;
+  if (!includeImages) {
+    return res.status(200).json({ recipes: cleaned });
+  }
+
+  const images = await Promise.all(
+    cleaned.map((r) => generateRecipeImage(r.title, r.ingredients))
+  );
+
+  const withImages = cleaned.map((r, idx) => ({
+    ...r,
+    imageUrl: images[idx],
+  }));
+
+  return res.status(200).json({ recipes: withImages });
 }
 
 // ========= 分支 C：周报分析与智能分类 (Diet Analysis) =========

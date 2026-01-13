@@ -1,10 +1,10 @@
-// api/_lib/hc.js
+﻿// api/_lib/hc.js
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 
 export const HC_HOST = process.env.HC_HOST || "https://simulator.home-connect.com";
 export const HC_CLIENT_ID = process.env.HC_CLIENT_ID;
-export const HC_CLIENT_SECRET = process.env.HC_CLIENT_SECRET; // callback 会用到
+export const HC_CLIENT_SECRET = process.env.HC_CLIENT_SECRET; // callback uses this
 export const HC_REDIRECT_URI = process.env.HC_REDIRECT_URI;
 export const STATE_SECRET = process.env.HC_STATE_SECRET;
 
@@ -12,7 +12,7 @@ export const SUPABASE_URL = process.env.SUPABASE_URL;
 export const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 export const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Home Connect 要求的媒体类型（不带就 406）
+// Home Connect required media type
 export const HC_ACCEPT = "application/vnd.bsh.sdk.v1+json";
 
 export function assertEnv() {
@@ -24,7 +24,6 @@ export function assertEnv() {
     "SUPABASE_URL",
     "SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
-    // HC_CLIENT_SECRET 不一定必须（取决于你 flow），但你现在 callback 里会用到，建议也配置
     "HC_CLIENT_SECRET",
   ]) {
     if (!process.env[k]) missing.push(k);
@@ -53,7 +52,7 @@ export function getBearer(req) {
   return auth.startsWith("Bearer ") ? auth.slice(7) : null;
 }
 
-// 用 Supabase 官方接口验证 access token，并拿 userId
+// Supabase user lookup from access token
 export async function getUserIdFromSupabase(accessToken) {
   const url = `${SUPABASE_URL}/auth/v1/user`;
 
@@ -95,7 +94,7 @@ export function supabaseAdmin() {
 }
 
 /**
- * 取用户保存的 Home Connect token
+ * Read Home Connect tokens for user
  */
 export async function getTokensForUser(userId) {
   const admin = supabaseAdmin();
@@ -109,21 +108,86 @@ export async function getTokensForUser(userId) {
   return data || null;
 }
 
+async function refreshTokens(userId, row) {
+  if (!row?.refresh_token) {
+    const err = new Error("Home Connect token expired and no refresh_token");
+    err.code = "HC_TOKEN_EXPIRED";
+    throw err;
+  }
+
+  const body = new URLSearchParams({
+    grant_type: "refresh_token",
+    client_id: HC_CLIENT_ID,
+    refresh_token: row.refresh_token,
+  });
+  if (HC_CLIENT_SECRET) body.set("client_secret", HC_CLIENT_SECRET);
+
+  const r = await fetch(`${HC_HOST}/security/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: body.toString(),
+  });
+
+  const raw = await r.text();
+  let token;
+  try {
+    token = JSON.parse(raw);
+  } catch (_) {
+    token = { raw };
+  }
+
+  if (!r.ok) {
+    const err = new Error(`HC refresh failed: ${r.status} ${raw}`);
+    err.status = r.status;
+    throw err;
+  }
+
+  const expiresAt = token.expires_in
+    ? new Date(Date.now() + Number(token.expires_in) * 1000).toISOString()
+    : row.expires_at || null;
+
+  const admin = supabaseAdmin();
+  const { error } = await admin
+    .from("homeconnect_tokens")
+    .update({
+      access_token: token.access_token || row.access_token,
+      refresh_token: token.refresh_token || row.refresh_token,
+      token_type: token.token_type || row.token_type,
+      scope: token.scope || row.scope,
+      expires_at: expiresAt,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("user_id", userId);
+
+  if (error) {
+    throw new Error(`Supabase refresh update failed: ${JSON.stringify(error)}`);
+  }
+
+  return {
+    ...row,
+    access_token: token.access_token || row.access_token,
+    refresh_token: token.refresh_token || row.refresh_token,
+    token_type: token.token_type || row.token_type,
+    scope: token.scope || row.scope,
+    expires_at: expiresAt,
+  };
+}
+
 /**
- * 用已绑定的 token 调 Home Connect API（自动加 Accept / Content-Type）
+ * Call Home Connect API using saved token
  * @param {string} userId
  * @param {string} path e.g. "/api/homeappliances"
  * @param {object} options { method, body, headers }
  */
 export async function hcFetchJson(userId, path, options = {}) {
-  const row = await getTokensForUser(userId);
+  let row = await getTokensForUser(userId);
   if (!row?.access_token) {
     const err = new Error("Home Connect not connected");
     err.code = "HC_NOT_CONNECTED";
     throw err;
   }
 
-  const base = row.hc_host || HC_HOST; // 绑定时保存的 host 优先
+  const base = row.hc_host || HC_HOST;
   const url = `${base}${path}`;
 
   const method = (options.method || "GET").toUpperCase();
@@ -140,17 +204,22 @@ export async function hcFetchJson(userId, path, options = {}) {
     init.body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
   }
 
-  const r = await fetch(url, init);
-  const text = await r.text();
+  let r = await fetch(url, init);
+  let text = await r.text();
+
+  if (r.status === 401 || r.status === 403) {
+    row = await refreshTokens(userId, row);
+    headers.Authorization = `Bearer ${row.access_token}`;
+    r = await fetch(url, init);
+    text = await r.text();
+  }
 
   if (!r.ok) {
-    // 直接把 HC 的错误原样抛出，前端能看到 406/401 等细节
     const err = new Error(`HC API failed: ${r.status} ${text}`);
     err.status = r.status;
     throw err;
   }
 
-  // 有些接口可能返回空 body
   if (!text) return null;
 
   try {
