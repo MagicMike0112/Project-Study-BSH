@@ -4,6 +4,7 @@ import {
   assertEnv,
   getBearer,
   getUserIdFromSupabase,
+  getTokensForUser,
   supabaseAdmin,
   hcFetchJson,
   readJson,
@@ -11,6 +12,7 @@ import {
   HC_HOST,
   HC_CLIENT_ID,
   HC_REDIRECT_URI,
+  HC_ACCEPT,
   SUPABASE_URL
 } from "./_lib/hc.js";
 
@@ -65,6 +67,76 @@ async function handleAppliances(req, res, userId) {
     const code = e?.code;
     return res.status(code === "HC_NOT_CONNECTED" ? 409 : 500).json({ ok: false, error: String(e?.message || e) });
   }
+}
+
+function isFridgeAppliance(a) {
+  const type = String(a?.type || "").toLowerCase();
+  const name = String(a?.name || "").toLowerCase();
+  return type.includes("refrigerator") || type.includes("fridge") || name.includes("refrigerator") || name.includes("fridge");
+}
+
+async function handleFridgeImages(req, res, userId) {
+  if (req.method !== "GET") return res.status(405).end();
+  try {
+    const data = await hcFetchJson(userId, "/api/homeappliances", { method: "GET" });
+    const list = data?.data?.homeappliances || data?.homeappliances || [];
+    const fridges = list.filter(isFridgeAppliance);
+
+    const appliances = [];
+    for (const fridge of fridges) {
+      const haId = fridge?.haId;
+      if (!haId) continue;
+      let images = [];
+      let error = null;
+      try {
+        const imgResp = await hcFetchJson(userId, `/api/homeappliances/${encodeURIComponent(haId)}/images`, { method: "GET" });
+        images = imgResp?.data?.images || imgResp?.images || [];
+      } catch (e) {
+        error = String(e?.message || e);
+      }
+      appliances.push({
+        haId,
+        name: fridge?.name || fridge?.label || null,
+        type: fridge?.type || null,
+        images,
+        error,
+      });
+    }
+
+    return res.status(200).json({ ok: true, appliances });
+  } catch (e) {
+    const code = e?.code;
+    return res.status(code === "HC_NOT_CONNECTED" ? 409 : 500).json({ ok: false, error: String(e?.message || e) });
+  }
+}
+
+async function handleFridgeImage(req, res, userId) {
+  if (req.method !== "GET") return res.status(405).end();
+  const haId = req.query?.haId ? String(req.query.haId) : "";
+  const imageId = req.query?.imageId ? String(req.query.imageId) : "";
+  if (!haId || !imageId) return res.status(400).json({ ok: false, error: "Missing haId or imageId" });
+
+  const row = await getTokensForUser(userId);
+  if (!row?.access_token) return res.status(409).json({ ok: false, error: "Home Connect not connected" });
+
+  const base = row.hc_host || HC_HOST;
+  const url = `${base}/api/homeappliances/${encodeURIComponent(haId)}/images/${encodeURIComponent(imageId)}`;
+  const r = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${row.access_token}`,
+      Accept: "image/*",
+    },
+  });
+
+  if (!r.ok) {
+    const text = await r.text();
+    return res.status(r.status).json({ ok: false, error: text });
+  }
+
+  const contentType = r.headers.get("content-type") || "application/octet-stream";
+  res.setHeader("Content-Type", contentType);
+  const buf = Buffer.from(await r.arrayBuffer());
+  return res.status(200).send(buf);
 }
 
 async function handlePreheat(req, res, userId) {
@@ -149,6 +221,8 @@ export default async function handler(req, res) {
       case 'connect': return await handleConnect(req, res, userId);
       case 'disconnect': return await handleDisconnect(req, res, userId);
       case 'appliances': return await handleAppliances(req, res, userId);
+      case 'fridgeImages': return await handleFridgeImages(req, res, userId);
+      case 'fridgeImage': return await handleFridgeImage(req, res, userId);
       case 'preheat': return await handlePreheat(req, res, userId);
       case 'programs': return await handleProgramsAvailable(req, res, userId);
       default: return res.status(400).json({ ok: false, error: `Unknown action: ${action}` });
