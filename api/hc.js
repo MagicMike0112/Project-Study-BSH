@@ -193,6 +193,19 @@ async function handleProgramsAvailable(req, res, userId) {
   return res.status(200).json({ ok: true, haId, programs, raw: data });
 }
 
+async function handleOvenStatus(req, res, userId) {
+  if (req.method !== "GET") return res.status(405).end();
+  const haId = req.query?.haId ? String(req.query.haId) : "";
+  if (!haId) return res.status(400).json({ ok: false, error: "Missing query param: haId" });
+
+  const data = await hcFetchJson(
+    userId,
+    `/api/homeappliances/${encodeURIComponent(haId)}/programs/active`,
+    { method: "GET" },
+  );
+  return res.status(200).json({ ok: true, haId, raw: data });
+}
+
 async function handleStopOven(req, res, userId) {
   if (req.method !== "POST") return res.status(405).end();
   const body = await readJson(req);
@@ -253,6 +266,7 @@ export default async function handler(req, res) {
       case 'fridgeImage': return await handleFridgeImage(req, res, userId);
       case 'preheat': return await handlePreheat(req, res, userId);
       case 'stopOven': return await handleStopOven(req, res, userId);
+      case 'ovenStatus': return await handleOvenStatus(req, res, userId);
       case 'programs': return await handleProgramsAvailable(req, res, userId);
       default: return res.status(400).json({ ok: false, error: `Unknown action: ${action}` });
     }
