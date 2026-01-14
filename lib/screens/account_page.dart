@@ -6,15 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
-// 🟢 确保 pubspec.yaml 中有 url_launcher
 import 'package:url_launcher/url_launcher.dart';
 
 import '../repositories/inventory_repository.dart';
 import 'family_page.dart';
 import 'notification_settings_page.dart';
 import 'login_page.dart';
-// 🟢 引入我们的原生 Toast 封装
 import '../utils/bsh_toast.dart';
+import '../utils/theme_controller.dart';
 
 class AccountPage extends StatefulWidget {
   final InventoryRepository repo;
@@ -50,7 +49,6 @@ class _AccountPageState extends State<AccountPage> {
     super.initState();
     _initStudentMode();
 
-    // 检查 Home Connect 回调
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final qp = Uri.base.queryParameters;
       if (qp['hc'] == 'connected') {
@@ -92,7 +90,6 @@ class _AccountPageState extends State<AccountPage> {
     try {
       final user = Supabase.instance.client.auth.currentUser;
       if (user != null) {
-        // 兼容写法：直接传 Map
         await Supabase.instance.client.auth.updateUser(
           UserAttributes(data: {'student_mode': value}),
         );
@@ -225,7 +222,7 @@ class _AccountPageState extends State<AccountPage> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).cardColor,
       builder: (_) {
         final items = _hcAppliances;
         return SafeArea(
@@ -237,7 +234,10 @@ class _AccountPageState extends State<AccountPage> {
                 const Text('Simulator Appliances', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                 const SizedBox(height: 16),
                 if (items.isEmpty)
-                  const Text('No appliances found', style: TextStyle(color: Colors.grey))
+                  Text(
+                    'No appliances found',
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+                  )
                 else
                   ConstrainedBox(
                     constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
@@ -279,13 +279,11 @@ class _AccountPageState extends State<AccountPage> {
 
   @override
   Widget build(BuildContext context) {
-    final repo = Provider.of<InventoryRepository>(context);
-    final isSenior = repo.isSeniorMode;
-
-    // 🟢 Dynamic Theme Values
-    final bgColor = isSenior ? Colors.white : const Color(0xFFF8F9FC);
-    final sectionTitleColor = isSenior ? Colors.black : Colors.grey[500];
-    final sectionTitleSize = isSenior ? 16.0 : 12.0;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final bgColor = theme.scaffoldBackgroundColor;
+    final sectionTitleColor = colors.onSurface.withOpacity(0.55);
+    const sectionTitleSize = 12.0;
 
     return StreamBuilder<AuthState>(
       stream: Supabase.instance.client.auth.onAuthStateChange,
@@ -294,17 +292,18 @@ class _AccountPageState extends State<AccountPage> {
         final bool loggedIn = session != null;
         final String email = session?.user.email ?? '';
         final String name = session?.user.userMetadata?['full_name'] ?? 'User';
+        final themeController = context.watch<ThemeController>();
 
         return Scaffold(
           backgroundColor: bgColor,
           appBar: AppBar(
             title: Text(
-              isSenior ? 'My Account' : 'Account', 
+              'Account',
               style: TextStyle(
-                fontWeight: FontWeight.w700, 
-                color: Colors.black87,
-                fontSize: isSenior ? 26 : 20, 
-              )
+                fontWeight: FontWeight.w700,
+                color: colors.onSurface,
+                fontSize: 20,
+              ),
             ),
             backgroundColor: bgColor,
             elevation: 0,
@@ -313,75 +312,67 @@ class _AccountPageState extends State<AccountPage> {
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             children: [
-              _buildProfileCard(context, loggedIn, name, email, isSenior),
+              _buildProfileCard(context, loggedIn, name, email),
               const SizedBox(height: 32),
               
               if (loggedIn) ...[
-                _buildSectionTitle('Household', isSenior, sectionTitleColor!, sectionTitleSize),
+                _buildSectionTitle('Household', sectionTitleColor!, sectionTitleSize),
                 const SizedBox(height: 12),
-                _buildFamilyCard(context, isSenior),
+                _buildFamilyCard(context),
                 const SizedBox(height: 32),
               ],
               
-              _buildSectionTitle('Integrations', isSenior, sectionTitleColor!, sectionTitleSize),
+              _buildSectionTitle('Integrations', sectionTitleColor!, sectionTitleSize),
               const SizedBox(height: 12),
-              _buildHomeConnectCard(context, loggedIn, isSenior),
+              _buildHomeConnectCard(context, loggedIn),
               
               const SizedBox(height: 32),
               
-              _buildSectionTitle('Preferences', isSenior, sectionTitleColor!, sectionTitleSize),
+              _buildSectionTitle('Preferences', sectionTitleColor!, sectionTitleSize),
               const SizedBox(height: 12),
               _SettingsContainer(
-                isSenior: isSenior,
                 children: [
                   _SettingsTile(
-                    isSenior: isSenior,
                     icon: Icons.notifications_rounded,
                     iconColor: Colors.orange,
                     title: 'Notifications',
-                    subtitle: isSenior ? null : 'Expiry alerts & reminders',
+                    subtitle: 'Expiry alerts & reminders',
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const NotificationSettingsPage()),
                       );
                     },
                   ),
-                  _Divider(isSenior: isSenior),
-                  
-                  // 🟢 Senior Mode Switch
+                  const _Divider(),
+
                   _SettingsTile(
-                    isSenior: isSenior,
-                    icon: Icons.accessibility_new_rounded,
-                    iconColor: Colors.teal,
-                    title: isSenior ? 'Senior Mode (On)' : 'Senior Mode',
-                    subtitle: isSenior ? 'Large Text & High Contrast' : 'Large text & high contrast',
+                    icon: Icons.dark_mode_rounded,
+                    iconColor: Colors.blueGrey,
+                    title: 'Night Mode',
+                    subtitle: 'Use a darker color scheme',
                     trailing: Switch.adaptive(
-                      value: isSenior,
+                      value: themeController.isDark,
                       activeColor: _primaryColor,
-                      onChanged: (val) {
-                        HapticFeedback.mediumImpact();
-                        repo.toggleSeniorMode(val);
-                        BSHToast.show(
-                          context, 
-                          title: val ? "Senior Mode Enabled" : "Standard Mode Restored",
-                          type: BSHToastType.info
+                      onChanged: (value) {
+                        themeController.setThemeMode(
+                          value ? ThemeMode.dark : ThemeMode.light,
                         );
                       },
                     ),
                     onTap: () {
-                      HapticFeedback.mediumImpact();
-                      repo.toggleSeniorMode(!isSenior);
+                      themeController.setThemeMode(
+                        themeController.isDark ? ThemeMode.light : ThemeMode.dark,
+                      );
                     },
                   ),
-                  
-                  _Divider(isSenior: isSenior),
+
+                  const _Divider(),
 
                   _SettingsTile(
-                    isSenior: isSenior,
                     icon: Icons.school_rounded,
                     iconColor: Colors.indigo,
                     title: 'Student Mode',
-                    subtitle: isSenior ? null : 'Budget-friendly recipes & tips 🎓',
+                    subtitle: 'Budget-friendly recipes & tips 🎓',
                     trailing: Switch.adaptive(
                       value: _studentMode,
                       activeColor: _primaryColor,
@@ -390,10 +381,9 @@ class _AccountPageState extends State<AccountPage> {
                     onTap: () => _toggleStudentMode(!_studentMode),
                   ),
                   
-                  _Divider(isSenior: isSenior),
+                  const _Divider(),
                   
                   const _SettingsTile(
-                    isSenior: false, // Loyalty cards usually standard UI
                     icon: Icons.card_giftcard_rounded,
                     iconColor: Colors.purple,
                     title: 'Loyalty Cards',
@@ -404,25 +394,25 @@ class _AccountPageState extends State<AccountPage> {
               ),
               
               const SizedBox(height: 32),
-              _buildSectionTitle('About', isSenior, sectionTitleColor!, sectionTitleSize),
+              _buildSectionTitle('About', sectionTitleColor!, sectionTitleSize),
               const SizedBox(height: 12),
               _SettingsContainer(
-                isSenior: isSenior,
                 children: [
                   const _SettingsTile(
-                    isSenior: false,
                     icon: Icons.privacy_tip_rounded,
                     iconColor: Colors.blueGrey,
                     title: 'Privacy Policy',
                     onTap: null,
                   ),
-                  _Divider(isSenior: isSenior),
+                  const _Divider(),
                   _SettingsTile(
-                    isSenior: isSenior,
                     icon: Icons.info_outline_rounded,
                     iconColor: Colors.blueGrey,
                     title: 'Version',
-                    trailing: Text('1.0.0 (Beta)', style: TextStyle(color: Colors.grey[500], fontSize: isSenior ? 16 : 13)),
+                    trailing: Text(
+                      '1.0.0 (Beta)',
+                      style: TextStyle(color: colors.onSurface.withOpacity(0.5), fontSize: 13),
+                    ),
                     onTap: null,
                   ),
                 ],
@@ -436,13 +426,13 @@ class _AccountPageState extends State<AccountPage> {
                       HapticFeedback.mediumImpact();
                       widget.onLogout();
                     },
-                    icon: Icon(Icons.logout_rounded, size: isSenior ? 28 : 20, color: Colors.grey[600]),
+                    icon: Icon(Icons.logout_rounded, size: 20, color: colors.onSurface.withOpacity(0.6)),
                     label: Text(
                       'Sign Out', 
                       style: TextStyle(
-                        color: Colors.grey[600], 
+                        color: colors.onSurface.withOpacity(0.6),
                         fontWeight: FontWeight.w600,
-                        fontSize: isSenior ? 20 : 14
+                        fontSize: 14
                       )
                     ),
                   ),
@@ -457,43 +447,53 @@ class _AccountPageState extends State<AccountPage> {
 
   // --- Components ---
 
-  Widget _buildSectionTitle(String title, bool isSenior, Color color, double size) {
+  Widget _buildSectionTitle(String title, Color color, double size) {
     return Padding(
       padding: const EdgeInsets.only(left: 4),
       child: Text(
-        isSenior ? title : title.toUpperCase(),
+        title.toUpperCase(),
         style: TextStyle(
           fontSize: size, 
           fontWeight: FontWeight.w700, 
           color: color, 
-          letterSpacing: isSenior ? 0 : 1.2
+          letterSpacing: 1.2
         ),
       ),
     );
   }
 
-  Widget _buildProfileCard(BuildContext context, bool loggedIn, String name, String email, bool isSenior) {
+  Widget _buildProfileCard(BuildContext context, bool loggedIn, String name, String email) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
-      padding: EdgeInsets.all(isSenior ? 24 : 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isSenior ? Colors.yellow.shade50 : Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
-        border: isSenior ? Border.all(color: Colors.black, width: 2) : null,
-        boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 24, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.25 : 0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          )
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: isSenior ? 70 : 60, height: isSenior ? 70 : 60,
+            width: 60, height: 60,
             decoration: BoxDecoration(
-              color: loggedIn ? const Color(0xFFE3F2FD) : const Color(0xFFF5F5F5),
+              color: loggedIn
+                  ? (isDark ? const Color(0xFF1E293B) : const Color(0xFFE3F2FD))
+                  : (isDark ? const Color(0xFF2A2F36) : const Color(0xFFF5F5F5)),
               shape: BoxShape.circle,
-              border: isSenior ? Border.all(color: Colors.black) : null,
             ),
             child: Icon(
               loggedIn ? Icons.person_rounded : Icons.person_off_rounded,
-              color: loggedIn ? const Color(0xFF1565C0) : Colors.grey[400],
-              size: isSenior ? 40 : 30,
+              color: loggedIn ? const Color(0xFF1565C0) : colors.onSurface.withOpacity(0.4),
+              size: 30,
             ),
           ),
           const SizedBox(width: 16),
@@ -501,16 +501,16 @@ class _AccountPageState extends State<AccountPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  loggedIn ? 'Hello, $name' : 'Guest Account',
-                  style: TextStyle(fontSize: isSenior ? 22 : 16, fontWeight: FontWeight.w700, color: Colors.black87),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  loggedIn ? email : 'Sign in to sync your data',
-                  style: TextStyle(fontSize: isSenior ? 16 : 13, color: isSenior ? Colors.black87 : Colors.grey[600]),
-                  maxLines: 1, overflow: TextOverflow.ellipsis,
-                ),
+                  Text(
+                    loggedIn ? 'Hello, $name' : 'Guest Account',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: colors.onSurface),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    loggedIn ? email : 'Sign in to sync your data',
+                    style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6)),
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
@@ -519,47 +519,62 @@ class _AccountPageState extends State<AccountPage> {
               onPressed: _handleLogin,
               style: FilledButton.styleFrom(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), 
-                padding: EdgeInsets.symmetric(horizontal: isSenior ? 24 : 16, vertical: isSenior ? 16 : 0)
+                padding: const EdgeInsets.symmetric(horizontal: 16)
               ),
-              child: Text('Log In', style: TextStyle(fontSize: isSenior ? 18 : 14)),
+              child: const Text('Log In', style: TextStyle(fontSize: 14)),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildFamilyCard(BuildContext context, bool isSenior) {
+  Widget _buildFamilyCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return InkWell(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => FamilyPage(repo: widget.repo))),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(24),
-          border: isSenior ? Border.all(color: Colors.black, width: 2) : null,
-          boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16)],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
+              blurRadius: 16,
+            )
+          ],
         ),
         child: Row(
           children: [
             const Icon(Icons.home_rounded, color: _primaryColor, size: 30),
             const SizedBox(width: 16),
-            Expanded(child: Text(widget.repo.currentFamilyName, style: TextStyle(fontSize: isSenior ? 20 : 16, fontWeight: FontWeight.bold))),
-            const Icon(Icons.chevron_right, color: Colors.grey),
+            Expanded(child: Text(widget.repo.currentFamilyName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+            Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withOpacity(0.4)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn, bool isSenior) {
+  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
-        border: isSenior 
-            ? Border.all(color: Colors.black, width: 2) 
-            : Border.all(color: loggedIn && _hcConnected ? _primaryColor.withOpacity(0.1) : Colors.transparent),
-        boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))],
+        border: Border.all(color: loggedIn && _hcConnected ? _primaryColor.withOpacity(0.1) : Colors.transparent),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
       child: Material(
         color: Colors.transparent,
@@ -571,7 +586,7 @@ class _AccountPageState extends State<AccountPage> {
               await showModalBottomSheet(
                 context: context,
                 showDragHandle: true,
-                backgroundColor: Colors.white,
+                backgroundColor: Theme.of(context).cardColor,
                 builder: (_) => SafeArea(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -590,7 +605,7 @@ class _AccountPageState extends State<AccountPage> {
             }
           },
           child: Padding(
-            padding: EdgeInsets.all(isSenior ? 24 : 20),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -601,25 +616,43 @@ class _AccountPageState extends State<AccountPage> {
                       decoration: BoxDecoration(
                         color: _primaryColor.withOpacity(0.1), 
                         borderRadius: BorderRadius.circular(12),
-                        border: isSenior ? Border.all(color: Colors.black) : null,
                       ),
-                      child: Icon(Icons.power_settings_new_rounded, color: _primaryColor, size: isSenior ? 32 : 24),
+                      child: const Icon(Icons.power_settings_new_rounded, color: _primaryColor, size: 24),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Home Connect', style: TextStyle(fontSize: isSenior ? 20 : 16, fontWeight: FontWeight.w700, color: Colors.black87)),
+                          Text(
+                            'Home Connect',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: colors.onSurface),
+                          ),
                           const SizedBox(height: 2),
-                          if (_hcLoading) const Text('Connecting...', style: TextStyle(fontSize: 13, color: Colors.grey))
-                          else if (_hcConnected) Text('Active & Synced', style: TextStyle(fontSize: isSenior ? 16 : 13, color: Colors.green[600], fontWeight: FontWeight.w600))
-                          else Text('Tap to connect', style: TextStyle(fontSize: isSenior ? 16 : 13, color: Colors.grey)),
+                          if (_hcLoading)
+                            Text(
+                              'Connecting...',
+                              style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.5)),
+                            )
+                          else if (_hcConnected)
+                            Text(
+                              'Active & Synced',
+                              style: TextStyle(fontSize: 13, color: Colors.green[600], fontWeight: FontWeight.w600),
+                            )
+                          else
+                            Text(
+                              'Tap to connect',
+                              style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.5)),
+                            ),
                         ],
                       ),
                     ),
                     if (_hcLoading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    else Icon(_hcConnected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded, color: _hcConnected ? Colors.green : (isSenior ? Colors.black : Colors.grey[300]), size: _hcConnected ? 28 : 16),
+                    else Icon(
+                      _hcConnected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded,
+                      color: _hcConnected ? Colors.green : colors.onSurface.withOpacity(0.2),
+                      size: _hcConnected ? 28 : 16,
+                    ),
                   ],
                 ),
                 if (_hcError != null) Padding(padding: const EdgeInsets.only(top: 16), child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.red.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.red.withOpacity(0.1))), child: Row(children: [Icon(Icons.error_outline_rounded, size: 16, color: Colors.red[700]), const SizedBox(width: 8), Expanded(child: Text(_hcError!, style: TextStyle(color: Colors.red[900], fontSize: 12)))]))),
@@ -634,18 +667,25 @@ class _AccountPageState extends State<AccountPage> {
 
 class _SettingsContainer extends StatelessWidget {
   final List<Widget> children;
-  final bool isSenior;
-  const _SettingsContainer({required this.children, required this.isSenior});
+  const _SettingsContainer({required this.children});
   
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white, 
-        borderRadius: BorderRadius.circular(24), 
-        border: isSenior ? Border.all(color: Colors.black, width: 2) : null,
-        boxShadow: isSenior ? [] : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 16, offset: const Offset(0, 4))]
-      ), 
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
       child: Column(children: children)
     );
   }
@@ -658,9 +698,8 @@ class _SettingsTile extends StatelessWidget {
   final String? subtitle;
   final Widget? trailing;
   final VoidCallback? onTap;
-  final bool isSenior;
 
-  const _SettingsTile({required this.icon, this.iconColor, required this.title, this.subtitle, this.trailing, this.onTap, this.isSenior = false});
+  const _SettingsTile({required this.icon, this.iconColor, required this.title, this.subtitle, this.trailing, this.onTap});
   
   @override
   Widget build(BuildContext context) {
@@ -668,26 +707,24 @@ class _SettingsTile extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(10), 
         decoration: BoxDecoration(
-          color: (iconColor ?? Colors.grey).withOpacity(0.1), 
+          color: (iconColor ?? Theme.of(context).colorScheme.onSurface).withOpacity(0.1), 
           borderRadius: BorderRadius.circular(12),
-          border: isSenior ? Border.all(color: Colors.black) : null,
         ), 
-        child: Icon(icon, color: iconColor, size: isSenior ? 28 : 20)
+        child: Icon(icon, color: iconColor, size: 20)
       ), 
-      title: Text(title, style: TextStyle(fontSize: isSenior ? 18 : 15, fontWeight: FontWeight.w600)), 
-      subtitle: subtitle != null ? Text(subtitle!, style: TextStyle(fontSize: isSenior ? 14 : 12)) : null,
+      title: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)), 
+      subtitle: subtitle != null ? Text(subtitle!, style: const TextStyle(fontSize: 12)) : null,
       trailing: trailing ?? (onTap != null ? const Icon(Icons.chevron_right) : null),
       onTap: onTap,
-      contentPadding: EdgeInsets.symmetric(horizontal: 20, vertical: isSenior ? 12 : 8),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
     );
   }
 }
 
 class _Divider extends StatelessWidget {
-  final bool isSenior;
-  const _Divider({required this.isSenior});
+  const _Divider();
   @override
   Widget build(BuildContext context) {
-    return Divider(height: 1, thickness: isSenior ? 2 : 1, color: isSenior ? Colors.black : Colors.grey.withOpacity(0.05), indent: 70);
+    return Divider(height: 1, thickness: 1, color: Theme.of(context).dividerColor, indent: 70);
   }
 }

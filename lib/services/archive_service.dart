@@ -101,7 +101,16 @@ class ArchiveService {
 
   Future<List<ArchivedRecipe>> getAll() async {
     final p = await _prefs();
-    final raw = p.getStringList(_kKey) ?? const <String>[];
+    List<String> raw = const <String>[];
+    try {
+      raw = p.getStringList(_kKey) ?? const <String>[];
+    } catch (_) {
+      final legacyString = p.getString(_kKey);
+      if (legacyString != null && legacyString.trim().isNotEmpty) {
+        await _migrateLegacyString(p, legacyString);
+      }
+      raw = p.getStringList(_kKey) ?? const <String>[];
+    }
     final list = <ArchivedRecipe>[];
 
     for (final s in raw) {
@@ -154,5 +163,18 @@ class ArchiveService {
   Future<void> clear() async {
     final p = await _prefs();
     await p.remove(_kKey);
+  }
+
+  Future<void> _migrateLegacyString(SharedPreferences p, String legacyString) async {
+    try {
+      final decoded = jsonDecode(legacyString);
+      if (decoded is List) {
+        final raw = decoded.map((x) => jsonEncode(x)).toList();
+        await p.setStringList(_kKey, raw);
+      }
+      await p.remove(_kKey);
+    } catch (_) {
+      // ignore invalid legacy
+    }
   }
 }

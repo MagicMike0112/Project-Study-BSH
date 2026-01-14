@@ -33,7 +33,8 @@ class _ArchivePageState extends State<ArchivePage> {
 
   @override
   Widget build(BuildContext context) {
-    const bg = Color(0xFFF6F8FA);
+    final theme = Theme.of(context);
+    final bg = theme.scaffoldBackgroundColor;
 
     return Scaffold(
       backgroundColor: bg,
@@ -87,10 +88,12 @@ class _ArchiveTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Material(
-      color: Colors.white,
+      color: theme.cardColor,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -99,12 +102,12 @@ class _ArchiveTile extends StatelessWidget {
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.black.withOpacity(0.06)),
-            boxShadow: const [
+            border: Border.all(color: theme.dividerColor),
+            boxShadow: [
               BoxShadow(
-                color: Color(0x0D000000),
+                color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
                 blurRadius: 10,
-                offset: Offset(0, 6),
+                offset: const Offset(0, 6),
               ),
             ],
           ),
@@ -128,20 +131,20 @@ class _ArchiveTile extends StatelessWidget {
                       recipe.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w900),
+                      style: TextStyle(fontWeight: FontWeight.w900, color: scheme.onSurface),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '${recipe.timeLabel} • ${recipe.appliancesLabel}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: Colors.grey[700]),
+                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.6)),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: Colors.grey[700]),
+              Icon(Icons.chevron_right, color: scheme.onSurface.withOpacity(0.5)),
             ],
           ),
         ),
@@ -163,31 +166,35 @@ class _EmptyCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.05)),
-        boxShadow: const [
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x10000000),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
             blurRadius: 12,
-            offset: Offset(0, 8),
+            offset: const Offset(0, 8),
           ),
         ],
       ),
       child: Row(
         children: [
-          Icon(icon, color: Colors.grey[700]),
+          Icon(icon, color: scheme.onSurface.withOpacity(0.6)),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(fontWeight: FontWeight.w900)),
+                Text(title, style: TextStyle(fontWeight: FontWeight.w900, color: scheme.onSurface)),
                 const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(color: Colors.grey[700])),
+                Text(subtitle, style: TextStyle(color: scheme.onSurface.withOpacity(0.6))),
               ],
             ),
           ),

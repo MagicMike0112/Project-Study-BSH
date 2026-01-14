@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 
 import '../repositories/inventory_repository.dart';
 import '../widgets/add_by_recipe_sheet.dart'; 
+import 'fridge_camera_page.dart';
 import 'shopping_archive_page.dart';
 
 class ShoppingListPage extends StatefulWidget {
@@ -27,10 +28,12 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
   
   void _showAutoDismissSnackBar(String message, {VoidCallback? onUndo}) {
     if (!mounted) return;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     ScaffoldMessenger.of(context).clearSnackBars();
     
-    final controller = ScaffoldMessenger.of(context).showSnackBar(
+    ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         behavior: SnackBarBehavior.fixed,
         backgroundColor: Colors.transparent,
@@ -39,11 +42,11 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
         content: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: const Color(0xFF323232),
+            color: isDark ? const Color(0xFF1E1F24) : const Color(0xFF323232),
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.1),
+                color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                 blurRadius: 8,
                 offset: const Offset(0, 4),
               ),
@@ -108,7 +111,6 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     if (n.contains('frozen') || n.contains('ice cream') || n.contains('pizza')) return 'frozen';
     if (n.contains('water') || n.contains('juice') || n.contains('coffee') || n.contains('beer')) return 'beverage';
     if (n.contains('bread') || n.contains('cake') || n.contains('flour')) return 'bakery';
-    if (n.contains('milk') || n.contains('yogurt') || n.contains('cheese') || n.contains('butter') || n.contains('egg')) return 'dairy';
     if (n.contains('fish') || n.contains('salmon') || n.contains('shrimp')) return 'seafood';
     if (n.contains('chicken') || n.contains('beef') || n.contains('steak') || n.contains('meat')) return 'meat';
     if (n.contains('apple') || n.contains('banana') || n.contains('tomato') || n.contains('veg')) return 'produce';
@@ -125,7 +127,6 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     }
   }
 
-  // 弹出 AI 导入 Sheet
   void _showAiImportSheet() {
     HapticFeedback.heavyImpact();
     showModalBottomSheet(
@@ -138,21 +139,37 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
 
   @override
   Widget build(BuildContext context) {
-    const bg = Color(0xFFF8F9FC);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = theme.scaffoldBackgroundColor;
     const primary = Color(0xFF005F87);
 
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title: const Text('Shopping List', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87)),
+        title: Text(
+          'Shopping List',
+          style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+        ),
         backgroundColor: bg,
         elevation: 0,
         centerTitle: false,
-        systemOverlayStyle: SystemUiOverlayStyle.dark,
+        systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         actions: [
           IconButton(
+            tooltip: 'Fridge Camera',
+            icon: Icon(Icons.kitchen_rounded, color: colors.onSurface),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FridgeCameraPage()),
+              );
+            },
+          ),
+          IconButton(
             tooltip: 'Purchase History',
-            icon: const Icon(Icons.history_rounded, color: Colors.black87),
+            icon: Icon(Icons.history_rounded, color: colors.onSurface),
             onPressed: () {
               Navigator.push(
                 context,
@@ -195,8 +212,11 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                             child: Chip(
                               elevation: 0,
                               side: BorderSide(color: primary.withOpacity(0.1)),
-                              backgroundColor: Colors.white,
-                              label: Text(sug, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                              backgroundColor: theme.cardColor,
+                              label: Text(
+                                sug,
+                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: colors.onSurface),
+                              ),
                               avatar: const Icon(Icons.add_rounded, size: 16, color: primary),
                               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                             ),
@@ -211,7 +231,8 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                 child: allItems.isEmpty
                     ? FadeInSlide(index: 1, child: _buildEmptyState())
                     : ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 160), // 留出足够空间给底部栏
+                        // 🟢 增加底部 Padding (220) 以确保列表内容不被加高的 BottomSheet 遮挡
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 220), 
                         children: [
                           ...activeItems.asMap().entries.map((entry) => FadeInSlide(
                             key: ValueKey(entry.value.id),
@@ -227,7 +248,15 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                                   const Expanded(child: Divider()),
                                   Padding(
                                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    child: Text('COMPLETED', style: TextStyle(color: Colors.grey[400], fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+                                    child: Text(
+                                      'COMPLETED',
+                                      style: TextStyle(
+                                        color: colors.onSurface.withOpacity(0.4),
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 1.2,
+                                      ),
+                                    ),
                                   ),
                                   const Expanded(child: Divider()),
                                 ],
@@ -256,10 +285,18 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
 
           return Container(
             decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, -5))],
+              color: theme.cardColor,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+                  blurRadius: 20,
+                  offset: const Offset(0, -5),
+                )
+              ],
             ),
-            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 16),
+            // 🟢 关键调整：底部 Padding 增加到 safeArea + 100
+            // 这样输入框和 AI 按钮会位于悬浮导航栏上方 (悬浮栏约高 84px)
+            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 100),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -299,9 +336,9 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                         onSubmitted: _addItem,
                         decoration: InputDecoration(
                           hintText: 'Add item (e.g. Milk)...',
-                          hintStyle: TextStyle(color: Colors.grey[400]),
+                          hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.4)),
                           filled: true,
-                          fillColor: const Color(0xFFF1F5F9),
+                          fillColor: isDark ? const Color(0xFF1C1F24) : const Color(0xFFF1F5F9),
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           suffixIcon: UnconstrainedBox(
@@ -321,7 +358,7 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // 🪄 AI 导入入口：紧邻确认按钮右侧
+                    // 🪄 AI 导入入口
                     BouncingButton(
                       onTap: _showAiImportSheet,
                       child: Container(
@@ -356,6 +393,7 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
   }
 
   Widget _buildDismissibleItem(ShoppingItem item) {
+    final ownerLabel = _resolveOwnerLabel(item);
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
@@ -376,6 +414,7 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
       },
       child: _ShoppingTile(
         item: item,
+        ownerLabel: ownerLabel,
         onToggle: () {
           HapticFeedback.selectionClick();
           widget.repo.toggleShoppingItemStatus(item);
@@ -384,20 +423,46 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     );
   }
 
+  String? _resolveOwnerLabel(ShoppingItem item) {
+    if (!widget.repo.isSharedUsage) return null;
+    final name = item.ownerName?.trim();
+    if (name != null && name.isNotEmpty) {
+      return name == 'Me' ? widget.repo.currentUserName : name;
+    }
+    return widget.repo.currentUserName;
+  }
+
   Widget _buildEmptyState() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Colors.grey[100]!)),
-            child: Icon(Icons.shopping_cart_outlined, size: 48, color: Colors.grey[300]),
+            decoration: BoxDecoration(
+              color: theme.cardColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: theme.dividerColor),
+            ),
+            child: Icon(
+              Icons.shopping_cart_outlined,
+              size: 48,
+              color: colors.onSurface.withOpacity(isDark ? 0.35 : 0.25),
+            ),
           ),
           const SizedBox(height: 24),
-          Text('Your list is empty', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black87)),
+          Text(
+            'Your list is empty',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: colors.onSurface),
+          ),
           const SizedBox(height: 8),
-          Text('Add items manually or use AI Scan.', style: TextStyle(color: Colors.grey[500], fontSize: 14)),
+          Text(
+            'Add items manually or use AI Scan.',
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 14),
+          ),
           const SizedBox(height: 100),
         ],
       ),
@@ -424,7 +489,7 @@ class _UserAvatarTag extends StatelessWidget {
       width: size, height: size,
       decoration: BoxDecoration(
         color: color, shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 1.5),
+        border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 1.5),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2)],
       ),
       alignment: Alignment.center,
@@ -435,11 +500,37 @@ class _UserAvatarTag extends StatelessWidget {
 
 class _ShoppingTile extends StatelessWidget {
   final ShoppingItem item;
+  final String? ownerLabel;
   final VoidCallback onToggle;
-  const _ShoppingTile({required this.item, required this.onToggle});
+  const _ShoppingTile({required this.item, required this.onToggle, this.ownerLabel});
 
-  Color _catColor(String c) {
-    switch(c) {
+  Color _itemColor(ShoppingItem item) {
+    final n = item.name.toLowerCase();
+    if (n.contains('milk') || n.contains('yogurt') || n.contains('cheese')) {
+      return const Color(0xFF42A5F5);
+    }
+    if (n.contains('egg')) return const Color(0xFFFFB300);
+    if (n.contains('apple') || n.contains('banana') || n.contains('tomato') || n.contains('veg')) {
+      return const Color(0xFF66BB6A);
+    }
+    if (n.contains('fish') || n.contains('salmon') || n.contains('shrimp')) {
+      return const Color(0xFF5C6BC0);
+    }
+    if (n.contains('chicken') || n.contains('beef') || n.contains('pork') || n.contains('meat')) {
+      return const Color(0xFFEF5350);
+    }
+    if (n.contains('bread') || n.contains('croissant') || n.contains('cake')) {
+      return const Color(0xFFFFB300);
+    }
+    if (n.contains('coffee') || n.contains('tea')) return const Color(0xFF26A69A);
+    if (n.contains('water') || n.contains('juice')) return const Color(0xFF26A69A);
+    if (n.contains('snack') || n.contains('chip') || n.contains('chocolate')) {
+      return const Color(0xFFFF7043);
+    }
+    if (n.contains('rice') || n.contains('pasta') || n.contains('noodle') || n.contains('oil')) {
+      return const Color(0xFFFFA726);
+    }
+    switch (item.category) {
       case 'pet': return const Color(0xFF8D6E63);
       case 'household': return const Color(0xFF78909C);
       case 'frozen': return const Color(0xFF4DD0E1);
@@ -455,8 +546,33 @@ class _ShoppingTile extends StatelessWidget {
     }
   }
 
-  IconData _catIcon(String c) {
-    switch(c) {
+  IconData _itemIcon(ShoppingItem item) {
+    final n = item.name.toLowerCase();
+    if (n.contains('milk') || n.contains('yogurt') || n.contains('cheese')) {
+      return Icons.local_drink_rounded;
+    }
+    if (n.contains('egg')) return Icons.egg_rounded;
+    if (n.contains('apple') || n.contains('banana') || n.contains('tomato') || n.contains('veg')) {
+      return Icons.eco_rounded;
+    }
+    if (n.contains('fish') || n.contains('salmon') || n.contains('shrimp')) {
+      return Icons.set_meal_rounded;
+    }
+    if (n.contains('chicken') || n.contains('beef') || n.contains('pork') || n.contains('meat')) {
+      return Icons.restaurant_rounded;
+    }
+    if (n.contains('bread') || n.contains('croissant') || n.contains('cake')) {
+      return Icons.bakery_dining_rounded;
+    }
+    if (n.contains('coffee') || n.contains('tea')) return Icons.local_cafe_rounded;
+    if (n.contains('water') || n.contains('juice')) return Icons.local_drink_rounded;
+    if (n.contains('snack') || n.contains('chip') || n.contains('chocolate')) {
+      return Icons.cookie_rounded;
+    }
+    if (n.contains('rice') || n.contains('pasta') || n.contains('noodle') || n.contains('oil')) {
+      return Icons.kitchen_rounded;
+    }
+    switch (item.category) {
       case 'pet': return Icons.pets_rounded;
       case 'household': return Icons.cleaning_services_rounded;
       case 'frozen': return Icons.ac_unit_rounded;
@@ -474,8 +590,11 @@ class _ShoppingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _catColor(item.category);
+    final color = _itemColor(item);
     final isDone = item.isChecked;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return BouncingButton(
       onTap: onToggle,
@@ -485,9 +604,17 @@ class _ShoppingTile extends StatelessWidget {
         child: Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(16),
-            boxShadow: isDone ? [] : [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+            boxShadow: isDone
+                ? []
+                : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.2 : 0.02),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    )
+                  ],
           ),
           child: Padding(
             padding: const EdgeInsets.all(14),
@@ -499,7 +626,10 @@ class _ShoppingTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isDone ? color : Colors.transparent,
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: isDone ? color : Colors.grey[300]!, width: 2),
+                    border: Border.all(
+                      color: isDone ? color : colors.onSurface.withOpacity(0.2),
+                      width: 2,
+                    ),
                   ),
                   child: isDone ? const Icon(Icons.check, size: 16, color: Colors.white) : null,
                 ),
@@ -510,10 +640,10 @@ class _ShoppingTile extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
-                      child: Icon(_catIcon(item.category), size: 18, color: color),
+                      child: Icon(_itemIcon(item), size: 18, color: color),
                     ),
-                    if (item.ownerName != null)
-                      Positioned(right: -5, bottom: -5, child: _UserAvatarTag(name: item.ownerName!, size: 16)),
+                    if (ownerLabel != null && ownerLabel!.isNotEmpty)
+                      Positioned(right: -5, bottom: -5, child: _UserAvatarTag(name: ownerLabel!, size: 16)),
                   ],
                 ),
                 const SizedBox(width: 14),
@@ -522,7 +652,7 @@ class _ShoppingTile extends StatelessWidget {
                     item.name,
                     style: TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w600,
-                      color: isDone ? Colors.grey : Colors.black87,
+                      color: isDone ? colors.onSurface.withOpacity(0.5) : colors.onSurface,
                       decoration: isDone ? TextDecoration.lineThrough : null,
                     ),
                   ),

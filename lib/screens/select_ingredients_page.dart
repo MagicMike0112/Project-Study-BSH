@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
+import '../services/archive_service.dart';
 import '../utils/auth_guard.dart';
 
 // ================== Global UI Constants ==================
@@ -16,17 +17,20 @@ import '../utils/auth_guard.dart';
 const String _kRecipeArchiveKey = 'recipe_archive_v1';
 
 class AppStyle {
-  static const Color bg = Color(0xFFF4F6F9);
   static const Color primary = Color(0xFF005F87);
-  static const Color cardColor = Colors.white;
   static const double cardRadius = 20.0;
-  static const List<BoxShadow> softShadow = [
-    BoxShadow(
-      color: Color(0x08000000),
-      blurRadius: 12,
-      offset: Offset(0, 4),
-    ),
-  ];
+  static Color bg(BuildContext context) => Theme.of(context).scaffoldBackgroundColor;
+  static Color cardColor(BuildContext context) => Theme.of(context).cardColor;
+  static List<BoxShadow> softShadow(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return [
+      BoxShadow(
+        color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+        blurRadius: 12,
+        offset: const Offset(0, 4),
+      ),
+    ];
+  }
 }
 
 // ================== Recipe Archive Logic ==================
@@ -57,49 +61,110 @@ class RecipeArchiveEntry {
 
 class RecipeArchiveStore {
   static Future<List<RecipeArchiveEntry>> load() async {
-    final sp = await SharedPreferences.getInstance();
-    final raw = sp.getString(_kRecipeArchiveKey);
-    if (raw == null || raw.trim().isEmpty) return [];
-    try {
-      final list = (jsonDecode(raw) as List<dynamic>)
-          .map((e) => (e as Map).cast<String, dynamic>())
-          .map(RecipeArchiveEntry.fromJson)
-          .toList();
-      list.sort((a, b) => b.addedAt.compareTo(a.addedAt));
-      return list;
-    } catch (_) {
-      return [];
-    }
+    await _maybeMigrateLegacy();
+    final list = await ArchiveService.instance.getAll();
+    return list
+        .map((e) => RecipeArchiveEntry(
+              recipe: _fromArchived(e),
+              addedAt: e.addedAt,
+            ))
+        .toList();
   }
 
   static Future<void> add(RecipeSuggestion recipe) async {
-    final sp = await SharedPreferences.getInstance();
-    final list = await load();
-    final filtered = list.where((e) => e.recipe.id != recipe.id).toList();
-    filtered.insert(
-      0,
-      RecipeArchiveEntry(recipe: recipe, addedAt: DateTime.now()),
+    final archived = ArchivedRecipe(
+      archiveId: const Uuid().v4(),
+      recipeId: recipe.id,
+      addedAtMs: DateTime.now().millisecondsSinceEpoch,
+      title: recipe.title,
+      timeLabel: recipe.timeLabel,
+      expiringCount: recipe.expiringCount,
+      ingredients: recipe.ingredients,
+      steps: recipe.steps,
+      appliances: recipe.appliances,
+      ovenTempC: recipe.ovenTempC,
+      description: recipe.description,
+      imageUrl: recipe.imageUrl,
     );
-    final encoded = jsonEncode(filtered.map((e) => e.toJson()).toList());
-    await sp.setString(_kRecipeArchiveKey, encoded);
+    await ArchiveService.instance.add(archived);
   }
 
   static Future<void> remove(String recipeId) async {
-    final sp = await SharedPreferences.getInstance();
-    final list = await load();
-    final filtered = list.where((e) => e.recipe.id != recipeId).toList();
-    final encoded = jsonEncode(filtered.map((e) => e.toJson()).toList());
-    await sp.setString(_kRecipeArchiveKey, encoded);
+    final list = await ArchiveService.instance.getAll();
+    final match = list.firstWhere(
+      (e) => e.recipeId == recipeId,
+      orElse: () => ArchivedRecipe(
+        archiveId: '',
+        recipeId: '',
+        addedAtMs: 0,
+        title: '',
+        timeLabel: '',
+        expiringCount: 0,
+        ingredients: const [],
+        steps: const [],
+        appliances: const [],
+      ),
+    );
+    if (match.archiveId.isNotEmpty) {
+      await ArchiveService.instance.removeByArchiveId(match.archiveId);
+    }
   }
 
   static Future<bool> hasRecipe(String recipeId) async {
-    final list = await load();
-    return list.any((e) => e.recipe.id == recipeId);
+    return ArchiveService.instance.containsRecipeId(recipeId);
   }
 
   static Future<void> clear() async {
+    await ArchiveService.instance.clear();
+  }
+
+  static Future<void> _maybeMigrateLegacy() async {
     final sp = await SharedPreferences.getInstance();
-    await sp.remove(_kRecipeArchiveKey);
+    final raw = sp.getString(_kRecipeArchiveKey);
+    if (raw == null || raw.trim().isEmpty) return;
+
+    try {
+      final legacy = (jsonDecode(raw) as List<dynamic>)
+          .map((e) => (e as Map).cast<String, dynamic>())
+          .map(RecipeArchiveEntry.fromJson)
+          .toList();
+      for (final entry in legacy) {
+        final r = entry.recipe;
+        final archived = ArchivedRecipe(
+          archiveId: const Uuid().v4(),
+          recipeId: r.id,
+          addedAtMs: entry.addedAt.millisecondsSinceEpoch,
+          title: r.title,
+          timeLabel: r.timeLabel,
+          expiringCount: r.expiringCount,
+          ingredients: r.ingredients,
+          steps: r.steps,
+          appliances: r.appliances,
+          ovenTempC: r.ovenTempC,
+          description: r.description,
+          imageUrl: r.imageUrl,
+        );
+        await ArchiveService.instance.add(archived);
+      }
+      await sp.remove(_kRecipeArchiveKey);
+    } catch (_) {
+      // ignore legacy parse errors
+    }
+  }
+
+  static RecipeSuggestion _fromArchived(ArchivedRecipe recipe) {
+    return RecipeSuggestion(
+      id: recipe.recipeId,
+      title: recipe.title,
+      timeLabel: recipe.timeLabel,
+      expiringCount: recipe.expiringCount,
+      ingredients: recipe.ingredients,
+      steps: recipe.steps,
+      appliances: recipe.appliances,
+      ovenTempC: recipe.ovenTempC,
+      description: recipe.description,
+      imageUrl: recipe.imageUrl,
+    );
   }
 }
 
@@ -250,6 +315,8 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   @override
   Widget build(BuildContext context) {
     final selectedCount = _selectedIds.length;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
 
     return WillPopScope(
       onWillPop: () async {
@@ -257,10 +324,16 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
         return false;
       },
       child: Scaffold(
-        backgroundColor: AppStyle.bg,
+        backgroundColor: AppStyle.bg(context),
         appBar: AppBar(
-          title: const Text('Choose ingredients', style: TextStyle(fontWeight: FontWeight.w700)),
-          backgroundColor: AppStyle.bg,
+          title: Text(
+            'Choose ingredients',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: colors.onSurface,
+            ),
+          ),
+          backgroundColor: AppStyle.bg(context),
           elevation: 0,
           centerTitle: false,
         ),
@@ -308,37 +381,38 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
               ],
 
               _SectionCard(
-                title: 'Archive',
-                subtitle: 'View saved recipe ideas',
-                child: _EntryTile(
-                  icon: Icons.bookmark_outline,
-                  title: 'Open Recipe Archive',
-                  subtitle: 'Your saved collection',
-                  onTap: _openArchive,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              _SectionCard(
                 title: 'Cooking Settings',
                 child: Row(
                   children: [
-                    const Icon(Icons.people_outline, color: Colors.grey),
+                    Icon(Icons.people_outline, color: colors.onSurface.withOpacity(0.6)),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Number of People', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-                          Text('Adjusts portion sizes', style: TextStyle(color: Colors.grey, fontSize: 12)),
+                          Text(
+                            'Number of People',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          Text(
+                            'Adjusts portion sizes',
+                            style: TextStyle(
+                              color: colors.onSurface.withOpacity(0.6),
+                              fontSize: 12,
+                            ),
+                          ),
                         ],
                       ),
                     ),
                     Container(
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
+                        color: theme.cardColor,
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.grey.shade300),
+                        border: Border.all(color: theme.dividerColor),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -346,13 +420,24 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                           IconButton(
                             icon: const Icon(Icons.remove, size: 18),
                             onPressed: () => _updateServings(-1),
-                            color: _servings > 1 ? Colors.black87 : Colors.grey,
+                            color: _servings > 1
+                                ? colors.onSurface
+                                : colors.onSurface.withOpacity(0.4),
                           ),
-                          Text('$_servings', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          Text(
+                            '$_servings',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: colors.onSurface,
+                            ),
+                          ),
                           IconButton(
                             icon: const Icon(Icons.add, size: 18),
                             onPressed: () => _updateServings(1),
-                            color: _servings < 10 ? Colors.black87 : Colors.grey,
+                            color: _servings < 10
+                                ? colors.onSurface
+                                : colors.onSurface.withOpacity(0.4),
                           ),
                         ],
                       ),
@@ -421,12 +506,15 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                         spacing: 8,
                         runSpacing: 8,
                         children: _extraIngredients.map((e) => Chip(
-                          label: Text(e, style: const TextStyle(fontSize: 13)),
-                          backgroundColor: Colors.white,
+                          label: Text(
+                            e,
+                            style: TextStyle(fontSize: 13, color: colors.onSurface),
+                          ),
+                          backgroundColor: theme.cardColor,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
-                            side: BorderSide(color: Colors.grey.shade300),
+                            side: BorderSide(color: theme.dividerColor),
                           ),
                           onDeleted: () => _removeExtraIngredient(e),
                         )).toList(),
@@ -450,13 +538,13 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
                   controller: _specialRequestController,
                   minLines: 1,
                   maxLines: 3,
-                  style: const TextStyle(fontSize: 15),
+                  style: TextStyle(fontSize: 15, color: colors.onSurface),
                   decoration: InputDecoration(
                     hintText: 'Any specific requests?',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     filled: true,
-                    fillColor: Colors.grey.shade100,
+                    fillColor: theme.cardColor,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
                 ),
@@ -469,7 +557,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
           child: Container(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: theme.cardColor,
               boxShadow: [
                 BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5)),
               ],
@@ -547,15 +635,20 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Scaffold(
-      backgroundColor: AppStyle.bg,
+      backgroundColor: AppStyle.bg(context),
       appBar: AppBar(
-        title: const Text('Saved Recipes', style: TextStyle(fontWeight: FontWeight.w700)),
-        backgroundColor: AppStyle.bg,
+        title: Text('Saved Recipes', style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface)),
+        backgroundColor: AppStyle.bg(context),
         elevation: 0,
         actions: [
           if (_items.isNotEmpty)
-            IconButton(onPressed: _clearAll, icon: const Icon(Icons.delete_outline, color: Colors.grey)),
+            IconButton(
+              onPressed: _clearAll,
+              icon: Icon(Icons.delete_outline, color: colors.onSurface.withOpacity(0.6)),
+            ),
         ],
       ),
       body: SafeArea(
@@ -577,17 +670,28 @@ class _RecipeArchivePageState extends State<RecipeArchivePage> {
                         children: [
                           Container(
                             padding: const EdgeInsets.all(24),
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
+                            decoration: BoxDecoration(
+                              color: AppStyle.cardColor(context),
                               shape: BoxShape.circle,
-                              boxShadow: AppStyle.softShadow,
+                              boxShadow: AppStyle.softShadow(context),
                             ),
-                            child: Icon(Icons.bookmark_border, size: 48, color: Colors.grey.shade300),
+                            child: Icon(
+                              Icons.bookmark_border,
+                              size: 48,
+                              color: colors.onSurface.withOpacity(0.3),
+                            ),
                           ),
                           const SizedBox(height: 24),
-                          const Text('No recipes saved yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Colors.black87)),
+                          Text(
+                            'No recipes saved yet',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: colors.onSurface),
+                          ),
                           const SizedBox(height: 8),
-                          Text('Generate recipes and tap the archive icon to save them here.', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade600, height: 1.5)),
+                          Text(
+                            'Generate recipes and tap the archive icon to save them here.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: colors.onSurface.withOpacity(0.6), height: 1.5),
+                          ),
                           const SizedBox(height: 32),
                           FilledButton.tonal(onPressed: () => Navigator.pop(context), child: const Text('Go Back')),
                         ],
@@ -671,6 +775,7 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
         'extraIngredients': widget.extraIngredients,
         'servings': widget.servings,
         'studentMode': widget.studentMode,
+        'includeImages': true,
       };
 
       if (widget.specialRequest != null && widget.specialRequest!.trim().isNotEmpty) body['specialRequest'] = widget.specialRequest!.trim();
@@ -698,8 +803,8 @@ class _RecipeGeneratorSheetState extends State<RecipeGeneratorSheet> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppStyle.bg,
-      appBar: AppBar(backgroundColor: AppStyle.bg, title: const Text('AI Chef', style: TextStyle(fontWeight: FontWeight.w700)), centerTitle: false, elevation: 0),
+      backgroundColor: AppStyle.bg(context),
+      appBar: AppBar(backgroundColor: AppStyle.bg(context), title: const Text('AI Chef', style: TextStyle(fontWeight: FontWeight.w700)), centerTitle: false, elevation: 0),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
@@ -800,6 +905,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   bool _archiving = false;
   bool _isSaved = false;
   bool _isOvenReady = false;
+  String? _ovenTempLabel;
 
   @override
   void initState() {
@@ -852,7 +958,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
   }
 
   Future<void> _preheatOven() async {
-    if (_isOvenReady) return;
+    if (_isOvenReady) {
+      await _stopOven();
+      return;
+    }
     final ok = await requireLogin(context); if (!ok) return;
     final token = await _getSupabaseAccessTokenOrNull(); if (token == null) return;
     int? temp = widget.recipe.ovenTempC ?? widget.recipe.inferOvenTempFromText();
@@ -860,6 +969,16 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     setState(() => _hcActionLoading = true);
     try {
       final haId = await _findOvenHaId(token);
+      final tempLabel = await _fetchOvenTemperature(token, haId);
+      if (mounted) setState(() => _ovenTempLabel = tempLabel);
+      final busy = await _isOvenBusy(token, haId);
+      if (busy) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Oven is busy. Stop it before preheating.')),
+        );
+        return;
+      }
       final r = await http.post(
         Uri.parse('$_backendBase/api/hc?action=preheat'),
         headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
@@ -879,6 +998,78 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     } finally {
       if (mounted) setState(() => _hcActionLoading = false);
     }
+  }
+
+  Future<void> _stopOven() async {
+    final ok = await requireLogin(context); if (!ok) return;
+    final token = await _getSupabaseAccessTokenOrNull(); if (token == null) return;
+    setState(() => _hcActionLoading = true);
+    try {
+      final haId = await _findOvenHaId(token);
+      final tempLabel = await _fetchOvenTemperature(token, haId);
+      if (mounted) setState(() => _ovenTempLabel = tempLabel);
+      final busy = await _isOvenBusy(token, haId);
+      if (!busy) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Oven is already idle.')),
+        );
+        setState(() => _isOvenReady = false);
+        return;
+      }
+      final r = await http.post(
+        Uri.parse('$_backendBase/api/hc?action=stopOven'),
+        headers: {'Authorization': 'Bearer $token', 'Content-Type': 'application/json'},
+        body: jsonEncode({'haId': haId}),
+      );
+      if (r.statusCode != 200) throw Exception('Failed: ${r.body}');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Oven stopped.')));
+      setState(() => _isOvenReady = false);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Stop failed: $e')));
+    } finally {
+      if (mounted) setState(() => _hcActionLoading = false);
+    }
+  }
+
+  Future<bool> _isOvenBusy(String token, String haId) async {
+    final r = await http.get(
+      Uri.parse('$_backendBase/api/hc?action=ovenStatus&haId=$haId'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+    if (r.statusCode != 200) return false;
+    final obj = jsonDecode(r.body) as Map<String, dynamic>;
+    final raw = obj['raw'] as Map<String, dynamic>? ?? {};
+    final data = raw['data'] as Map<String, dynamic>? ?? raw;
+    final activeKey = data['key'];
+    return activeKey != null && activeKey.toString().isNotEmpty;
+  }
+
+  Future<String?> _fetchOvenTemperature(String token, String haId) async {
+    final r = await http.get(
+      Uri.parse('$_backendBase/api/hc?action=ovenStatusList&haId=$haId'),
+      headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+    );
+    if (r.statusCode != 200) return null;
+    final obj = jsonDecode(r.body) as Map<String, dynamic>;
+    final raw = obj['raw'] as Map<String, dynamic>? ?? {};
+    final data = raw['data'] as Map<String, dynamic>? ?? raw;
+    final statusList = (data['status'] as List? ?? []).map((e) => (e as Map).cast<String, dynamic>()).toList();
+    Map<String, dynamic>? pick;
+    for (final s in statusList) {
+      final key = (s['key'] ?? '').toString();
+      if (key.contains('CurrentTemperature') || key.contains('SetpointTemperature')) {
+        pick = s;
+        break;
+      }
+    }
+    if (pick == null) return null;
+    final value = pick['value'];
+    final unit = pick['unit']?.toString() ?? '';
+    if (value == null) return null;
+    return '$value${unit.isNotEmpty ? ' $unit' : ''}';
   }
 
   IconData _toolIcon(String label) {
@@ -984,10 +1175,10 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
     final ovenBorderColor = _isOvenReady ? Colors.green.shade100 : Colors.orange.shade100;
 
     return Scaffold(
-      backgroundColor: AppStyle.bg,
+      backgroundColor: AppStyle.bg(context),
       appBar: AppBar(
         title: const Text('Recipe Details', style: TextStyle(fontWeight: FontWeight.w700)),
-        backgroundColor: AppStyle.bg,
+        backgroundColor: AppStyle.bg(context),
         elevation: 0,
         actions: [
           IconButton(
@@ -999,10 +1190,11 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
       body: ListView(padding: const EdgeInsets.fromLTRB(16, 0, 16, 100), children: [
         Hero(
           tag: 'recipe_img_${recipe.id}',
-          child: Container(
-            height: 180, width: double.infinity,
-            decoration: BoxDecoration(color: AppStyle.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(24)),
-            child: const Center(child: Icon(Icons.fastfood_rounded, size: 64, color: AppStyle.primary)),
+          child: _RecipeImage(
+            imageUrl: recipe.imageUrl,
+            height: 180,
+            width: double.infinity,
+            borderRadius: BorderRadius.circular(24),
           ),
         ),
         const SizedBox(height: 20),
@@ -1035,7 +1227,9 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
                   icon: _isOvenReady ? Icons.check_circle_rounded : Icons.local_fire_department_rounded,
                   iconColor: _isOvenReady ? Colors.green : AppStyle.primary,
                   title: _isOvenReady ? 'Oven is Ready' : 'Preheat Oven',
-                  subtitle: _isOvenReady ? 'Target temperature reached' : 'Tap to start',
+                  subtitle: _ovenTempLabel != null
+                      ? 'Temp: $_ovenTempLabel'
+                      : (_isOvenReady ? 'Tap to stop' : 'Tap to start'),
                   loading: _hcActionLoading,
                   onTap: _hcActionLoading ? null : _preheatOven,
                   bgColor: Colors.white
@@ -1065,7 +1259,7 @@ class _RecipeDetailPageState extends State<RecipeDetailPage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                boxShadow: AppStyle.softShadow,
+                boxShadow: AppStyle.softShadow(context),
                 border: Border.all(color: Colors.grey.shade100),
               ),
               child: Column(
@@ -1417,6 +1611,83 @@ class _StorageOption extends StatelessWidget {
 
 // ================== Helper Widgets & Models ==================
 
+class _RecipeImage extends StatelessWidget {
+  final String? imageUrl;
+  final double height;
+  final double width;
+  final BorderRadius borderRadius;
+
+  const _RecipeImage({
+    required this.imageUrl,
+    required this.height,
+    required this.width,
+    required this.borderRadius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final url = (imageUrl ?? '').trim();
+    final iconSize = height * 0.4;
+    Widget content;
+
+    if (url.isEmpty) {
+      content = _placeholder(iconSize);
+    } else if (url.startsWith('data:image')) {
+      final b64 = _extractBase64(url);
+      if (b64 == null) {
+        content = _placeholder(iconSize);
+      } else {
+        try {
+          final bytes = base64Decode(b64);
+          content = Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+            width: width,
+            height: height,
+          );
+        } catch (_) {
+          content = _placeholder(iconSize);
+        }
+      }
+    } else {
+      content = Image.network(
+        url,
+        fit: BoxFit.cover,
+        width: width,
+        height: height,
+        errorBuilder: (_, __, ___) => _placeholder(iconSize),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: SizedBox(
+        height: height,
+        width: width,
+        child: content,
+      ),
+    );
+  }
+
+  String? _extractBase64(String dataUrl) {
+    final comma = dataUrl.indexOf(',');
+    if (comma == -1) return null;
+    return dataUrl.substring(comma + 1);
+  }
+
+  Widget _placeholder(double iconSize) {
+    return Container(
+      color: const Color(0xFFF0F5FF),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.fastfood_rounded,
+        size: iconSize,
+        color: AppStyle.primary.withOpacity(0.3),
+      ),
+    );
+  }
+}
+
 class _ArchiveRecipeCard extends StatelessWidget {
   final RecipeSuggestion recipe;
   final DateTime addedAt;
@@ -1436,11 +1707,13 @@ class _ArchiveRecipeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: AppStyle.softShadow,
+        boxShadow: AppStyle.softShadow(context),
       ),
       child: InkWell(
         onTap: onOpen,
@@ -1451,14 +1724,11 @@ class _ArchiveRecipeCard extends StatelessWidget {
             children: [
               Hero(
                 tag: 'recipe_icon_${recipe.id}',
-                child: Container(
-                  width: 50,
+                child: _RecipeImage(
+                  imageUrl: recipe.imageUrl,
                   height: 50,
-                  decoration: BoxDecoration(
-                    color: AppStyle.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Icon(Icons.restaurant_menu_rounded, color: AppStyle.primary),
+                  width: 50,
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
               const SizedBox(width: 16),
@@ -1470,24 +1740,24 @@ class _ArchiveRecipeCard extends StatelessWidget {
                       recipe.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       '${recipe.timeLabel} • ${recipe.appliancesLabel}',
-                      style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                      style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6)),
                     ),
                     const SizedBox(height: 4),
                     Text(
                       'Saved on ${_fmt(addedAt)}',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[400]),
+                      style: TextStyle(fontSize: 11, color: colors.onSurface.withOpacity(0.45)),
                     ),
                   ],
                 ),
               ),
               IconButton(
                 onPressed: onRemove,
-                icon: Icon(Icons.close_rounded, size: 20, color: Colors.grey.shade400),
+                icon: Icon(Icons.close_rounded, size: 20, color: colors.onSurface.withOpacity(0.5)),
               ),
             ],
           ),
@@ -1508,17 +1778,45 @@ class _RecipeCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow),
+        decoration: BoxDecoration(color: AppStyle.cardColor(context), borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow(context)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Hero(
             tag: 'recipe_img_${recipe.id}',
-            child: Container(
-              height: 100, width: double.infinity,
-              decoration: const BoxDecoration(borderRadius: BorderRadius.vertical(top: Radius.circular(20)), color: Color(0xFFF0F5FF)),
-              child: Stack(children: [
-                Center(child: Icon(Icons.fastfood_rounded, size: 40, color: AppStyle.primary.withOpacity(0.3))),
-                if (recipe.expiringCount > 0) Positioned(top: 8, right: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.eco, color: Colors.white, size: 10), const SizedBox(width: 4), Text('Uses ${recipe.expiringCount}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))]))),
-              ]),
+            child: SizedBox(
+              height: 100,
+              width: double.infinity,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _RecipeImage(
+                      imageUrl: recipe.imageUrl,
+                      height: 100,
+                      width: double.infinity,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                  ),
+                  if (recipe.expiringCount > 0)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(8)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.eco, color: Colors.white, size: 10),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Uses ${recipe.expiringCount}',
+                              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
           Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -1545,9 +1843,9 @@ class _InfoPill extends StatelessWidget {
 }
 
 class _ShimmerRecipeCard extends StatefulWidget { const _ShimmerRecipeCard(); @override State<_ShimmerRecipeCard> createState() => _ShimmerRecipeCardState(); }
-class _ShimmerRecipeCardState extends State<_ShimmerRecipeCard> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[200], Colors.grey[100], _controller.value); return Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(height: 100, width: double.infinity, decoration: BoxDecoration(borderRadius: const BorderRadius.vertical(top: Radius.circular(20)), color: color)), Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 6), Container(width: 100, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 12), Row(children: [Container(width: 14, height: 14, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 6), Container(width: 60, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)))]),],),),],),); },); } }
+class _ShimmerRecipeCardState extends State<_ShimmerRecipeCard> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[200], Colors.grey[100], _controller.value); return Container(decoration: BoxDecoration(color: AppStyle.cardColor(context), borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow(context)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(height: 100, width: double.infinity, decoration: BoxDecoration(borderRadius: const BorderRadius.vertical(top: Radius.circular(20)), color: color)), Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: double.infinity, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 6), Container(width: 100, height: 14, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 12), Row(children: [Container(width: 14, height: 14, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const SizedBox(width: 6), Container(width: 60, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)))]),],),),],),); },); } }
 class _ShimmerArchiveCard extends StatefulWidget { const _ShimmerArchiveCard(); @override State<_ShimmerArchiveCard> createState() => _ShimmerArchiveCardState(); }
-class _ShimmerArchiveCardState extends State<_ShimmerArchiveCard> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[200], Colors.grey[100], _controller.value); return Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow), padding: const EdgeInsets.all(16), child: Row(children: [Container(width: 50, height: 50, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(16))), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: double.infinity, height: 16, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 8), Container(width: 120, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)))]))])); },); } }
+class _ShimmerArchiveCardState extends State<_ShimmerArchiveCard> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[200], Colors.grey[100], _controller.value); return Container(decoration: BoxDecoration(color: AppStyle.cardColor(context), borderRadius: BorderRadius.circular(20), boxShadow: AppStyle.softShadow(context)), padding: const EdgeInsets.all(16), child: Row(children: [Container(width: 50, height: 50, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(16))), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(width: double.infinity, height: 16, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4))), const SizedBox(height: 8), Container(width: 120, height: 12, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)))]))])); },); } }
 class _ShimmerBlock extends StatefulWidget { final double width; final double height; const _ShimmerBlock({required this.width, required this.height}); @override State<_ShimmerBlock> createState() => _ShimmerBlockState(); }
 class _ShimmerBlockState extends State<_ShimmerBlock> with SingleTickerProviderStateMixin { late AnimationController _controller; @override void initState() { super.initState(); _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))..repeat(reverse: true); } @override void dispose() { _controller.dispose(); super.dispose(); } @override Widget build(BuildContext context) { return AnimatedBuilder(animation: _controller, builder: (context, child) { final color = Color.lerp(Colors.grey[300], Colors.grey[100], _controller.value); return Container(width: widget.width, height: widget.height, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6))); },); } }
 
@@ -1559,12 +1857,23 @@ class _InputRow extends StatelessWidget {
   const _InputRow({required this.controller, required this.hintText, required this.onAdd, required this.onSubmit});
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Row(children: [
       Expanded(child: SizedBox(height: 48, child: TextField(
         controller: controller,
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => onSubmit(),
-        decoration: InputDecoration(hintText: hintText, hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14), contentPadding: const EdgeInsets.symmetric(horizontal: 16), border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey.shade300)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppStyle.primary)), filled: true, fillColor: Colors.white),
+        decoration: InputDecoration(
+          hintText: hintText,
+          hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5), fontSize: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: theme.dividerColor)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: theme.dividerColor)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppStyle.primary)),
+          filled: true,
+          fillColor: theme.cardColor,
+        ),
       ))),
       const SizedBox(width: 8),
       SizedBox(height: 48, width: 48, child: FilledButton(style: FilledButton.styleFrom(padding: EdgeInsets.zero, backgroundColor: AppStyle.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), onPressed: onAdd, child: const Icon(Icons.add_rounded))),
@@ -1572,14 +1881,14 @@ class _InputRow extends StatelessWidget {
   }
 }
 
-class _ToggleRow extends StatelessWidget { final bool value; final String title; final String subtitle; final ValueChanged<bool> onChanged; const _ToggleRow({required this.value, required this.title, required this.subtitle, required this.onChanged}); @override Widget build(BuildContext context) { return InkWell(onTap: () => onChanged(!value), borderRadius: BorderRadius.circular(12), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: value ? AppStyle.primary.withOpacity(0.05) : Colors.transparent, borderRadius: BorderRadius.circular(12), border: Border.all(color: value ? AppStyle.primary.withOpacity(0.2) : Colors.transparent)), child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: value ? AppStyle.primary : Colors.black87)), Text(subtitle, style: TextStyle(fontSize: 12, color: Colors.grey[600]))])), Switch.adaptive(value: value, onChanged: onChanged, activeColor: AppStyle.primary)]))); } }
-class _EmptyHint extends StatelessWidget { final IconData icon; final String title; final String subtitle; const _EmptyHint({required this.icon, required this.title, required this.subtitle}); @override Widget build(BuildContext context) { return Container(padding: const EdgeInsets.all(20), alignment: Alignment.center, decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200, width: 1, style: BorderStyle.solid)), child: Column(children: [Icon(icon, color: Colors.grey.shade400, size: 32), const SizedBox(height: 8), Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade700)), const SizedBox(height: 4), Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: Colors.grey.shade500, fontSize: 13))])); } }
+class _ToggleRow extends StatelessWidget { final bool value; final String title; final String subtitle; final ValueChanged<bool> onChanged; const _ToggleRow({required this.value, required this.title, required this.subtitle, required this.onChanged}); @override Widget build(BuildContext context) { final colors = Theme.of(context).colorScheme; return InkWell(onTap: () => onChanged(!value), borderRadius: BorderRadius.circular(12), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: value ? AppStyle.primary.withOpacity(0.05) : Colors.transparent, borderRadius: BorderRadius.circular(12), border: Border.all(color: value ? AppStyle.primary.withOpacity(0.2) : Colors.transparent)), child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w600, color: value ? AppStyle.primary : colors.onSurface)), Text(subtitle, style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)))])), Switch.adaptive(value: value, onChanged: onChanged, activeColor: AppStyle.primary)]))); } }
+class _EmptyHint extends StatelessWidget { final IconData icon; final String title; final String subtitle; const _EmptyHint({required this.icon, required this.title, required this.subtitle}); @override Widget build(BuildContext context) { final theme = Theme.of(context); final colors = theme.colorScheme; return Container(padding: const EdgeInsets.all(20), alignment: Alignment.center, decoration: BoxDecoration(color: theme.cardColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: theme.dividerColor, width: 1, style: BorderStyle.solid)), child: Column(children: [Icon(icon, color: colors.onSurface.withOpacity(0.35), size: 32), const SizedBox(height: 8), Text(title, style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface)), const SizedBox(height: 4), Text(subtitle, textAlign: TextAlign.center, style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13))])); } }
 class _GradientPrimaryButton extends StatelessWidget { final VoidCallback onTap; final IconData icon; final String title; final String subtitle; final bool enabled; const _GradientPrimaryButton({required this.onTap, required this.icon, required this.title, required this.subtitle, required this.enabled}); @override Widget build(BuildContext context) { return AnimatedOpacity(duration: const Duration(milliseconds: 200), opacity: enabled ? 1 : 0.6, child: Material(color: Colors.transparent, child: InkWell(onTap: enabled ? onTap : null, borderRadius: BorderRadius.circular(16), child: Container(height: 60, decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF005F87), Color(0xFF0079AD)]), borderRadius: BorderRadius.circular(16), boxShadow: [if (enabled) const BoxShadow(color: Color(0x40005F87), blurRadius: 12, offset: Offset(0, 4))]), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: Colors.white, size: 22), const SizedBox(width: 12), Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)), Text(subtitle, style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12, fontWeight: FontWeight.w500))])]))))); } }
 class _EntryTile extends StatelessWidget { final IconData icon; final String title; final String subtitle; final VoidCallback onTap; const _EntryTile({required this.icon, required this.title, required this.subtitle, required this.onTap}); @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(AppStyle.cardRadius), child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [Container(width: 48, height: 48, decoration: BoxDecoration(color: const Color(0xFFF0F5FF), borderRadius: BorderRadius.circular(14)), child: Icon(icon, color: AppStyle.primary)), const SizedBox(width: 16), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)), const SizedBox(height: 2), Text(subtitle, style: TextStyle(fontSize: 13, color: Colors.grey[600]))])), Icon(Icons.chevron_right_rounded, color: Colors.grey[400])]))); } }
-class _SectionCard extends StatelessWidget { final String title; final String? subtitle; final Widget child; const _SectionCard({required this.title, this.subtitle, required this.child}); @override Widget build(BuildContext context) { return Container(decoration: BoxDecoration(color: AppStyle.cardColor, borderRadius: BorderRadius.circular(AppStyle.cardRadius), boxShadow: AppStyle.softShadow), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)), if (subtitle != null) ...[const SizedBox(height: 4), Text(subtitle!, style: TextStyle(fontSize: 13, color: Colors.grey[500], height: 1.3))]])), const SizedBox(height: 12), Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: child)])); } }
+class _SectionCard extends StatelessWidget { final String title; final String? subtitle; final Widget child; const _SectionCard({required this.title, this.subtitle, required this.child}); @override Widget build(BuildContext context) { final colors = Theme.of(context).colorScheme; return Container(decoration: BoxDecoration(color: AppStyle.cardColor(context), borderRadius: BorderRadius.circular(AppStyle.cardRadius), boxShadow: AppStyle.softShadow(context)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Padding(padding: const EdgeInsets.fromLTRB(20, 16, 20, 0), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: colors.onSurface)), if (subtitle != null) ...[const SizedBox(height: 4), Text(subtitle!, style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6), height: 1.3))]])), const SizedBox(height: 12), Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: child)])); } }
 class _HeroCard extends StatelessWidget { final int selectedCount; final int preselectedCount; const _HeroCard({required this.selectedCount, required this.preselectedCount}); @override Widget build(BuildContext context) { return Container(height: 150, decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF005F87), Color(0xFF0082B8)]), boxShadow: const [BoxShadow(color: Color(0x33005F87), blurRadius: 20, offset: Offset(0, 10))]), child: Stack(children: [Positioned(right: -20, top: -20, child: Icon(Icons.restaurant_menu, size: 140, color: Colors.white.withOpacity(0.1))), Padding(padding: const EdgeInsets.all(24), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [Text('$selectedCount', style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w800, height: 1.0)), const SizedBox(width: 8), const Text('items selected', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600))]), const SizedBox(height: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.info_outline, size: 14, color: Colors.white), const SizedBox(width: 6), Text(preselectedCount > 0 ? '$preselectedCount items expiring soon' : 'Pick items to cook', style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500))]))]))])); } }
 enum _Urgency { high, medium, low, neutral }
-class _InventoryPickTile extends StatelessWidget { final String name; final String qtyText; final String expiryText; final _Urgency urgency; final bool selected; final VoidCallback onTap; final String? addedBy; const _InventoryPickTile({required this.name, required this.qtyText, required this.expiryText, required this.urgency, required this.selected, required this.onTap, this.addedBy}); Color _badgeColor() { switch (urgency) { case _Urgency.high: return Colors.red; case _Urgency.medium: return Colors.orange; case _Urgency.low: return Colors.green; case _Urgency.neutral: return Colors.grey; } } @override Widget build(BuildContext context) { return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: selected ? AppStyle.primary.withOpacity(0.04) : Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade200, width: selected ? 1.5 : 1)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: _badgeColor(), shape: BoxShape.circle)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: selected ? AppStyle.primary : Colors.black87)), const SizedBox(height: 2), Text('$qtyText • $expiryText', style: TextStyle(fontSize: 12, color: Colors.grey.shade600))])), Container(width: 24, height: 24, decoration: BoxDecoration(color: selected ? AppStyle.primary : Colors.transparent, shape: BoxShape.circle, border: Border.all(color: selected ? AppStyle.primary : Colors.grey.shade300, width: 1.5)), child: selected ? const Icon(Icons.check, size: 16, color: Colors.white) : null)]))); } }
+class _InventoryPickTile extends StatelessWidget { final String name; final String qtyText; final String expiryText; final _Urgency urgency; final bool selected; final VoidCallback onTap; final String? addedBy; const _InventoryPickTile({required this.name, required this.qtyText, required this.expiryText, required this.urgency, required this.selected, required this.onTap, this.addedBy}); Color _badgeColor() { switch (urgency) { case _Urgency.high: return Colors.red; case _Urgency.medium: return Colors.orange; case _Urgency.low: return Colors.green; case _Urgency.neutral: return Colors.grey; } } @override Widget build(BuildContext context) { final theme = Theme.of(context); final colors = theme.colorScheme; return InkWell(onTap: onTap, borderRadius: BorderRadius.circular(16), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), decoration: BoxDecoration(color: selected ? AppStyle.primary.withOpacity(0.04) : theme.cardColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: selected ? AppStyle.primary : theme.dividerColor, width: selected ? 1.5 : 1)), child: Row(children: [Container(width: 8, height: 8, decoration: BoxDecoration(color: _badgeColor(), shape: BoxShape.circle)), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: selected ? AppStyle.primary : colors.onSurface)), const SizedBox(height: 2), Text('$qtyText • $expiryText', style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)))])), Container(width: 24, height: 24, decoration: BoxDecoration(color: selected ? AppStyle.primary : Colors.transparent, shape: BoxShape.circle, border: Border.all(color: selected ? AppStyle.primary : colors.onSurface.withOpacity(0.3), width: 1.5)), child: selected ? const Icon(Icons.check, size: 16, color: Colors.white) : null)]))); } }
 class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1601,15 +1910,19 @@ class _ActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final resolvedBg = isDark && bgColor == const Color(0xFFF5F7FA) ? theme.cardColor : bgColor;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: bgColor,
+          color: resolvedBg,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
+          border: Border.all(color: theme.dividerColor),
         ),
         child: Row(
           children: [
@@ -1629,12 +1942,12 @@ class _ActionTile extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: colors.onSurface),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     subtitle,
-                    style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
                   ),
                 ],
               ),

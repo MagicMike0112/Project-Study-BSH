@@ -1,13 +1,15 @@
 // lib/widgets/add_by_recipe_sheet.dart
 import 'dart:convert';
+import 'dart:io'; // 用于移动端 File
+import 'package:flutter/foundation.dart' show kIsWeb; // 用于判断 Web 平台
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart'; 
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../repositories/inventory_repository.dart';
-import '../screens/login_page.dart'; 
+import '../screens/login_page.dart';
 
 class AddByRecipeSheet extends StatefulWidget {
   final InventoryRepository repo;
@@ -26,7 +28,6 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
   final ImagePicker _picker = ImagePicker();
   static const String _backendUrl = 'https://project-study-bsh.vercel.app/api/shop-by-recipe';
 
-  // 🟢 检查登录状态逻辑
   bool get _isLoggedIn => Supabase.instance.client.auth.currentSession != null;
 
   // 拍照或多选图
@@ -37,10 +38,16 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
     }
     try {
       if (source == ImageSource.gallery) {
-        final List<XFile> picked = await _picker.pickMultiImage();
+        final List<XFile> picked = await _picker.pickMultiImage(
+          imageQuality: 70, // 适当压缩以优化 Base64 传输
+        );
         if (picked.isNotEmpty) setState(() => _selectedImages.addAll(picked));
       } else {
-        final XFile? picked = await _picker.pickImage(source: source, imageQuality: 80);
+        final XFile? picked = await _picker.pickImage(
+          source: source,
+          imageQuality: 70,
+          maxWidth: 1200,
+        );
         if (picked != null) setState(() => _selectedImages.add(picked));
       }
     } catch (e) {
@@ -56,15 +63,14 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
         action: SnackBarAction(
           label: "SIGN IN",
           onPressed: () => Navigator.push(
-            context, 
-            MaterialPageRoute(builder: (_) => const LoginPage(allowSkip: false))
+            context,
+            MaterialPageRoute(builder: (_) => const LoginPage(allowSkip: false)),
           ),
         ),
       ),
     );
   }
 
-  // 核心逻辑：分析菜谱 + AI 语义库存对比
   Future<void> _analyzeRecipe() async {
     if (!_isLoggedIn) {
       _showLoginRequiredAction();
@@ -81,20 +87,17 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
     setState(() => _isAnalyzing = true);
 
     try {
-      // 1. 准备当前库存数据给 AI (用于语义匹配)
       final inventoryData = widget.repo.getActiveItems().map((e) => {
         'name': e.name,
         'category': e.category,
       }).toList();
 
-      // 2. 将图片转为 Base64
       List<String> base64Images = [];
       for (var img in _selectedImages) {
         final bytes = await img.readAsBytes();
         base64Images.add(base64Encode(bytes));
       }
 
-      // 3. 调用后端接口
       final response = await http.post(
         Uri.parse(_backendUrl),
         headers: {'Content-Type': 'application/json'},
@@ -109,7 +112,6 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
 
       final data = jsonDecode(response.body);
       final List rawItems = data['items'] ?? [];
-
       setState(() {
         _detectedItems = rawItems.map((item) {
           return {
@@ -117,7 +119,7 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
             'category': item['category'],
             'inStock': item['inStock'] ?? false,
             'reason': item['reason'] ?? '',
-            'selected': !(item['inStock'] ?? false), 
+            'selected': !(item['inStock'] ?? false),
           };
         }).toList();
       });
@@ -130,7 +132,6 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
     }
   }
 
-  // 确认导入到购物清单
   void _confirmImport() async {
     final toAdd = _detectedItems.where((i) => i['selected']).toList();
     if (toAdd.isEmpty) {
@@ -158,71 +159,109 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
       height: MediaQuery.of(context).size.height * 0.85,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
         children: [
-          // 顶部装饰条
-          Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: colors.onSurface.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(height: 20),
           Row(
             children: [
-              Icon(Icons.auto_awesome, color: _isLoggedIn ? Colors.blueAccent : Colors.grey, size: 24),
+              Icon(
+                Icons.auto_awesome,
+                color: _isLoggedIn ? Colors.blueAccent : colors.onSurface.withOpacity(0.4),
+                size: 24,
+              ),
               const SizedBox(width: 12),
-              const Text("Recipe Import", style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+              Text(
+                "Recipe Import",
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: colors.onSurface,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
           
-          // 🟢 如果未登录，显示占位 UI
           if (!_isLoggedIn) 
             _buildLoginPlaceholder()
           else ...[
-            // 输入区域
             TextField(
               controller: _textController,
+              style: TextStyle(color: colors.onSurface),
               decoration: InputDecoration(
-                hintText: "Enter dish name (e.g. Pasta) or paste recipe...",
+                hintText: "Enter dish name or paste recipe...",
                 filled: true,
-                fillColor: Colors.grey[100],
+                fillColor: theme.cardColor,
+                hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                 contentPadding: const EdgeInsets.all(16),
               ),
               maxLines: 2,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             
-            // 图片预览与选择区
+            // 🟢 优化的多图预览区域
             SizedBox(
-              height: 60,
+              height: 74,
               child: ListView(
                 scrollDirection: Axis.horizontal,
+                clipBehavior: Clip.none, // 让删除按钮可以稍微溢出
                 children: [
                   _ImageActionButton(icon: Icons.add_a_photo, label: "Camera", onTap: () => _pickImage(ImageSource.camera)),
                   const SizedBox(width: 8),
                   _ImageActionButton(icon: Icons.photo_library, label: "Album", onTap: () => _pickImage(ImageSource.gallery)),
-                  const VerticalDivider(width: 24, indent: 10, endIndent: 10),
+                  if (_selectedImages.isNotEmpty) const VerticalDivider(width: 24, indent: 10, endIndent: 10),
+                  
+                  // 图片预览列表
                   ..._selectedImages.map((img) => Padding(
-                    padding: const EdgeInsets.only(right: 8.0),
+                    padding: const EdgeInsets.only(right: 14.0, top: 4),
                     child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
                         Container(
-                          width: 60, height: 60,
+                          width: 66, height: 66,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(12), 
-                            border: Border.all(color: Colors.grey[300]!)
+                            border: Border.all(color: colors.onSurface.withOpacity(0.2)),
+                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))],
                           ),
-                          child: const Icon(Icons.image, color: Colors.grey),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(11),
+                            child: kIsWeb 
+                              ? Image.network(img.path, fit: BoxFit.cover) 
+                              : Image.file(File(img.path), fit: BoxFit.cover),
+                          ),
                         ),
-                        Positioned(right: -2, top: -2, child: GestureDetector(
-                          onTap: () => setState(() => _selectedImages.remove(img)),
-                          child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
-                        )),
+                        // 删除按钮
+                        Positioned(
+                          right: -6, top: -6,
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selectedImages.remove(img)),
+                            child: const CircleAvatar(
+                              radius: 10, 
+                              backgroundColor: Colors.red, 
+                              child: Icon(Icons.close, size: 12, color: Colors.white)
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   )),
@@ -249,10 +288,14 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
 
             const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Divider()),
 
-            // 结果列表
             Expanded(
               child: _detectedItems.isEmpty 
-                ? Center(child: Text(_isAnalyzing ? "AI is thinking..." : "Your results will appear here", style: TextStyle(color: Colors.grey[400])))
+                ? Center(
+                    child: Text(
+                      _isAnalyzing ? "AI is thinking..." : "Your results will appear here",
+                      style: TextStyle(color: colors.onSurface.withOpacity(0.5)),
+                    ),
+                  )
                 : ListView.separated(
                     itemCount: _detectedItems.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
@@ -261,18 +304,33 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
                       final bool inStock = item['inStock'];
                       return Container(
                         decoration: BoxDecoration(
-                          color: inStock ? Colors.green.withOpacity(0.05) : Colors.grey[50],
+                          color: inStock
+                              ? Colors.green.withOpacity(isDark ? 0.16 : 0.05)
+                              : theme.cardColor,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: inStock ? Colors.green.withOpacity(0.2) : Colors.transparent),
+                          border: Border.all(
+                            color: inStock ? Colors.green.withOpacity(0.2) : theme.dividerColor,
+                          ),
                         ),
                         child: CheckboxListTile(
                           value: item['selected'],
                           onChanged: (v) => setState(() => item['selected'] = v),
-                          title: Text(item['name'], style: const TextStyle(fontWeight: FontWeight.w700)),
-                          subtitle: Text(inStock ? "In stock: ${item['reason']}" : "Category: ${item['category']}"),
+                          title: Text(
+                            item['name'],
+                            style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+                          ),
+                          subtitle: Text(
+                            inStock ? "In stock: ${item['reason']}" : "Category: ${item['category']}",
+                            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
+                          ),
                           secondary: Container(
                             padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(color: inStock ? Colors.green : Colors.blueGrey[100], shape: BoxShape.circle),
+                            decoration: BoxDecoration(
+                              color: inStock
+                                  ? Colors.green
+                                  : (isDark ? Colors.blueGrey[700] : Colors.blueGrey[100]),
+                              shape: BoxShape.circle,
+                            ),
                             child: Icon(inStock ? Icons.inventory : Icons.shopping_basket, color: Colors.white, size: 18),
                           ),
                           activeColor: const Color(0xFF005F87),
@@ -291,7 +349,7 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
                   child: ElevatedButton(
                     onPressed: _confirmImport,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black87,
+                      backgroundColor: isDark ? colors.onSurface : Colors.black87,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
@@ -305,7 +363,6 @@ class _AddByRecipeSheetState extends State<AddByRecipeSheet> {
     );
   }
 
-  // 🟢 构建登录引导占位符
   Widget _buildLoginPlaceholder() {
     return Expanded(
       child: Column(
@@ -354,7 +411,7 @@ class _ImageActionButton extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        width: 66,
         decoration: BoxDecoration(
           color: Colors.blueGrey[50],
           borderRadius: BorderRadius.circular(12),
@@ -363,6 +420,7 @@ class _ImageActionButton extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 20, color: Colors.blueGrey[700]),
+            const SizedBox(height: 4),
             Text(label, style: TextStyle(fontSize: 10, color: Colors.blueGrey[700], fontWeight: FontWeight.bold)),
           ],
         ),

@@ -38,7 +38,6 @@ class _ImpactPageState extends State<ImpactPage> {
 
   String _shortDate(DateTime d) => '${d.month}/${d.day}';
 
-  static const Color _backgroundColor = Color(0xFFF4F6F9);
   static const Color _moneyColor = Color(0xFF2D3436); 
   static const Color _accentColor = Color(0xFF005F87);
 
@@ -47,13 +46,12 @@ class _ImpactPageState extends State<ImpactPage> {
     setState(() => _range = r);
   }
 
-  // 🟢 核心修复：智能分类推断逻辑
-  // 即使数据库里存的是 "manual"，也能根据名字修修正为 "Veggies" 等
+  // 🟢 智能分类推断逻辑
   String _inferCategory(String? cat, String? name) {
     final c = (cat ?? '').toLowerCase();
     final n = (name ?? '').toLowerCase();
 
-    // 1. 优先匹配 Category 关键词 (如果 Category 比较明确)
+    // 1. 优先匹配 Category 关键词
     if (c.contains('veg') || c.contains('salad')) return 'Veggies';
     if (c.contains('fruit') || c.contains('berry')) return 'Fruits';
     if (c.contains('meat') || c.contains('beef') || c.contains('pork') || c.contains('chicken') || c.contains('fish')) return 'Protein';
@@ -62,7 +60,7 @@ class _ImpactPageState extends State<ImpactPage> {
     if (c.contains('snack') || c.contains('chip') || c.contains('chocolate')) return 'Snacks';
     if (c.contains('drink') || c.contains('beverage') || c.contains('juice') || c.contains('coffee') || c.contains('tea')) return 'Drinks';
 
-    // 2. 如果 Category 没匹配到 (比如是 manual/other)，尝试匹配 Name 关键词 (补救措施)
+    // 2. 如果 Category 没匹配到，尝试匹配 Name 关键词
     // Veggies
     if (n.contains('onion') || n.contains('carrot') || n.contains('potato') || n.contains('tomato') || n.contains('spinach') || n.contains('lettuce') || n.contains('cucumber') || n.contains('pepper') || n.contains('broccoli')) return 'Veggies';
     // Fruits
@@ -78,7 +76,7 @@ class _ImpactPageState extends State<ImpactPage> {
 
     // 3. 兜底
     if (c == 'manual' || c.isEmpty) return 'General';
-    return c; // 返回原始值作为最后的保底 (如 'Pantry')
+    return c; 
   }
 
   @override
@@ -98,11 +96,10 @@ class _ImpactPageState extends State<ImpactPage> {
         final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
         final savedCount = events.length;
 
-        // --- 🟢 Top Savers (修复版) ---
+        // --- Top Savers ---
         final categoryMap = <String, double>{};
         for (var e in events) {
           if (e.type == ImpactType.eaten) {
-            // 使用智能分类器清洗数据，消除 "MANUAL"
             final cat = _inferCategory(e.itemCategory, e.itemName);
             categoryMap[cat] = (categoryMap[cat] ?? 0) + e.moneySaved;
           }
@@ -137,24 +134,28 @@ class _ImpactPageState extends State<ImpactPage> {
 
         final bool hasEnoughData = moneySpots.isNotEmpty;
 
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
+        final isDark = theme.brightness == Brightness.dark;
+
         return Scaffold(
-          backgroundColor: _backgroundColor,
-          body: CustomScrollView(
-            slivers: [
-              SliverAppBar(
-                expandedHeight: 100.0,
-                floating: false,
-                pinned: true,
-                backgroundColor: _backgroundColor,
-                elevation: 0,
-                systemOverlayStyle: SystemUiOverlayStyle.dark,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            body: CustomScrollView(
+              slivers: [
+                SliverAppBar(
+                  expandedHeight: 100.0,
+                  floating: false,
+                  pinned: true,
+                  backgroundColor: theme.scaffoldBackgroundColor,
+                  elevation: 0,
+                  systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
                 flexibleSpace: FlexibleSpaceBar(
                   centerTitle: false,
                   titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-                  title: const Text(
+                  title: Text(
                     'Your Impact',
                     style: TextStyle(
-                      color: Colors.black87,
+                      color: colors.onSurface,
                       fontWeight: FontWeight.w800,
                       fontSize: 28,
                     ),
@@ -234,7 +235,6 @@ class _ImpactPageState extends State<ImpactPage> {
                       
                       const SizedBox(height: 24),
 
-                      // 🟢 Top Savers (分类榜单 - 现已智能修复)
                       if (topCategories.isNotEmpty) ...[
                         FadeInSlide(
                           index: 4,
@@ -245,7 +245,7 @@ class _ImpactPageState extends State<ImpactPage> {
                                 'Top Savers',
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
-                                  color: Colors.grey[700],
+                                  color: colors.onSurface.withOpacity(0.75),
                                 ),
                               ),
                               const SizedBox(height: 12),
@@ -276,7 +276,7 @@ class _ImpactPageState extends State<ImpactPage> {
                                 'Savings Trend',
                                 style: Theme.of(context).textTheme.titleMedium?.copyWith(
                                   fontWeight: FontWeight.w800,
-                                  color: Colors.grey[700],
+                                  color: colors.onSurface.withOpacity(0.75),
                                 ),
                               ),
                               const SizedBox(height: 16),
@@ -314,14 +314,20 @@ class _WeeklyReportBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: theme.cardColor,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.purple.withOpacity(0.1), width: 1.5),
+          border: Border.all(
+            color: isDark ? Colors.white.withOpacity(0.08) : Colors.purple.withOpacity(0.1),
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.purple.withOpacity(0.05),
@@ -335,7 +341,7 @@ class _WeeklyReportBanner extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.purple.shade50,
+                color: isDark ? Colors.white.withOpacity(0.06) : Colors.purple.shade50,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: const Icon(Icons.auto_awesome, color: Colors.purple, size: 24),
@@ -345,13 +351,17 @@ class _WeeklyReportBanner extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
+                  Text(
                     'Weekly Recap Ready',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: Colors.black87),
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: colors.onSurface,
+                    ),
                   ),
                   Text(
                     'Tap to view your diet insights',
-                    style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+                    style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6)),
                   ),
                 ],
               ),
@@ -398,16 +408,16 @@ class _ImpactHeroCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            Color(0xFF0F2027),
-            Color(0xFF203A43),
-            Color(0xFF2C5364),
+            Color(0xFF0B5F87),
+            Color(0xFF0F7AA8),
+            Color(0xFF3BA7C4),
           ],
         ),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2C5364).withOpacity(0.4),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: const Color(0xFF0F7AA8).withOpacity(0.25),
+            blurRadius: 22,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
@@ -465,7 +475,7 @@ class _ImpactHeroCard extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             projection,
-            style: TextStyle(color: Colors.greenAccent.shade100, fontSize: 13, fontWeight: FontWeight.w500),
+            style: const TextStyle(color: Color(0xFFD6F2F6), fontSize: 13, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 24),
           Container(
@@ -509,10 +519,12 @@ class _CategoryBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -555,7 +567,11 @@ class _CategoryBreakdownCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     cat.toUpperCase(),
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: colors.onSurface,
+                    ),
                   ),
                 ),
                 Text(
@@ -590,10 +606,12 @@ class _StatBentoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -617,10 +635,10 @@ class _StatBentoCard extends StatelessWidget {
           const SizedBox(height: 16),
           Text(
             value,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: Colors.black87,
+              color: colors.onSurface,
               letterSpacing: -0.5,
             ),
           ),
@@ -630,7 +648,7 @@ class _StatBentoCard extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w600,
-              color: Colors.grey[500],
+              color: colors.onSurface.withOpacity(0.6),
             ),
           ),
           const SizedBox(height: 2),
@@ -657,12 +675,18 @@ class _GuineaPigCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFDE7), 
+        color: isDark ? theme.cardColor : const Color(0xFFFFFDE7),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.orange.withOpacity(0.1), width: 1.5),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.08) : Colors.orange.withOpacity(0.1),
+          width: 1.5,
+        ),
       ),
       child: Row(
         children: [
@@ -682,12 +706,12 @@ class _GuineaPigCard extends StatelessWidget {
               children: [
                 const Text(
                   'Little Shi & Yuan',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Color(0xFF5D4037)),
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Enjoyed ${petQty.toStringAsFixed(1)}kg of leftovers',
-                  style: TextStyle(fontSize: 13, color: const Color(0xFF5D4037).withOpacity(0.7)),
+                  style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.65)),
                 ),
                 const SizedBox(height: 10),
                 ClipRRect(
@@ -723,14 +747,16 @@ class _ChartCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final double maxY = spots.isEmpty ? 5.0 : spots.fold(0.0, (m, s) => s.y > m ? s.y : m) * 1.2;
     final safeMaxY = maxY <= 0 ? 5.0 : maxY;
 
     return Container(
       height: 240,
-      padding: const EdgeInsets.fromLTRB(0, 24, 24, 0),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
@@ -747,7 +773,7 @@ class _ChartCard extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: safeMaxY / 4,
             getDrawingHorizontalLine: (value) => FlLine(
-              color: Colors.grey[100], 
+              color: colors.onSurface.withOpacity(0.08),
               strokeWidth: 1, 
               dashArray: [5, 5]
             ),
@@ -763,12 +789,18 @@ class _ChartCard extends StatelessWidget {
                 interval: 1,
                 getTitlesWidget: (value, meta) {
                   final idx = value.toInt();
-                  if (idx == 0 || idx == labels.length - 1 || (labels.length > 4 && idx == labels.length ~/ 2)) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 12),
+                  if (idx >= 0 && idx < labels.length) {
+                    // 🟢 修复：使用 meta 参数替代 axisSide
+                    return SideTitleWidget(
+                      meta: meta, 
+                      space: 4,
                       child: Text(
                         labels[idx] ?? '',
-                        style: TextStyle(fontSize: 11, color: Colors.grey[400], fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.onSurface.withOpacity(0.5),
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     );
                   }
@@ -826,27 +858,29 @@ class _ChartCard extends StatelessWidget {
 class _EmptyStateCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       padding: const EdgeInsets.all(40),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         children: [
-          Icon(Icons.bar_chart_rounded, size: 48, color: Colors.grey[300]),
+          Icon(Icons.bar_chart_rounded, size: 48, color: colors.onSurface.withOpacity(0.25)),
           const SizedBox(height: 16),
           Text(
             "No data yet",
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[800], fontSize: 16),
+            style: TextStyle(fontWeight: FontWeight.bold, color: colors.onSurface, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
             "Start saving food to see your impact!",
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13),
           ),
         ],
       ),
@@ -862,11 +896,14 @@ class _SlidingRangeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return Container(
       height: 50,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.grey[200],
+        color: isDark ? colors.surfaceVariant.withOpacity(0.4) : Colors.grey[200],
         borderRadius: BorderRadius.circular(16),
       ),
       child: LayoutBuilder(
@@ -883,7 +920,7 @@ class _SlidingRangeSelector extends StatelessWidget {
                   width: itemWidth,
                   height: double.infinity,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: theme.cardColor,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 4, offset: const Offset(0, 2)),
@@ -904,7 +941,9 @@ class _SlidingRangeSelector extends StatelessWidget {
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color: isSelected ? Colors.black87 : Colors.grey[600],
+                            color: isSelected
+                                ? colors.onSurface
+                                : colors.onSurface.withOpacity(0.6),
                           ),
                           child: Text(_label(r)),
                         ),

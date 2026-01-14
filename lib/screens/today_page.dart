@@ -1,6 +1,7 @@
 // lib/screens/today_page.dart
+import 'dart:ui'; // Required for ImageFilter if used elsewhere, kept for compatibility
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Added for Haptics
+import 'package:flutter/services.dart';
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import '../widgets/food_card.dart';
@@ -16,37 +17,37 @@ class TodayPage extends StatelessWidget {
     required this.onRefresh,
   });
 
+  // BSH Palette
   static const Color _primaryBlue = Color(0xFF0E7AA8);
-  static const Color _surfaceColor = Color(0xFFF8F9FC);
+  static const Color _surfaceColor = Color(0xFFF5F7FA); // 冷灰背景，更干净
 
-  // 🟢 辅助方法：显示贴底的自定义通知
   void _showBottomSnackBar(BuildContext context, String message, {VoidCallback? onUndo}) {
     if (!context.mounted) return;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     
     ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar() // 立即清除上一个
+      ..hideCurrentSnackBar()
       ..showSnackBar(
         SnackBar(
-          // 🟢 贴底关键设置
           behavior: SnackBarBehavior.fixed,
           backgroundColor: Colors.transparent,
           elevation: 0,
           duration: const Duration(seconds: 3),
-          
           content: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF323232),
+              color: isDark ? const Color(0xFF1E1F24) : const Color(0xFF323232),
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                   blurRadius: 8,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
-            margin: const EdgeInsets.only(bottom: 20), // 离底部 20
+            margin: const EdgeInsets.only(bottom: 20),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -83,52 +84,57 @@ class TodayPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 监听 Repo 变化
     return AnimatedBuilder(
       animation: repo,
       builder: (context, child) {
+        final theme = Theme.of(context);
+        final colors = theme.colorScheme;
+        final isDark = theme.brightness == Brightness.dark;
+        final bgColor = theme.scaffoldBackgroundColor;
         final expiring = repo.getExpiringItems(3);
 
         return Scaffold(
-          backgroundColor: _surfaceColor,
+          backgroundColor: bgColor,
           appBar: AppBar(
-            title: const Text(
-              'Smart Food Home',
-              style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+            title: Text(
+              'Smart Home',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: colors.onSurface),
             ),
             centerTitle: false,
-            backgroundColor: _surfaceColor,
+            backgroundColor: bgColor,
             elevation: 0,
             scrolledUnderElevation: 0,
-            foregroundColor: Colors.black87,
-            systemOverlayStyle: SystemUiOverlayStyle.dark, 
+            systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark, 
           ),
           body: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
             children: [
-              // 1. Impact Summary
+              // 1. AI Chef Button
               FadeInSlide(
                 index: 0,
-                child: _buildImpactSummary(context),
-              ),
-              const SizedBox(height: 24),
-
-              // 2. AI Chef Button
-              FadeInSlide(
-                index: 1,
                 child: BouncingButton(
                   onTap: () => _showAiRecipeFlow(context, expiring),
                   child: _buildAiButton(context), 
                 ),
               ),
-              const SizedBox(height: 32),
+              const SizedBox(height: 16),
+
+              // 2. Recipe Archive Entry
+              FadeInSlide(
+                index: 1,
+                child: BouncingButton(
+                  onTap: () => _openRecipeArchive(context),
+                  child: _buildArchiveEntry(context),
+                ),
+              ),
+              const SizedBox(height: 20),
 
               // 3. Expiring Header
               FadeInSlide(
                 index: 2,
                 child: _buildSectionHeader(context, expiring.length),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
 
               // 4. Expiring List
               if (expiring.isEmpty)
@@ -141,13 +147,12 @@ class TodayPage extends StatelessWidget {
                   (entry) => FadeInSlide(
                     index: 3 + entry.key,
                     child: Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: FoodCard(
                         item: entry.value,
                         leading: _buildInventoryStyleLeading(entry.value),
                         onAction: (action) async {
                           HapticFeedback.mediumImpact();
-                          
                           final item = entry.value;
                           final oldStatus = item.status;
                           await repo.recordImpactForAction(item, action);
@@ -168,7 +173,7 @@ class TodayPage extends StatelessWidget {
                             if (context.mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 const SnackBar(
-                                  behavior: SnackBarBehavior.fixed, // 警告信息保持默认样式更醒目，或者是你也可以统一
+                                  behavior: SnackBarBehavior.fixed,
                                   content: Text('Please ensure the food is safe for your pet!'),
                                   duration: Duration(seconds: 4),
                                 ),
@@ -177,24 +182,22 @@ class TodayPage extends StatelessWidget {
                           }
 
                           if (newStatus != null) {
-                            // 🟢 使用新的贴底通知
                             _showBottomSnackBar(
                               context,
                               _undoLabelForAction(action, item.name),
                               onUndo: () async {
                                 HapticFeedback.selectionClick();
                                 await repo.updateStatus(item.id, oldStatus);
-                                onRefresh(); // 这一步其实不需要了，因为 AnimatedBuilder 会自动刷新，但留着也没事
+                                onRefresh();
                               },
                             );
                           }
-                          // onRefresh(); // 同样，AnimatedBuilder 会处理
                         },
                       ),
                     ),
                   ),
                 ),
-              const SizedBox(height: 40),
+              const SizedBox(height: 16),
             ],
           ),
         );
@@ -213,6 +216,13 @@ class TodayPage extends StatelessWidget {
       ),
     );
     if (changed == true) onRefresh();
+  }
+
+  Future<void> _openRecipeArchive(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => RecipeArchivePage(repo: repo)),
+    );
   }
 
   Widget _buildInventoryStyleLeading(FoodItem item) {
@@ -239,162 +249,194 @@ class TodayPage extends StatelessWidget {
     }
   }
 
-  Widget _buildImpactSummary(BuildContext context) {
-    final saved = repo.getSavedCount();
+  Widget _buildAiButton(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final gradientColors = isDark
+        ? [const Color(0xFF1C2530), const Color(0xFF141B24)]
+        : const [Color(0xFFFFFFFF), Color(0xFFF1F6FB)];
+
+    // Soft misty style inspired by ChatGPT
     return Container(
-      padding: const EdgeInsets.all(20),
+      height: 80,
       decoration: BoxDecoration(
-        color: Colors.white,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradientColors,
+        ),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
+        border: Border.all(color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE6ECEA)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+          BoxShadow(
+            color: const Color(0xFF005F87).withOpacity(0.08),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
           ),
         ],
       ),
-      child: Row(
+      child: Stack(
         children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE3F2FD),
-              borderRadius: BorderRadius.circular(16),
+          // Misty accents
+          Positioned(
+            right: -20,
+            top: -20,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDark
+                    ? Colors.white.withOpacity(0.05)
+                    : const Color(0xFFE5F1F8).withOpacity(0.8),
+              ),
             ),
-            child: const Icon(Icons.eco_rounded, color: _primaryBlue, size: 26),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Positioned(
+            left: -10,
+            bottom: -18,
+            child: Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isDark
+                    ? Colors.white.withOpacity(0.04)
+                    : const Color(0xFFEEF6FC).withOpacity(0.7),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Row(
               children: [
-                Text(
-                  'Impact this week',
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE5F1F8),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.auto_awesome, color: Color(0xFF005F87), size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'AI Chef',
+                        style: TextStyle(
+                          color: isDark ? colors.onSurface : const Color(0xFF0A2B3E),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Cook with expiring items',
+                        style: TextStyle(
+                          color: colors.onSurface.withOpacity(0.6),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'Keep it up!',
-                  style: TextStyle(
-                    color: Colors.grey[800],
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  color: colors.onSurface.withOpacity(0.5),
+                  size: 16,
                 ),
               ],
             ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '$saved',
-                style: const TextStyle(
-                  color: _primaryBlue,
-                  fontSize: 32,
-                  fontWeight: FontWeight.w800,
-                  height: 1.0,
-                ),
-              ),
-              Text(
-                saved == 1 ? 'item saved' : 'items saved',
-                style: TextStyle(
-                  color: Colors.grey[400],
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
           ),
         ],
       ),
     );
   }
 
-  Widget _buildAiButton(BuildContext context) {
+  Widget _buildArchiveEntry(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
+      height: 76,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF0A3F6B).withOpacity(0.25),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
             blurRadius: 16,
             offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Container(
-        height: 72,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1E293B), Color(0xFF0F172A)],
-          ),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Row(
-            children: [
-              const Icon(Icons.auto_awesome, color: Color(0xFF60A5FA), size: 24),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'AI Chef',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      'Cook with expiring items',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.6),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: _primaryBlue.withOpacity(isDark ? 0.2 : 0.15),
+                borderRadius: BorderRadius.circular(14),
               ),
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 14),
+              child: const Icon(Icons.archive_rounded, color: Color(0xFF005F87)),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Recipe Archive',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: colors.onSurface,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'View your saved recipes',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: colors.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            Icon(Icons.arrow_forward_ios_rounded, color: colors.onSurface.withOpacity(0.5), size: 16),
+          ],
         ),
       ),
     );
   }
 
   Widget _buildSectionHeader(BuildContext context, int count) {
+    final colors = Theme.of(context).colorScheme;
     return Row(
       children: [
         Text(
           'Expiring Soon',
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+          style: TextStyle(
             fontWeight: FontWeight.w800,
-            color: Colors.black87,
-            letterSpacing: -0.5,
+            color: colors.onSurface,
             fontSize: 18,
           ),
         ),
@@ -420,13 +462,15 @@ class TodayPage extends StatelessWidget {
   }
 
   Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 20),
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.black.withOpacity(0.03)),
+        border: Border.all(color: theme.dividerColor),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -441,18 +485,18 @@ class TodayPage extends StatelessWidget {
             child: const Icon(Icons.check_rounded, color: Colors.green, size: 32),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             'All Clear!',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,
-              color: Colors.black87,
+              color: colors.onSurface,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             'Your fridge is fresh and organized.',
-            style: TextStyle(color: Colors.grey[500], fontSize: 13),
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13),
           ),
         ],
       ),

@@ -15,20 +15,23 @@ class ShoppingArchivePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC),
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Purchase History',
-          style: TextStyle(fontWeight: FontWeight.w700, color: Colors.black87),
+          style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
         ),
-        backgroundColor: const Color(0xFFF8F9FC),
+        backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: false,
-        iconTheme: const IconThemeData(color: Colors.black87),
+        iconTheme: IconThemeData(color: colors.onSurface),
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: Colors.grey),
+            icon: Icon(Icons.delete_outline, color: colors.onSurface.withOpacity(0.6)),
             tooltip: 'Clear History',
             onPressed: () {
               showDialog(
@@ -64,7 +67,7 @@ class ShoppingArchivePage extends StatelessWidget {
           final history = repo.shoppingHistory; // 在 builder 内部获取最新数据
 
           if (history.isEmpty) {
-            return _buildEmptyState();
+            return _buildEmptyState(context);
           }
 
           // 按日期分组逻辑 (移动到 builder 内部以确保实时计算)
@@ -90,7 +93,7 @@ class ShoppingArchivePage extends StatelessWidget {
                     child: Text(
                       dateKey,
                       style: TextStyle(
-                        color: Colors.grey[600],
+                        color: colors.onSurface.withOpacity(0.6),
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
@@ -99,7 +102,7 @@ class ShoppingArchivePage extends StatelessWidget {
                   ...items.map((item) => Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: theme.cardColor,
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
@@ -112,14 +115,14 @@ class ShoppingArchivePage extends StatelessWidget {
                         child: ListTile(
                           dense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                          leading: Icon(Icons.check_circle_outline, color: Colors.grey[300], size: 20),
+                          leading: Icon(Icons.check_circle_outline, color: colors.onSurface.withOpacity(0.3), size: 20),
                           title: Text(
                             item.name,
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(
                             item.category,
-                            style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                            style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.5)),
                           ),
                           trailing: IconButton(
                             icon: const Icon(Icons.add_circle_outline, color: Color(0xFF005F87)),
@@ -156,21 +159,23 @@ class ShoppingArchivePage extends StatelessWidget {
     return DateFormat('MMMM d').format(date);
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.history_edu_rounded, size: 64, color: Colors.grey[300]),
+          Icon(Icons.history_edu_rounded, size: 64, color: colors.onSurface.withOpacity(0.3)),
           const SizedBox(height: 16),
           Text(
             'No history yet',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey[700]),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colors.onSurface.withOpacity(0.8)),
           ),
           const SizedBox(height: 8),
           Text(
             'Items you verify as bought will appear here.',
-            style: TextStyle(color: Colors.grey[500]),
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
           ),
         ],
       ),

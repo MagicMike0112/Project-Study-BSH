@@ -123,7 +123,9 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       // 🟢 确保键盘弹出时页面可以滚动
@@ -134,9 +136,9 @@ class _RegisterPageState extends State<RegisterPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFFF6F8FA),
-              scheme.primary.withOpacity(0.06),
-              scheme.secondary.withOpacity(0.05),
+              isDark ? const Color(0xFF0F141A) : const Color(0xFFF6F8FA),
+              scheme.primary.withOpacity(isDark ? 0.18 : 0.06),
+              scheme.secondary.withOpacity(isDark ? 0.12 : 0.05),
             ],
           ),
         ),
@@ -184,15 +186,15 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
-                        color: Colors.white.withOpacity(0.92),
+                        color: theme.cardColor.withOpacity(isDark ? 0.94 : 0.92),
                         border: Border.all(
-                          color: Colors.black.withOpacity(0.06),
+                          color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
                         ),
-                        boxShadow: const [
+                        boxShadow: [
                           BoxShadow(
-                            color: Color(0x18000000),
+                            color: Colors.black.withOpacity(isDark ? 0.35 : 0.1),
                             blurRadius: 18,
-                            offset: Offset(0, 10),
+                            offset: const Offset(0, 10),
                           ),
                         ],
                       ),
@@ -206,14 +208,14 @@ class _RegisterPageState extends State<RegisterPage> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 // Header
-                                const Text(
+                                Text(
                                   'Create Account',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 24,
                                     fontWeight: FontWeight.w900,
                                     letterSpacing: -0.5,
-                                    color: Colors.black87,
+                                    color: scheme.onSurface,
                                   ),
                                 ),
                                 const SizedBox(height: 8),
@@ -222,7 +224,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: Colors.grey[600],
+                                    color: scheme.onSurface.withOpacity(0.6),
                                     height: 1.4,
                                   ),
                                 ),
@@ -277,7 +279,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                   suffix: IconButton(
                                     icon: Icon(
                                       _obscure1 ? Icons.visibility_off : Icons.visibility,
-                                      color: Colors.grey[600],
+                                      color: scheme.onSurface.withOpacity(0.6),
                                       size: 20,
                                     ),
                                     onPressed: () => setState(() => _obscure1 = !_obscure1),
@@ -301,7 +303,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                   suffix: IconButton(
                                     icon: Icon(
                                       _obscure2 ? Icons.visibility_off : Icons.visibility,
-                                      color: Colors.grey[600],
+                                      color: scheme.onSurface.withOpacity(0.6),
                                       size: 20,
                                     ),
                                     onPressed: () => setState(() => _obscure2 = !_obscure2),
@@ -314,7 +316,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                 // Divider
                                 Row(
                                   children: [
-                                    Expanded(child: Divider(color: Colors.grey[300])),
+                                    Expanded(child: Divider(color: Colors.black.withOpacity(isDark ? 0.3 : 0.1))),
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 8),
                                       child: Text(
@@ -322,12 +324,12 @@ class _RegisterPageState extends State<RegisterPage> {
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: Colors.grey[500],
+                                          color: scheme.onSurface.withOpacity(0.5),
                                           letterSpacing: 0.5,
                                         ),
                                       ),
                                     ),
-                                    Expanded(child: Divider(color: Colors.grey[300])),
+                                    Expanded(child: Divider(color: Colors.black.withOpacity(isDark ? 0.3 : 0.1))),
                                   ],
                                 ),
                                 const SizedBox(height: 20),
@@ -475,7 +477,9 @@ class _TechField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return TextFormField(
       controller: controller,
@@ -492,7 +496,7 @@ class _TechField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+        hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.4), fontSize: 14),
         prefixIcon: Container(
           margin: const EdgeInsets.all(10),
           width: 36,
@@ -506,11 +510,11 @@ class _TechField extends StatelessWidget {
         ),
         suffixIcon: suffix,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? const Color(0xFF1C1F24) : Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+          borderSide: BorderSide(color: Colors.black.withOpacity(isDark ? 0.3 : 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -551,7 +555,9 @@ class _TechDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
     return DropdownButtonFormField<String>(
       initialValue: value,
@@ -560,7 +566,7 @@ class _TechDropdown extends StatelessWidget {
           .toList(),
       onChanged: enabled ? onChanged : null,
       validator: validator,
-      icon: Icon(Icons.arrow_drop_down_rounded, color: Colors.grey[600]),
+      icon: Icon(Icons.arrow_drop_down_rounded, color: scheme.onSurface.withOpacity(0.6)),
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Container(
@@ -575,11 +581,11 @@ class _TechDropdown extends StatelessWidget {
           child: Icon(icon, size: 18, color: scheme.primary),
         ),
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? const Color(0xFF1C1F24) : Colors.white,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+          borderSide: BorderSide(color: Colors.black.withOpacity(isDark ? 0.3 : 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

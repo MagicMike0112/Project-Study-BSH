@@ -166,7 +166,15 @@ class FoodItem {
 
     String? extractName(Map<String, dynamic> data) {
       if (data['user_profiles'] != null && data['user_profiles'] is Map) {
-        return data['user_profiles']['display_name'];
+        final profile = data['user_profiles'] as Map;
+        final displayName = profile['display_name'];
+        if (displayName != null && displayName.toString().isNotEmpty) {
+          return displayName;
+        }
+        final email = profile['email'];
+        if (email != null && email.toString().isNotEmpty) {
+          return email;
+        }
       }
       if (data['owner_name'] != null) {
         return data['owner_name'];

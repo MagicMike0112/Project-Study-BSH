@@ -149,7 +149,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
     final dinnerText = _dinnerTime != null
         ? 'before ${_formatTime(context, _dinnerTime!)}'
         : 'before dinner';
-    return 'We’ll remind you ~30 min $lunchText and $dinnerText.';
+    return 'We’ll remind you $lunchText and $dinnerText.';
   }
 
   @override
@@ -161,7 +161,10 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       );
     }
 
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final muted = theme.colorScheme.onSurface.withOpacity(0.6);
+    final mutedStrong = theme.colorScheme.onSurface.withOpacity(0.75);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Notifications')),
@@ -178,7 +181,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
           Text(
             'Get a gentle nudge before your usual meals when ingredients are close to expiring.',
             style: textTheme.bodyMedium?.copyWith(
-              color: Colors.grey[700],
+              color: muted,
             ),
           ),
           const SizedBox(height: 16),
@@ -214,7 +217,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   ? _currentScheduleSummary(context)
                                   : 'Turn this on to receive daily reminders.',
                               style: textTheme.bodySmall?.copyWith(
-                                color: Colors.grey[700],
+                                color: muted,
                               ),
                             ),
                           ],
@@ -238,14 +241,14 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                           'Meal times',
                           style: textTheme.labelMedium?.copyWith(
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey[700],
+                            color: mutedStrong,
                           ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'We’ll notify you about expiring items ~30 minutes before these times.',
+                          'We’ll notify you about expiring items before these times.',
                           style: textTheme.bodySmall?.copyWith(
-                            color: Colors.grey[600],
+                            color: muted,
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -310,7 +313,10 @@ class _TimeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final muted = theme.colorScheme.onSurface.withOpacity(0.6);
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
@@ -324,12 +330,12 @@ class _TimeRow extends StatelessWidget {
               height: 32,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
-                color: Colors.grey[100],
+                color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey[100],
               ),
               child: Icon(
                 icon,
                 size: 18,
-                color: Colors.grey[800],
+                color: theme.colorScheme.onSurface.withOpacity(0.75),
               ),
             ),
             const SizedBox(width: 12),
@@ -347,16 +353,16 @@ class _TimeRow extends StatelessWidget {
                   Text(
                     value,
                     style: textTheme.bodySmall?.copyWith(
-                      color: Colors.grey[700],
+                      color: muted,
                     ),
                   ),
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.chevron_right,
               size: 20,
-              color: Colors.grey,
+              color: theme.colorScheme.onSurface.withOpacity(0.4),
             ),
           ],
         ),

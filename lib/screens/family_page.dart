@@ -100,35 +100,39 @@ class _FamilyPageState extends State<FamilyPage> {
     
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Join Family', style: TextStyle(fontWeight: FontWeight.w700)),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Enter the 6-digit invitation code shared by a family member.', 
-                style: TextStyle(fontSize: 13, color: Colors.grey, height: 1.5)
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'Invite Code',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                  filled: true,
-                  fillColor: const Color(0xFFF5F7FA),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final colors = theme.colorScheme;
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+          title: Text('Join Family', style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Enter the 6-digit invitation code shared by a family member.', 
+                  style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6), height: 1.5)
                 ),
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                style: const TextStyle(letterSpacing: 4, fontWeight: FontWeight.w800, fontSize: 20, color: Color(0xFF005F87)),
-              ),
-            ],
+                const SizedBox(height: 24),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Invite Code',
+                    labelStyle: TextStyle(color: colors.onSurface.withOpacity(0.7)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+                    filled: true,
+                    fillColor: theme.cardColor,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+                  ),
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(letterSpacing: 4, fontWeight: FontWeight.w800, fontSize: 20, color: Color(0xFF005F87)),
+                ),
+              ],
+            ),
           ),
-        ),
         actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
         actions: [
           TextButton(
@@ -146,7 +150,8 @@ class _FamilyPageState extends State<FamilyPage> {
             child: const Text('Join', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
-      ),
+        );
+      },
     );
 
     if (ok == true && controller.text.trim().length >= 6) {
@@ -237,223 +242,270 @@ class _FamilyPageState extends State<FamilyPage> {
   void _showInviteDialog(String code) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).cardColor,
       showDragHandle: true,
       isScrollControlled: true, 
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView( 
-          child: Padding(
-            padding: EdgeInsets.only(
-              left: 32, 
-              right: 32, 
-              bottom: 32 + MediaQuery.of(ctx).viewInsets.bottom
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFE3F2FD),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.mark_email_unread_rounded, size: 36, color: Color(0xFF005F87)),
-                ),
-                const SizedBox(height: 20),
-                const Text('Invite Member', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.black87)),
-                const SizedBox(height: 8),
-                const Text('Share this code with your family member.\nThey can use it to join your home.', 
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey, height: 1.5, fontSize: 14)
-                ),
-                const SizedBox(height: 32),
-                
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F9FC),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFE0E0E0), width: 1),
-                  ),
-                  child: Column(
-                    children: [
-                      SelectableText(
-                        code, 
-                        style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 6, color: Color(0xFF005F87))
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text('Expires in 2 days', style: TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w700)),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                const SizedBox(height: 32),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: FilledButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF005F87),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final colors = theme.colorScheme;
+        final isDark = theme.brightness == Brightness.dark;
+        return SafeArea(
+          child: SingleChildScrollView( 
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 32, 
+                right: 32, 
+                bottom: 32 + MediaQuery.of(ctx).viewInsets.bottom
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: isDark ? colors.onSurface.withOpacity(0.08) : const Color(0xFFE3F2FD),
+                      shape: BoxShape.circle,
                     ),
-                    child: const Text('Done', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    child: const Icon(Icons.mark_email_unread_rounded, size: 36, color: Color(0xFF005F87)),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 20),
+                  Text(
+                    'Invite Member',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: colors.onSurface),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Share this code with your family member.\nThey can use it to join your home.', 
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: colors.onSurface.withOpacity(0.6), height: 1.5, fontSize: 14)
+                  ),
+                  const SizedBox(height: 32),
+                  
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: BoxDecoration(
+                      color: isDark ? theme.cardColor : const Color(0xFFF8F9FC),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: theme.dividerColor, width: 1),
+                    ),
+                    child: Column(
+                      children: [
+                        SelectableText(
+                          code, 
+                          style: const TextStyle(fontSize: 36, fontWeight: FontWeight.w900, letterSpacing: 6, color: Color(0xFF005F87))
+                        ),
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text('Expires in 2 days', style: TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 32),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF005F87),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                      ),
+                      child: const Text('Done', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F9FC), 
-      appBar: AppBar(
-        title: const Text('My Family', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87)),
-        backgroundColor: const Color(0xFFF8F9FC),
-        centerTitle: false,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black87),
-      ),
+        backgroundColor: theme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: Text('My Family', style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface)),
+          backgroundColor: theme.scaffoldBackgroundColor,
+          centerTitle: false,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: colors.onSurface),
+        ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: Color(0xFF005F87)))
-          : ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              children: [
-                FadeInSlide(
-                  index: 0,
-                  child: _buildHeaderCard(),
-                ),
-                const SizedBox(height: 40),
+          : AnimatedBuilder(
+              animation: widget.repo,
+              builder: (context, _) {
+                return ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  children: [
+                    FadeInSlide(
+                      index: 0,
+                      child: _buildHeaderCard(),
+                    ),
+                    const SizedBox(height: 32),
 
-                FadeInSlide(
-                  index: 1,
-                  child: Row(
-                    children: [
-                      const Text('Members', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.black87)),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF005F87).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${_members.length}',
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF005F87)),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
+                    // 🟢 2. Inventory Mode Selection (新增)
+                    FadeInSlide(
+                      index: 1,
+                      child: _buildModeSelection(),
+                    ),
+                    const SizedBox(height: 32),
 
-                if (_members.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.all(20.0),
-                    child: Center(child: Text("No members found.", style: TextStyle(color: Colors.grey))),
-                  )
-                else
-                  ..._members.asMap().entries.map((e) => FadeInSlide(
-                    index: 2 + e.key,
-                    child: _MemberTile(member: e.value),
-                  )),
-                
-                const SizedBox(height: 48),
-
-                FadeInSlide(
-                  index: 2 + (_members.isEmpty ? 1 : _members.length),
-                  child: Column(
-                    children: [
-                      BouncingButton(
-                        onTap: _generateInvite,
-                        child: Container(
-                          height: 64,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF005F87), Color(0xFF0077A3)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
+                    FadeInSlide(
+                      index: 2,
+                      child: Row(
+                        children: [
+                          Text(
+                            'Members',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: colors.onSurface,
                             ),
-                            borderRadius: BorderRadius.circular(20),
-                            boxShadow: [
-                              BoxShadow(color: const Color(0xFF005F87).withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 8))
-                            ],
                           ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.person_add_rounded, color: Colors.white, size: 22),
-                              SizedBox(width: 12),
-                              Text('Invite New Member', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
-                            ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF005F87).withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${_members.length}',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFF005F87)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    if (_members.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.all(20.0),
+                        child: Center(
+                          child: Text(
+                            "No members found.",
+                            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      BouncingButton(
-                        onTap: _joinFamily,
-                        child: Container(
-                          height: 64,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.grey.shade200, width: 1.5),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
-                            ],
+                      )
+                    else
+                      ..._members.asMap().entries.map((e) => FadeInSlide(
+                        index: 3 + e.key,
+                        child: _MemberTile(member: e.value),
+                      )),
+                    
+                    const SizedBox(height: 48),
+
+                    FadeInSlide(
+                      index: 3 + (_members.isEmpty ? 1 : _members.length),
+                      child: Column(
+                        children: [
+                          BouncingButton(
+                            onTap: _generateInvite,
+                            child: Container(
+                              height: 64,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF005F87), Color(0xFF0077A3)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(color: const Color(0xFF005F87).withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 8))
+                                ],
+                              ),
+                              child: const Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.person_add_rounded, color: Colors.white, size: 22),
+                                  SizedBox(width: 12),
+                                  Text('Invite New Member', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                                ],
+                              ),
+                            ),
                           ),
-                          child: const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.group_add_outlined, color: Color(0xFF005F87), size: 22),
-                              SizedBox(width: 12),
-                              Text('Join Another Family', style: TextStyle(color: Color(0xFF005F87), fontWeight: FontWeight.w700, fontSize: 16)),
-                            ],
+                          const SizedBox(height: 20),
+                          BouncingButton(
+                            onTap: _joinFamily,
+                            child: Container(
+                              height: 64,
+                              decoration: BoxDecoration(
+                                color: cardBg,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: theme.dividerColor, width: 1.5),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.group_add_outlined, color: Color(0xFF005F87), size: 22),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    'Join Another Family',
+                                    style: TextStyle(
+                                      color: colors.onSurface,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
-                        ),
+                          
+                          // 🟢 底部退出按钮
+                          const SizedBox(height: 40),
+                          TextButton.icon(
+                            onPressed: _handleLeaveFamily,
+                            icon: const Icon(Icons.exit_to_app_rounded, color: Colors.redAccent, size: 20),
+                            label: const Text('Leave This Family', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                            style: TextButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
+                            ),
+                          ),
+                        ],
                       ),
-                      
-                      // 🟢 底部退出按钮
-                      const SizedBox(height: 40),
-                      TextButton.icon(
-                        onPressed: _handleLeaveFamily,
-                        icon: const Icon(Icons.exit_to_app_rounded, color: Colors.redAccent, size: 20),
-                        label: const Text('Leave This Family', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 40),
-              ],
+                    ),
+                    const SizedBox(height: 40),
+                  ],
+                );
+              },
             ),
     );
   }
 
   Widget _buildHeaderCard() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
     return Container(
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cardBg,
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
@@ -467,8 +519,8 @@ class _FamilyPageState extends State<FamilyPage> {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF0F7FF),
+            decoration: BoxDecoration(
+              color: isDark ? colors.onSurface.withOpacity(0.08) : const Color(0xFFF0F7FF),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.home_rounded, color: Color(0xFF005F87), size: 36),
@@ -476,12 +528,76 @@ class _FamilyPageState extends State<FamilyPage> {
           const SizedBox(height: 16),
           Text(
             widget.repo.currentFamilyName,
-            style: const TextStyle(color: Colors.black87, fontSize: 22, fontWeight: FontWeight.w800),
+            style: TextStyle(color: colors.onSurface, fontSize: 22, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
-          const Text('Inventory & Shopping List Synced', style: TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(
+            'Inventory & Shopping List Synced',
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13, fontWeight: FontWeight.w500),
+          ),
         ],
       ),
+    );
+  }
+
+  // 🟢 新增：模式选择组件
+  Widget _buildModeSelection() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Inventory Mode',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colors.onSurface.withOpacity(0.6)),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: Column(
+            children: [
+              RadioListTile<bool>(
+                title: Text('Shared Fridge', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface)),
+                subtitle: Text('All members manage inventory together.', style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6))),
+                value: true,
+                groupValue: widget.repo.isSharedUsage,
+                activeColor: const Color(0xFF0E7AA8),
+                secondary: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.blue.withOpacity(isDark ? 0.2 : 0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.group_work_rounded, color: Colors.blue),
+                ),
+                onChanged: (val) => widget.repo.setSharedUsageMode(val!),
+              ),
+              const Divider(height: 1, indent: 20, endIndent: 20),
+              RadioListTile<bool>(
+                title: Text('Separate Fridges', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface)),
+                subtitle: Text('Items are strictly assigned to owners.', style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6))),
+                value: false,
+                groupValue: widget.repo.isSharedUsage,
+                activeColor: const Color(0xFF0E7AA8),
+                secondary: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: Colors.orange.withOpacity(isDark ? 0.2 : 0.1), shape: BoxShape.circle),
+                  child: const Icon(Icons.person_outline_rounded, color: Colors.orange),
+                ),
+                onChanged: (val) => widget.repo.setSharedUsageMode(val!),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -503,6 +619,10 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
     final name = member['name'] ?? 'Unknown';
     final role = (member['role'] ?? 'member').toString().toUpperCase();
     final isOwner = role == 'OWNER';
@@ -514,7 +634,7 @@ class _MemberTile extends StatelessWidget {
         margin: const EdgeInsets.only(bottom: 16),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: cardBg,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
@@ -540,7 +660,14 @@ class _MemberTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: Colors.black87)),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: colors.onSurface,
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

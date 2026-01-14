@@ -118,6 +118,8 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       // 科技感背景：浅色渐变 + 玻璃高光
@@ -127,9 +129,9 @@ class _LoginPageState extends State<LoginPage> {
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [
-              const Color(0xFFF6F8FA),
-              scheme.primary.withOpacity(0.06),
-              scheme.secondary.withOpacity(0.05),
+              isDark ? const Color(0xFF0F141A) : const Color(0xFFF6F8FA),
+              scheme.primary.withOpacity(isDark ? 0.18 : 0.06),
+              scheme.secondary.withOpacity(isDark ? 0.12 : 0.05),
             ],
           ),
         ),
@@ -162,15 +164,15 @@ class _LoginPageState extends State<LoginPage> {
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
-                        color: Colors.white.withOpacity(0.92),
+                        color: theme.cardColor.withOpacity(isDark ? 0.94 : 0.92),
                         border: Border.all(
-                          color: Colors.black.withOpacity(0.06),
+                          color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
                         ),
-                        boxShadow: const [
+                        boxShadow: [
                           BoxShadow(
-                            color: Color(0x18000000),
+                            color: Colors.black.withOpacity(isDark ? 0.35 : 0.1),
                             blurRadius: 18,
-                            offset: Offset(0, 10),
+                            offset: const Offset(0, 10),
                           ),
                         ],
                       ),
@@ -232,7 +234,7 @@ class _LoginPageState extends State<LoginPage> {
                                               .textTheme
                                               .bodyMedium
                                               ?.copyWith(
-                                                color: Colors.grey[700],
+                                                color: scheme.onSurface.withOpacity(0.6),
                                                 height: 1.25,
                                               ),
                                         ),
@@ -285,7 +287,7 @@ class _LoginPageState extends State<LoginPage> {
                                   tooltip: _obscure ? 'Show password' : 'Hide password',
                                   icon: Icon(
                                     _obscure ? Icons.visibility_off : Icons.visibility,
-                                    color: Colors.grey[700],
+                                    color: scheme.onSurface.withOpacity(0.6),
                                   ),
                                   onPressed: _loading
                                       ? null
@@ -367,7 +369,7 @@ class _LoginPageState extends State<LoginPage> {
                                   Expanded(
                                     child: Container(
                                       height: 1,
-                                      color: Colors.black.withOpacity(0.06),
+                                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
@@ -375,7 +377,7 @@ class _LoginPageState extends State<LoginPage> {
                                     'OR',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: Colors.grey[600],
+                                      color: scheme.onSurface.withOpacity(0.6),
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -383,7 +385,7 @@ class _LoginPageState extends State<LoginPage> {
                                   Expanded(
                                     child: Container(
                                       height: 1,
-                                      color: Colors.black.withOpacity(0.06),
+                                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
                                     ),
                                   ),
                                 ],
@@ -396,7 +398,7 @@ class _LoginPageState extends State<LoginPage> {
                                 children: [
                                   Text(
                                     "Don’t have an account?",
-                                    style: TextStyle(color: Colors.grey[800]),
+                                    style: TextStyle(color: scheme.onSurface.withOpacity(0.8)),
                                   ),
                                   TextButton(
                                     onPressed: _loading ? null : _goToRegister,
@@ -490,6 +492,7 @@ class _TechField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return TextFormField(
       controller: controller,
@@ -513,13 +516,13 @@ class _TechField extends StatelessWidget {
         ),
         suffixIcon: suffix,
         filled: true,
-        fillColor: Colors.white,
+        fillColor: isDark ? const Color(0xFF1C1F24) : Colors.white,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(0.08)),
+          borderSide: BorderSide(color: Colors.black.withOpacity(isDark ? 0.3 : 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),

@@ -18,12 +18,27 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    const bg = Color(0xFFF6F8FA);
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final bg = theme.scaffoldBackgroundColor;
+    final neutralPillColor = isDark
+        ? Colors.white.withOpacity(0.08)
+        : Colors.black.withOpacity(0.06);
+    final neutralTextColor = scheme.onSurface.withOpacity(0.8);
+    final neutralIconColor = scheme.onSurface.withOpacity(0.7);
 
     return Scaffold(
       backgroundColor: bg,
-      appBar: AppBar(title: Text(recipe.title)),
+      appBar: AppBar(
+        title: Text(
+          recipe.title,
+          style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: bg,
+        iconTheme: IconThemeData(color: scheme.onSurface),
+        elevation: 0,
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
@@ -48,7 +63,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
           const SizedBox(height: 14),
           Text(
             recipe.title,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: scheme.onSurface),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -58,16 +73,16 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
               _Pill(
                 icon: Icons.schedule,
                 text: recipe.timeLabel,
-                color: Colors.black.withOpacity(0.06),
-                textColor: Colors.grey[800]!,
-                iconColor: Colors.grey[700]!,
+                color: neutralPillColor,
+                textColor: neutralTextColor,
+                iconColor: neutralIconColor,
               ),
               _Pill(
                 icon: _toolIcon(recipe.appliancesLabel),
                 text: recipe.appliancesLabel,
-                color: Colors.black.withOpacity(0.06),
-                textColor: Colors.grey[800]!,
-                iconColor: Colors.grey[700]!,
+                color: neutralPillColor,
+                textColor: neutralTextColor,
+                iconColor: neutralIconColor,
               ),
               _Pill(
                 icon: Icons.recycling,
@@ -79,9 +94,9 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
               _Pill(
                 icon: Icons.list_alt,
                 text: '${recipe.ingredients.length} ingredients',
-                color: Colors.black.withOpacity(0.06),
-                textColor: Colors.grey[800]!,
-                iconColor: Colors.grey[700]!,
+                color: neutralPillColor,
+                textColor: neutralTextColor,
+                iconColor: neutralIconColor,
               ),
             ],
           ),
@@ -92,7 +107,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
               icon: Icons.info_outline,
               child: Text(
                 recipe.description!,
-                style: TextStyle(color: Colors.grey[800], height: 1.25),
+                style: TextStyle(color: scheme.onSurface.withOpacity(0.7), height: 1.25),
               ),
             ),
             const SizedBox(height: 12),
@@ -118,7 +133,12 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 10),
-                          Expanded(child: Text(ing)),
+                          Expanded(
+                            child: Text(
+                              ing,
+                              style: TextStyle(color: scheme.onSurface.withOpacity(0.8)),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -136,7 +156,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.03),
+                    color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
@@ -162,7 +182,10 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                       Expanded(
                         child: Text(
                           e.value,
-                          style: const TextStyle(height: 1.25),
+                          style: TextStyle(
+                            height: 1.25,
+                            color: scheme.onSurface.withOpacity(0.8),
+                          ),
                         ),
                       ),
                     ],
@@ -232,17 +255,21 @@ class _InfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.black.withOpacity(0.05)),
-        boxShadow: const [
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x10000000),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
             blurRadius: 12,
-            offset: Offset(0, 8),
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -251,13 +278,14 @@ class _InfoCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: Colors.grey[800]),
+              Icon(icon, size: 18, color: scheme.onSurface.withOpacity(0.7)),
               const SizedBox(width: 8),
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w900,
                   fontSize: 14,
+                  color: scheme.onSurface,
                 ),
               ),
             ],

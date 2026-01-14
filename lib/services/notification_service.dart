@@ -1,4 +1,4 @@
-// lib/services/notification_service.dart
+﻿// lib/services/notification_service.dart
 import 'dart:io' show Platform;
 import 'dart:math'; // Kept to avoid breaking references if any
 
@@ -82,6 +82,11 @@ class NotificationService {
     _initialized = true;
   }
 
+  Future<void> _ensureInitialized() async {
+    if (_initialized) return;
+    await init();
+  }
+
   Future<void> _configureLocalTimeZone() async {
     if (kIsWeb) return;
     tz.initializeTimeZones();
@@ -114,6 +119,8 @@ class NotificationService {
     required int minutes,
     required String message,
   }) async {
+    if (kIsWeb) return;
+    await _ensureInitialized();
     final now = tz.TZDateTime.now(tz.local);
     final scheduledDate = now.add(Duration(minutes: minutes));
 
@@ -134,7 +141,7 @@ class NotificationService {
       scheduledDate,
       details,
       // ✅ REQUIRED for v19.5.0:
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
     );
@@ -148,10 +155,15 @@ class NotificationService {
     TimeOfDay? dinnerTime,
     required String message,
   }) async {
+    if (kIsWeb) return;
+    await _ensureInitialized();
     if (!_initialized) return;
 
     final lunch = lunchTime ?? const TimeOfDay(hour: 11, minute: 30);
     final dinner = dinnerTime ?? const TimeOfDay(hour: 17, minute: 30);
+
+    await _plugin.cancel(kLunchNotificationId);
+    await _plugin.cancel(kDinnerNotificationId);
 
     // Notification details with Snooze button
     final androidDetails = AndroidNotificationDetails(
@@ -185,7 +197,7 @@ class NotificationService {
       _nextInstanceOfTime(lunch, minutesBefore: 30),
       details,
       // ✅ REQUIRED for v19.5.0:
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,
@@ -199,7 +211,7 @@ class NotificationService {
       _nextInstanceOfTime(dinner, minutesBefore: 30),
       details,
       // ✅ REQUIRED for v19.5.0:
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
       uiLocalNotificationDateInterpretation:
           UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,

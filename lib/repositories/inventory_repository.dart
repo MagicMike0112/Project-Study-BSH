@@ -6,187 +6,23 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
-import 'package:http/http.dart' as http; // 🟢 1. 必须引入 http 包
+import 'package:http/http.dart' as http; 
 
 import '../models/food_item.dart';
 import '../utils/impact_calculator.dart';
 
-// ================== Internal Models ==================
+// ================== 新增的 Imports ==================
+// 引入拆分出去的模型和服务
+import '../models/shopping_item.dart';
+import '../models/shopping_history_item.dart';
+import '../models/impact_event.dart';
+import '../services/expiry_service.dart';
 
-class ShoppingItem {
-  final String id;
-  final String name;
-  final String category;
-  bool isChecked;
-  final String? ownerName;
-  final String? userId;
-
-  ShoppingItem({
-    required this.id,
-    required this.name,
-    this.category = 'general',
-    this.isChecked = false,
-    this.ownerName,
-    this.userId,
-  });
-
-  Map<String, dynamic> toDbJson(String familyId, String currentUserId) {
-    return {
-      'id': id,
-      'family_id': familyId,
-      'user_id': userId ?? currentUserId,
-      'name': name,
-      'category': category,
-      'is_checked': isChecked,
-      'updated_at': DateTime.now().toIso8601String(),
-    };
-  }
-
-  Map<String, dynamic> toLocalJson(String familyId, String currentUserId) {
-    var map = toDbJson(familyId, currentUserId);
-    map['owner_name'] = ownerName;
-    return map;
-  }
-
-  factory ShoppingItem.fromJson(Map<String, dynamic> json) {
-    String? extractName(Map<String, dynamic> data) {
-      if (data['user_profiles'] != null && data['user_profiles'] is Map) {
-        return data['user_profiles']['display_name'];
-      }
-      if (data['owner_name'] != null) {
-        return data['owner_name'];
-      }
-      return null;
-    }
-
-    return ShoppingItem(
-      id: json['id'].toString(),
-      name: json['name'] ?? 'Unknown',
-      category: json['category'] ?? 'general',
-      isChecked: json['is_checked'] ?? false,
-      ownerName: extractName(json),
-      userId: json['user_id']?.toString(),
-    );
-  }
-}
-
-class ShoppingHistoryItem {
-  final String id;
-  final String name;
-  final String category;
-  final DateTime date;
-
-  ShoppingHistoryItem({
-    required this.id,
-    required this.name,
-    required this.category,
-    required this.date,
-  });
-
-  Map<String, dynamic> toJson(String familyId, String userId) {
-    return {
-      'id': id,
-      'family_id': familyId,
-      'user_id': userId,
-      'name': name,
-      'category': category,
-      'added_date': date.toIso8601String(),
-    };
-  }
-
-  factory ShoppingHistoryItem.fromJson(Map<String, dynamic> json) {
-    return ShoppingHistoryItem(
-      id: json['id'].toString(),
-      name: json['name'] ?? 'Unknown',
-      category: json['category'] ?? 'general',
-      date: DateTime.tryParse(json['added_date'].toString()) ?? DateTime.now(),
-    );
-  }
-}
-
-class ImpactEvent {
-  final String id;
-  final DateTime date;
-  final ImpactType type;
-  final double quantity;
-  final String unit;
-  final double moneySaved;
-  final double co2Saved;
-  
-  final String? itemName;
-  final String? itemCategory;
-
-  ImpactEvent({
-    required this.id,
-    required this.date,
-    required this.type,
-    required this.quantity,
-    required this.unit,
-    required this.moneySaved,
-    required this.co2Saved,
-    this.itemName,
-    this.itemCategory,
-  });
-
-  Map<String, dynamic> toJson(String familyId, String userId) {
-    return {
-      'id': id,
-      'family_id': familyId,
-      'user_id': userId,
-      'created_at': date.toIso8601String(),
-      'type': type.name,
-      'quantity': quantity,
-      'unit': unit,
-      'money_saved': moneySaved,
-      'co2_saved': co2Saved,
-      'item_name': itemName,
-      'item_category': itemCategory,
-    };
-  }
-
-  factory ImpactEvent.fromJson(Map<String, dynamic> json) {
-    return ImpactEvent(
-      id: json['id'].toString(),
-      date: DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now(),
-      type: ImpactType.values.firstWhere(
-        (e) => e.name == (json['type'] as String),
-        orElse: () => ImpactType.eaten,
-      ),
-      quantity: (json['quantity'] as num?)?.toDouble() ?? 0.0,
-      unit: json['unit'] ?? '',
-      moneySaved: (json['money_saved'] as num?)?.toDouble() ?? 0.0,
-      co2Saved: (json['co2_saved'] as num?)?.toDouble() ?? 0.0,
-      itemName: json['item_name'],
-      itemCategory: json['item_category'],
-    );
-  }
-}
-
-enum ImpactType { eaten, fedToPet, trashed }
-
-class ExpiryService {
-  DateTime predictExpiry(String? category, StorageLocation location, DateTime purchased, {DateTime? openDate, DateTime? bestBefore}) {
-    int days = 7;
-    if (location == StorageLocation.freezer) {
-      days = 90;
-    } else if (location == StorageLocation.pantry) {
-      days = 14;
-    } else if (location == StorageLocation.fridge) {
-      days = 5;
-    }
-
-    if (bestBefore != null) {
-      final ruleDate = purchased.add(Duration(days: days));
-      if (ruleDate.isAfter(bestBefore)) return bestBefore;
-      return ruleDate;
-    }
-    if (openDate != null) {
-      days = (days * 0.7).round();
-      return openDate.add(Duration(days: days));
-    }
-    return purchased.add(Duration(days: days));
-  }
-}
+// ================== Exports ==================
+// 保持对外的兼容性，让引用了 InventoryRepository 的文件无需修改 imports
+export '../models/shopping_item.dart';
+export '../models/shopping_history_item.dart';
+export '../models/impact_event.dart';
 
 // ================== The Repository ==================
 
@@ -208,20 +44,25 @@ class InventoryRepository extends ChangeNotifier {
 
   bool hasShownPetWarning = false;
   int _streakDays = 0;
-  
-  bool _isSeniorMode = false;
-  bool get isSeniorMode => _isSeniorMode;
 
+  // 家庭模式状态
+  bool _isSharedUsage = true;
+  bool get isSharedUsage => _isSharedUsage;
+  
   String? _currentFamilyId;
   String? _currentFamilyName;
   String? _currentUserId;
   String? _currentUserName;
+  String? _currentUserEmail;
 
   Completer<void>? _sessionCompleter;
+  bool get _isLoggedIn => _supabase.auth.currentUser != null;
 
+  // Key: User ID, Value: Display Name
   Map<String, String> _familyMemberCache = {};
 
   String get currentFamilyName => _currentFamilyName ?? 'My Home';
+  String get currentUserName => _currentUserName ?? _currentUserEmail ?? 'User';
 
   InventoryRepository._() {
     _initAuthListener();
@@ -248,14 +89,17 @@ class InventoryRepository extends ChangeNotifier {
     super.dispose();
   }
 
-  // 🟢 2. 新增：调用后端 API 预测保质期的方法
-  // 这就是解决 "Paprika 明年过期" 问题的关键
+  // 切换家庭模式
+  Future<void> setSharedUsageMode(bool isShared) async {
+    _isSharedUsage = isShared;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_shared_usage_v1', isShared);
+  }
+
   Future<DateTime?> predictExpiryDate(String name, String location, DateTime purchasedDate) async {
     const String baseUrl = 'https://project-study-bsh.vercel.app'; 
-    
     try {
-      debugPrint('🚀 Asking AI for expiry: $name in $location');
-      
       final response = await http.post(
         Uri.parse('$baseUrl/api/recipe'),
         headers: {'Content-Type': 'application/json'},
@@ -269,14 +113,11 @@ class InventoryRepository extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (data['predictedExpiry'] != null) {
-          debugPrint("✅ AI Prediction: ${data['days']} days for $name");
           return DateTime.tryParse(data['predictedExpiry']);
         }
-      } else {
-        debugPrint("❌ API Error: ${response.body}");
       }
     } catch (e) {
-      debugPrint("❌ Connection Error: $e");
+      debugPrint("AI Prediction Error: $e");
     }
     return null; 
   }
@@ -296,24 +137,27 @@ class InventoryRepository extends ChangeNotifier {
         await _initFamilySession();
         await _fetchAllData();
       } else if (event == AuthChangeEvent.signedOut) {
-        _resetState();
+        _resetState(keepLocal: true);
         notifyListeners();
       }
     });
   }
 
-  void _resetState() {
+  void _resetState({bool keepLocal = false}) {
     _cleanupRealtime();
     _currentUserId = null;
     _currentFamilyId = null;
     _currentFamilyName = null;
     _currentUserName = null;
+    _currentUserEmail = null;
     _familyMemberCache.clear();
-    _items = [];
-    _activeShoppingList = [];
-    _shoppingHistory = [];
-    _impactEvents = [];
-    _pendingUploads = [];
+    if (!keepLocal) {
+      _items = [];
+      _activeShoppingList = [];
+      _shoppingHistory = [];
+      _impactEvents = [];
+      _pendingUploads = [];
+    }
     _sessionCompleter = null;
   }
 
@@ -328,15 +172,22 @@ class InventoryRepository extends ChangeNotifier {
     try {
       final user = _supabase.auth.currentUser;
       if (user == null) {
-        _resetState();
+        _resetState(keepLocal: true);
         return;
       }
 
       _currentUserId = user.id;
-      _currentUserName = user.userMetadata?['display_name'] ?? user.email?.split('@').first ?? 'Me';
+      _currentUserEmail = user.email;
+      _currentUserName = user.userMetadata?['display_name'];
+      if (_currentUserName == null || _currentUserName!.isEmpty) {
+        _currentUserName = _currentUserEmail;
+      }
       try {
         final profile = await _supabase.from('user_profiles').select('display_name').eq('id', user.id).maybeSingle();
-        if (profile != null) _currentUserName = profile['display_name'];
+        final profileName = profile?['display_name'];
+        if (profileName != null && profileName.toString().isNotEmpty) {
+          _currentUserName = profileName;
+        }
       } catch (_) {}
 
       final response = await _supabase
@@ -349,9 +200,7 @@ class InventoryRepository extends ChangeNotifier {
       if (response != null) {
         _currentFamilyId = response['family_id'];
         _currentFamilyName = response['families']['name'];
-        debugPrint('✅ Connected to existing family: $_currentFamilyName');
       } else {
-        debugPrint('⚠️ No family found. Auto-creating default family...');
         await _createNewDefaultFamily(user.id);
       }
 
@@ -381,7 +230,6 @@ class InventoryRepository extends ChangeNotifier {
           .single();
 
       final fid = newFamily['id'];
-      
       await _supabase.from('family_members').insert({
         'family_id': fid,
         'user_id': userId,
@@ -390,7 +238,6 @@ class InventoryRepository extends ChangeNotifier {
       
       _currentFamilyId = fid;
       _currentFamilyName = 'My Home';
-      debugPrint('✅ Created and joined default family: $fid');
     } catch (e) {
       debugPrint('🚨 Failed to create default family: $e');
     }
@@ -406,8 +253,8 @@ class InventoryRepository extends ChangeNotifier {
       _refreshFamilyMemberCache().catchError((e) => debugPrint("Member cache error: $e"));
 
       final results = await Future.wait([
-        _supabase.from('inventory_items').select('*, user_profiles(display_name)').eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
-        _supabase.from('shopping_items').select('*, user_profiles(display_name)').eq('family_id', _currentFamilyId!).order('created_at', ascending: true),
+        _supabase.from('inventory_items').select('*, user_profiles(display_name, email)').eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
+        _supabase.from('shopping_items').select('*, user_profiles(display_name, email)').eq('family_id', _currentFamilyId!).order('created_at', ascending: true),
         _supabase.from('shopping_history').select().eq('family_id', _currentFamilyId!).order('added_date', ascending: false),
         _supabase.from('impact_events').select().eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
       ]);
@@ -462,10 +309,6 @@ class InventoryRepository extends ChangeNotifier {
        await _sessionCompleter!.future;
     } else {
        await _initFamilySession();
-    }
-    
-    if (_currentFamilyId == null) {
-       debugPrint("Warning: Operation performed without family context (Offline or Error)");
     }
   }
 
@@ -535,7 +378,7 @@ class InventoryRepository extends ChangeNotifier {
     final uid = json['user_id']?.toString();
     String name = 'Family';
     if (_currentUserId != null && uid == _currentUserId) {
-      name = _currentUserName ?? 'Me';
+      name = currentUserName;
     } else if (uid != null) {
       name = _familyMemberCache[uid] ?? 'Family';
     }
@@ -554,7 +397,11 @@ class InventoryRepository extends ChangeNotifier {
     json.remove('meta_table'); 
 
     if (_currentFamilyId != null) json['family_id'] = _currentFamilyId;
-    if (_currentUserId != null) json['user_id'] = _currentUserId;
+    
+    // 只有当 user_id 不存在且当前用户可用时，才默认使用当前用户
+    if (!json.containsKey('user_id') && _currentUserId != null) {
+      json['user_id'] = _currentUserId;
+    }
 
     return json;
   }
@@ -563,25 +410,22 @@ class InventoryRepository extends ChangeNotifier {
     if (_pendingUploads.isEmpty) return;
     if (_currentFamilyId == null) return;
 
-    debugPrint("🔄 Syncing/Merging ${_pendingUploads.length} offline items...");
-    
     final List<Map<String, dynamic>> queue = List.from(_pendingUploads);
     final List<Map<String, dynamic>> successful = [];
 
     for (var itemWithMeta in queue) {
       try {
         final tableName = itemWithMeta['meta_table'] ?? 'inventory_items';
-        
         final itemJson = Map<String, dynamic>.from(itemWithMeta);
+        
         itemJson['family_id'] = _currentFamilyId;
-        itemJson['user_id'] = _currentUserId;
+        if (itemJson['user_id'] == null || itemJson['user_id'].toString().isEmpty) {
+          itemJson['user_id'] = _currentUserId;
+        }
         
         final payload = _cleanJsonForDb(itemJson);
-
         await _supabase.from(tableName).upsert(payload).timeout(const Duration(seconds: 5));
-        
         successful.add(itemWithMeta);
-        debugPrint("✅ Synced offline item to $tableName: ${itemJson['name']}");
       } catch (e) {
         debugPrint("❌ Sync failed for item: $e");
       }
@@ -595,6 +439,9 @@ class InventoryRepository extends ChangeNotifier {
 
   Future<void> _queueOfflineAction(String tableName, Map<String, dynamic> rawJson) async {
     final payload = _cleanJsonForDb(rawJson);
+    if (payload['user_id'] == null || payload['user_id'].toString().isEmpty) {
+      payload.remove('user_id');
+    }
     payload['meta_table'] = tableName;
     
     final idx = _pendingUploads.indexWhere((e) => e['id'] == payload['id']);
@@ -603,27 +450,33 @@ class InventoryRepository extends ChangeNotifier {
     } else {
       _pendingUploads.add(payload);
     }
-    
-    debugPrint("⚠️ Action queued for offline sync ($tableName): ${payload['name']}");
     await _saveLocalCache();
   }
-
-  // ================== CRUD Operations ==================
 
   List<FoodItem> getActiveItems() => _items.where((i) => i.status == FoodStatus.good).toList();
   List<FoodItem> getExpiringItems(int days) => getActiveItems().where((i) => i.daysToExpiry <= days).toList();
 
   Future<void> addItem(FoodItem item) async {
-    final optimisticItem = item.copyWith(ownerName: _currentUserName);
+    final effectiveOwner = currentUserName;
+    final optimisticItem = item.copyWith(ownerName: effectiveOwner);
     _items.insert(0, optimisticItem);
     notifyListeners();
     await _saveLocalCache();
+    if (!_isLoggedIn) {
+      await _queueOfflineAction('inventory_items', item.toJson());
+      return;
+    }
 
     try {
       await _ensureFamily();
       if (_currentFamilyId == null) throw Exception("Cannot sync: No family context");
       
-      final payload = _cleanJsonForDb(item.toJson());
+      var payload = optimisticItem.toJson();
+      if (!_isSharedUsage) {
+         payload['user_id'] = _currentUserId;
+      }
+      payload = _cleanJsonForDb(payload);
+      
       await _supabase.from('inventory_items').insert(payload).timeout(const Duration(seconds: 5));
       await _checkAutoRefill(item);
     } catch (e) {
@@ -636,16 +489,53 @@ class InventoryRepository extends ChangeNotifier {
     if (idx != -1) _items[idx] = item;
     notifyListeners();
     await _saveLocalCache();
+    if (!_isLoggedIn) {
+      await _queueOfflineAction('inventory_items', item.toJson());
+      return;
+    }
 
     try {
       await _ensureFamily();
       final payload = _cleanJsonForDb(item.toJson());
       payload.remove('created_at');
+      
+      payload.remove('user_id'); 
 
       await _supabase.from('inventory_items').update(payload).eq('id', item.id).timeout(const Duration(seconds: 5));
       await _checkAutoRefill(item);
     } catch (e) {
       await _queueOfflineAction('inventory_items', item.toJson());
+    }
+  }
+
+  Future<void> assignItemToUser(String itemId, String memberName) async {
+    String? targetUserId;
+    if (memberName == 'Family' || memberName == 'Shared') {
+      targetUserId = _currentUserId; 
+    } else {
+      final entry = _familyMemberCache.entries.firstWhere(
+        (e) => e.value == memberName, 
+        orElse: () => const MapEntry('', ''),
+      );
+      targetUserId = entry.key.isNotEmpty ? entry.key : _currentUserId;
+    }
+
+    final index = _items.indexWhere((i) => i.id == itemId);
+    if (index != -1) {
+      _items[index] = _items[index].copyWith(ownerName: memberName);
+      notifyListeners();
+      await _saveLocalCache();
+    }
+
+    try {
+      await _ensureFamily();
+      if (targetUserId != null) {
+        await _supabase.from('inventory_items')
+            .update({'user_id': targetUserId})
+            .eq('id', itemId);
+      }
+    } catch (e) {
+      debugPrint("Assign failed: $e");
     }
   }
 
@@ -670,20 +560,26 @@ class InventoryRepository extends ChangeNotifier {
     }
   }
 
-  Future<ImpactEvent?> useItemWithImpact(FoodItem item, String action, double usedQty) async {
-    if (usedQty <= 0) return null;
-    final double clamped = usedQty.clamp(0, item.quantity).toDouble();
+  Future<void> useItemWithImpact(FoodItem item, String action, double usedQty) async {
+    if (usedQty <= 0) return;
     
-    final event = await recordImpactForAction(item, action, overrideQty: clamped);
+    // 🟢 核心优化：处理浮点数计算误差
+    // 1. Clamp 限制范围
+    double clamped = usedQty.clamp(0, item.quantity).toDouble();
+    // 2. 强制保留2位小数，防止出现 1.200000001 这种情况
+    clamped = double.parse(clamped.toStringAsFixed(2));
+    
+    await recordImpactForAction(item, action, overrideQty: clamped);
 
-    final remaining = item.quantity - clamped;
+    // 3. 计算剩余量，并同样强制保留2位小数
+    double remaining = item.quantity - clamped;
+    remaining = double.parse(remaining.toStringAsFixed(2));
+
     if (remaining <= 0.0001) {
       await updateStatus(item.id, FoodStatus.consumed);
     } else {
       await updateItem(item.copyWith(quantity: remaining));
     }
-    
-    return event;
   }
   
   Future<void> undoConsume(FoodItem oldItem, String? eventId) async {
@@ -709,9 +605,7 @@ class InventoryRepository extends ChangeNotifier {
       if (eventId != null) {
         await _supabase.from('impact_events').delete().eq('id', eventId);
       }
-      debugPrint("✅ Undo successful");
     } catch (e) {
-      debugPrint("❌ Undo failed (Queuing item update): $e");
       await _queueOfflineAction('inventory_items', oldItem.toJson());
     }
   }
@@ -736,13 +630,13 @@ class InventoryRepository extends ChangeNotifier {
         co2 = factors.co2PerKg;
         break;
       default:
-        type = ImpactType.trashed;
+        type = ImpactType.trash;
         money = 0;
         co2 = 0;
         break;
     }
 
-    if (type != ImpactType.trashed) {
+    if (type != ImpactType.trash) {
       final event = ImpactEvent(
         id: const Uuid().v4(),
         date: DateTime.now(),
@@ -761,16 +655,17 @@ class InventoryRepository extends ChangeNotifier {
       notifyListeners();
       await _saveLocalCache();
 
-      try {
-        await _ensureFamily();
-        if (_currentFamilyId != null && _currentUserId != null) {
-          final payload = _cleanJsonForDb(event.toJson(_currentFamilyId!, _currentUserId!));
-          await _supabase.from('impact_events').insert(payload);
-        }
-      } catch (e) {
-        debugPrint('Impact upload error (queuing offline): $e');
-        if (_currentFamilyId != null && _currentUserId != null) {
-          await _queueOfflineAction('impact_events', event.toJson(_currentFamilyId!, _currentUserId!));
+      if (_isLoggedIn) {
+        try {
+          await _ensureFamily();
+          if (_currentFamilyId != null && _currentUserId != null) {
+            final payload = _cleanJsonForDb(event.toJson(_currentFamilyId!, _currentUserId!));
+            await _supabase.from('impact_events').insert(payload);
+          }
+        } catch (e) {
+          if (_currentFamilyId != null && _currentUserId != null) {
+            await _queueOfflineAction('impact_events', event.toJson(_currentFamilyId!, _currentUserId!));
+          }
         }
       }
       return event;
@@ -787,6 +682,10 @@ class InventoryRepository extends ChangeNotifier {
     if (idx != -1) _activeShoppingList[idx] = item; else _activeShoppingList.add(item);
     notifyListeners();
     await _saveLocalCache();
+    if (!_isLoggedIn) {
+      await _queueOfflineAction('shopping_items', item.toLocalJson('', ''));
+      return;
+    }
 
     try {
       await _ensureFamily();
@@ -871,7 +770,6 @@ class InventoryRepository extends ChangeNotifier {
           try {
              await _supabase.from('shopping_history').insert(payload);
           } catch (e) {
-             debugPrint("History upload fail (queuing offline): $e");
              await _queueOfflineAction('shopping_history', historyItem.toJson(_currentFamilyId!, _currentUserId ?? ''));
           }
         }
@@ -910,8 +808,8 @@ class InventoryRepository extends ChangeNotifier {
   }
 
   List<ImpactEvent> get impactEvents => List.unmodifiable(_impactEvents);
-  int getSavedCount() => _impactEvents.where((e) => e.type != ImpactType.trashed).length;
-  int getWastedCount() => _impactEvents.where((e) => e.type == ImpactType.trashed).length;
+  int getSavedCount() => _impactEvents.where((e) => e.type != ImpactType.trash).length;
+  int getWastedCount() => _impactEvents.where((e) => e.type == ImpactType.trash).length;
 
   Future<void> _checkAutoRefill(FoodItem item) async {
     if (item.minQuantity == null) return;
@@ -975,22 +873,13 @@ class InventoryRepository extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     hasShownPetWarning = prefs.getBool('petWarningShown') ?? false;
     _streakDays = prefs.getInt('streakDays') ?? 0;
-    // 🟢 2. 加载长辈模式状态
-    _isSeniorMode = prefs.getBool('isSeniorMode') ?? false;
+    _isSharedUsage = prefs.getBool('is_shared_usage_v1') ?? true;
   }
 
   Future<void> _saveMeta() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('petWarningShown', hasShownPetWarning);
     await prefs.setInt('streakDays', _streakDays);
-  }
-  
-  // 🟢 3. 切换长辈模式
-  Future<void> toggleSeniorMode(bool value) async {
-    _isSeniorMode = value;
-    notifyListeners();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('isSeniorMode', value);
   }
 
   void _calculateStreakFromLocalEvents() {

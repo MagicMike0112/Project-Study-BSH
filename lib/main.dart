@@ -9,23 +9,16 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'repositories/inventory_repository.dart';
 import 'screens/auth_root.dart';
 import 'services/notification_service.dart';
-// 🟢 1. 引入长辈模式主页
-import 'screens/senior_home.dart';
+import 'utils/theme_controller.dart';
 
-// 🎨 标准配色 (BSH Blue)
+
+// 🎨 标准配色
 class BshColors {
   static const primary = Color(0xFF004A77);
   static const secondary = Color(0xFF50738A);
   static const surface = Color(0xFFF8F9FA);
   static const error = Color(0xFFBA1A1A);
   static const text = Color(0xFF191C1E);
-}
-
-// 👵 长辈模式配色
-class SeniorColors {
-  static const primary = Color(0xFF004A77);
-  static const surface = Color(0xFFFFFFFF);
-  static const text = Color(0xFF000000);
 }
 
 const double kDefaultRadius = 16.0;
@@ -58,10 +51,15 @@ Future<void> main() async {
   }
 
   final inventoryRepo = await InventoryRepository.create();
+  final themeController = ThemeController();
+  await themeController.load();
 
   runApp(
-    ChangeNotifierProvider.value(
-      value: inventoryRepo,
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: inventoryRepo),
+        ChangeNotifierProvider.value(value: themeController),
+      ],
       child: const SmartFoodApp(),
     ),
   );
@@ -72,115 +70,92 @@ class SmartFoodApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final repo = Provider.of<InventoryRepository>(context);
-    final isSenior = repo.isSeniorMode;
-    
-    final baseTextTheme = GoogleFonts.interTextTheme(Theme.of(context).textTheme);
+    return Consumer<ThemeController>(
+      builder: (context, themeController, _) {
+        final lightBase = ThemeData.light();
+        final darkBase = ThemeData.dark();
+        final lightTextTheme = GoogleFonts.interTextTheme(lightBase.textTheme);
+        final darkTextTheme = GoogleFonts.interTextTheme(darkBase.textTheme);
 
-    // === 标准主题 ===
-    final standardTheme = ThemeData(
-      brightness: Brightness.light,
-      primaryColor: BshColors.primary,
-      scaffoldBackgroundColor: BshColors.surface,
-      colorScheme: ColorScheme.fromSwatch(
-        primarySwatch: Colors.blue,
-        accentColor: BshColors.secondary,
-        backgroundColor: BshColors.surface,
-        errorColor: BshColors.error,
-      ).copyWith(
-        secondary: BshColors.secondary,
-      ),
+        final lightTheme = ThemeData(
+          brightness: Brightness.light,
+          primaryColor: BshColors.primary,
+          scaffoldBackgroundColor: BshColors.surface,
+          colorScheme: ColorScheme.fromSwatch(
+            primarySwatch: Colors.blue,
+            accentColor: BshColors.secondary,
+            backgroundColor: BshColors.surface,
+            errorColor: BshColors.error,
+          ).copyWith(secondary: BshColors.secondary),
+          textTheme: lightTextTheme.copyWith(
+            displayLarge: lightTextTheme.displayLarge?.copyWith(fontWeight: FontWeight.w800, color: BshColors.text),
+            headlineMedium: lightTextTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: BshColors.text),
+            titleLarge: lightTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: BshColors.text),
+            bodyLarge: lightTextTheme.bodyLarge?.copyWith(color: BshColors.text),
+          ),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: BshColors.surface,
+            elevation: 0,
+            centerTitle: false,
+            iconTheme: IconThemeData(color: BshColors.text),
+            titleTextStyle: TextStyle(color: BshColors.text, fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kDefaultRadius)),
+            ),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: const BorderSide(color: BshColors.primary, width: 2)),
+          ),
+        );
 
-      textTheme: baseTextTheme.copyWith(
-        displayLarge: baseTextTheme.displayLarge?.copyWith(fontWeight: FontWeight.w800, color: BshColors.text),
-        headlineMedium: baseTextTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w700, color: BshColors.text),
-        titleLarge: baseTextTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600, color: BshColors.text),
-        bodyLarge: baseTextTheme.bodyLarge?.copyWith(color: BshColors.text),
-      ),
+        final darkTheme = ThemeData(
+          brightness: Brightness.dark,
+          colorScheme: darkBase.colorScheme.copyWith(secondary: BshColors.secondary),
+          textTheme: darkTextTheme,
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF111418),
+            elevation: 0,
+            centerTitle: false,
+            iconTheme: IconThemeData(color: Colors.white),
+            titleTextStyle: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kDefaultRadius)),
+            ),
+          ),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: const Color(0xFF1C1F24),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.white12, width: 1)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: const BorderSide(color: BshColors.secondary, width: 2)),
+          ),
+        );
 
-      appBarTheme: const AppBarTheme(
-        backgroundColor: BshColors.surface,
-        elevation: 0,
-        centerTitle: false,
-        iconTheme: IconThemeData(color: BshColors.text),
-        titleTextStyle: TextStyle(color: BshColors.text, fontSize: 22, fontWeight: FontWeight.w700),
-      ),
+        return MaterialApp(
+          title: 'Smart Food Home',
+          debugShowCheckedModeBanner: false,
+          theme: lightTheme,
+          darkTheme: darkTheme,
+          themeMode: themeController.themeMode,
 
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(kDefaultRadius)),
-        ),
-      ),
-      
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: const BorderSide(color: BshColors.primary, width: 2)),
-      ),
-    );
-
-    // === 长辈主题 ===
-    final seniorTheme = ThemeData(
-      brightness: Brightness.light,
-      primaryColor: SeniorColors.primary,
-      scaffoldBackgroundColor: SeniorColors.surface,
-      
-      colorScheme: ColorScheme.fromSwatch(
-        primarySwatch: Colors.blue,
-        backgroundColor: SeniorColors.surface,
-      ).copyWith(
-        secondary: SeniorColors.primary,
-        onSurface: SeniorColors.text,
-      ),
-
-      textTheme: baseTextTheme.copyWith(
-        displayLarge: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: SeniorColors.text),
-        headlineMedium: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: SeniorColors.text),
-        titleLarge: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: SeniorColors.text),
-        bodyLarge: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500, color: SeniorColors.text),
-        bodyMedium: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, color: Colors.black87),
-        labelLarge: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-      ),
-
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        iconTheme: IconThemeData(color: Colors.black, size: 32),
-        titleTextStyle: TextStyle(color: Colors.black, fontSize: 26, fontWeight: FontWeight.w900),
-      ),
-
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-          backgroundColor: SeniorColors.primary,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          textStyle: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        ),
-      ),
-
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.all(24),
-        labelStyle: const TextStyle(fontSize: 22, color: Colors.black),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black, width: 2)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.black, width: 2)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: SeniorColors.primary, width: 3)),
-      ),
-    );
-
-    return MaterialApp(
-      title: 'Smart Food Home',
-      debugShowCheckedModeBanner: false,
-      theme: isSenior ? seniorTheme : standardTheme,
-      // 🟢 2. 路由分叉：长辈模式进入专用主页，否则进入普通主页
-      home: isSenior ? const SeniorHome() : const AuthRoot(),
+          // 🟢 回归单一入口
+          home: const AuthRoot(),
+        );
+      },
     );
   }
 }

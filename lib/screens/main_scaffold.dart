@@ -1,16 +1,16 @@
 // lib/screens/main_scaffold.dart
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart'; // 🟢 引入 Provider
+import 'package:provider/provider.dart';
 
 import '../repositories/inventory_repository.dart';
 import 'today_page.dart';
-import 'inventory_page.dart'; // 这里面包含了 InventoryPageWrapper
+import 'inventory_page.dart';
 import 'impact_page.dart';
 import 'add_food_page.dart';
 import 'shopping_list_page.dart';
-import 'account_page.dart'; // 确保引入 AccountPage
 
 class MainScaffold extends StatefulWidget {
   final bool isLoggedIn;
@@ -32,29 +32,54 @@ class _MainScaffoldState extends State<MainScaffold> {
   int _currentIndex = 0;
   bool _showFabMenu = false;
   late PageController _pageController;
+  
+  double _fabOpacity = 0.0; 
 
   static const Color _primaryColor = Color(0xFF005F87);
+
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: 0);
+    _pageController.addListener(_handleFabVisibility);
   }
 
   @override
   void dispose() {
+    _pageController.removeListener(_handleFabVisibility);
     _pageController.dispose();
     super.dispose();
   }
 
-  void _refresh() {
-    setState(() {});
+  void _handleFabVisibility() {
+    if (!_pageController.hasClients || _pageController.page == null) return;
+    final page = _pageController.page!;
+    
+    double newOpacity = 0.0;
+    
+    if (page < 1.0) {
+      newOpacity = 0.0;
+    } else if (page >= 1.0 && page < 2.0) {
+      newOpacity = (1.0 - (page - 1.0)).clamp(0.0, 1.0);
+    } else {
+      newOpacity = 0.0;
+    }
+
+    if ((newOpacity - _fabOpacity).abs() > 0.01) {
+      setState(() {
+        _fabOpacity = newOpacity;
+        if (_fabOpacity < 0.01 && _showFabMenu) {
+          _showFabMenu = false;
+        }
+      });
+    }
   }
 
+  void _refresh() => setState(() {});
+
   void _closeFabMenu() {
-    if (_showFabMenu) {
-      setState(() => _showFabMenu = false);
-    }
+    if (_showFabMenu) setState(() => _showFabMenu = false);
   }
 
   void _toggleFabMenu() {
@@ -62,36 +87,104 @@ class _MainScaffoldState extends State<MainScaffold> {
     setState(() => _showFabMenu = !_showFabMenu);
   }
 
+  void _onTabSelected(int index) {
+    if (_currentIndex != index) {
+      HapticFeedback.selectionClick();
+      _closeFabMenu();
+      _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutQuart,
+      );
+    }
+  }
+
+  void showAppToast(String message, {VoidCallback? onUndo}) {
+    if (!mounted) return;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final toastBg = isDark ? const Color(0xFF1E1F24) : const Color(0xFF323232);
+    final toastText = isDark ? Colors.white : Colors.white;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.fixed,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        duration: const Duration(seconds: 3),
+        content: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: toastBg,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(isDark ? 0.3 : 0.12),
+                blurRadius: 10,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          margin: const EdgeInsets.only(bottom: 20),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(color: toastText, fontSize: 14),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (onUndo != null) ...[
+                const SizedBox(width: 12),
+                GestureDetector(
+                  onTap: () {
+                    onUndo();
+                    messenger.hideCurrentSnackBar();
+                  },
+                  child: const Text(
+                    'UNDO',
+                    style: TextStyle(
+                      color: Color(0xFF81D4FA),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
+      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
     ));
 
-    // 🟢 修复 1: 直接从 Provider 获取已经在 main.dart 初始化好的单例 Repo
-    // 这样整个 App 共享同一个数据源，避免重复初始化导致的 bug
     final repo = context.watch<InventoryRepository>();
 
     final pages = [
       TodayPage(repo: repo, onRefresh: _refresh),
-      
-      // 🟢 修复 2: 使用 Wrapper 包裹，确保 ShowCaseWidget 存在
-      InventoryPageWrapper(repo: repo, onRefresh: _refresh),
-      
+      InventoryPageWrapper(
+        repo: repo,
+        onRefresh: _refresh,
+        showSnackBar: (msg, {onUndo}) => showAppToast(msg, onUndo: onUndo),
+      ),
       ShoppingListPage(repo: repo),
-      
-      // Impact Page
       ImpactPage(repo: repo),
-
-      // 🟢 补充: 如果你想把 Account 放在 Tab 里，可以加在这里，或者保持现状
-      // 目前看起来 Account 是通过 ProfileAvatarButton 进入的，所以这里只需 4 个 Tab
     ];
 
-    // FAB 只在 Today 和 Inventory 页面显示
-    final bool fabEnabled = _currentIndex <= 1;
-
     return Scaffold(
+      extendBody: true,
       body: Stack(
         children: [
           PageView(
@@ -105,9 +198,8 @@ class _MainScaffoldState extends State<MainScaffold> {
             },
             children: pages,
           ),
-          
-          // FAB 展开时的遮罩层
-          if (fabEnabled)
+
+          if (_fabOpacity > 0.01)
             Positioned.fill(
               child: IgnorePointer(
                 ignoring: !_showFabMenu,
@@ -117,7 +209,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                     HapticFeedback.selectionClick();
                   },
                   child: AnimatedOpacity(
-                    duration: const Duration(milliseconds: 300),
+                    duration: const Duration(milliseconds: 200),
                     curve: Curves.easeInOut,
                     opacity: _showFabMenu ? 1.0 : 0.0,
                     child: BackdropFilter(
@@ -130,132 +222,158 @@ class _MainScaffoldState extends State<MainScaffold> {
             ),
         ],
       ),
-      bottomNavigationBar: NavigationBarTheme(
-        data: NavigationBarThemeData(
-          indicatorColor: _primaryColor.withOpacity(0.1),
-          labelTextStyle: WidgetStateProperty.all(
-            const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Container(
+            height: 64,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(isDark ? 0.25 : 0.1),
+                  blurRadius: 25,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20), 
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        Colors.white.withOpacity(isDark ? 0.08 : 0.65),
+                        Colors.white.withOpacity(isDark ? 0.04 : 0.35),
+                      ],
+                    ),
+                    border: Border.all(color: Colors.white.withOpacity(isDark ? 0.12 : 0.5), width: 1.5),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _buildNavItem(0, Icons.dashboard_outlined, Icons.dashboard, 'Today'),
+                      _buildNavItem(1, Icons.inventory_2_outlined, Icons.inventory_2, 'Inventory'),
+                      _buildNavItem(2, Icons.shopping_cart_outlined, Icons.shopping_cart, 'Shopping'),
+                      _buildNavItem(3, Icons.eco_outlined, Icons.eco, 'Impact'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.selected)) {
-              return const IconThemeData(color: _primaryColor, size: 26);
-            }
-            return IconThemeData(color: Colors.grey.shade500, size: 24);
-          }),
-        ),
-        child: NavigationBar(
-          selectedIndex: _currentIndex,
-          height: 65,
-          onDestinationSelected: (idx) {
-            if (_currentIndex != idx) {
-              HapticFeedback.selectionClick();
-              _closeFabMenu();
-              setState(() => _currentIndex = idx);
-              _pageController.animateToPage(
-                idx,
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOutQuart,
-              );
-            }
-          },
-          backgroundColor: Colors.white,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.dashboard_outlined),
-              selectedIcon: Icon(Icons.dashboard),
-              label: 'Today',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.inventory_2_outlined),
-              selectedIcon: Icon(Icons.inventory_2),
-              label: 'Inventory',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.shopping_cart_outlined),
-              selectedIcon: Icon(Icons.shopping_cart),
-              label: 'Shopping',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.eco_outlined),
-              selectedIcon: Icon(Icons.eco),
-              label: 'Impact',
-            ),
-          ],
         ),
       ),
-      floatingActionButton: _buildExpandableFab(repo, fabEnabled),
+
+      floatingActionButton: Padding(
+        // 抬高 FAB，避免与通知冲突
+        padding: const EdgeInsets.only(bottom: 46),
+        child: IgnorePointer(
+          ignoring: _fabOpacity <= 0.01,
+          child: Opacity(
+            opacity: _fabOpacity,
+            child: _buildExpandableFab(repo),
+          ),
+        ),
+      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
     );
   }
 
-  Widget _buildExpandableFab(InventoryRepository repo, bool enabled) {
-    return IgnorePointer(
-      ignoring: !enabled,
-      child: AnimatedOpacity(
-        opacity: enabled ? 1.0 : 0.0,
-        duration: const Duration(milliseconds: 200),
-        child: SizedBox(
-          width: 140,
-          height: 280,
-          child: Stack(
-            alignment: Alignment.bottomRight,
-            clipBehavior: Clip.none,
-            children: [
-              _FabActionButton(
-                index: 0,
-                icon: Icons.edit_note_rounded,
-                label: 'Manual',
-                visible: _showFabMenu,
-                onTap: () => _navigateToAdd(repo, 0),
+  Widget _buildNavItem(int index, IconData icon, IconData activeIcon, String label) {
+    final isSelected = _currentIndex == index;
+    final colors = Theme.of(context).colorScheme;
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _onTabSelected(index),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: EdgeInsets.all(isSelected ? 8 : 0),
+              decoration: BoxDecoration(
+                color: isSelected ? _primaryColor.withOpacity(0.15) : Colors.transparent,
+                shape: BoxShape.circle,
               ),
-              _FabActionButton(
-                index: 1,
-                icon: Icons.camera_alt_rounded,
-                label: 'Photo',
-                visible: _showFabMenu,
-                onTap: () => _navigateToAdd(repo, 1),
+              child: Icon(
+                isSelected ? activeIcon : icon,
+                color: isSelected ? _primaryColor : colors.onSurface.withOpacity(0.6),
+                size: 24,
               ),
-              _FabActionButton(
-                index: 2,
-                icon: Icons.mic_rounded,
-                label: 'Voice',
-                visible: _showFabMenu,
-                onTap: () => _navigateToAdd(repo, 2),
-              ),
-              
-              BouncingButton(
-                onTap: enabled ? _toggleFabMenu : () {},
-                child: Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: _primaryColor,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _primaryColor.withOpacity(0.4),
-                        blurRadius: 12,
-                        offset: const Offset(0, 6),
-                      )
-                    ],
-                  ),
-                  child: AnimatedRotation(
-                    turns: _showFabMenu ? 0.125 : 0,
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeOutBack,
-                    child: const Icon(
-                      Icons.add,
-                      size: 32,
-                      color: Colors.white,
-                    ),
-                  ),
+            ),
+            if (isSelected) ...[
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: _primaryColor,
                 ),
               ),
-            ],
-          ),
+            ]
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildExpandableFab(InventoryRepository repo) {
+    return SizedBox(
+      width: 140,
+      height: 280,
+      child: Stack(
+        alignment: Alignment.bottomRight,
+        clipBehavior: Clip.none,
+        children: [
+          _FabActionButton(
+            index: 0,
+            icon: Icons.edit_note_rounded,
+            label: 'Manual',
+            visible: _showFabMenu,
+            onTap: () => _navigateToAdd(repo, 0),
+          ),
+          _FabActionButton(
+            index: 1,
+            icon: Icons.camera_alt_rounded,
+            label: 'Photo',
+            visible: _showFabMenu,
+            onTap: () => _navigateToAdd(repo, 1),
+          ),
+          _FabActionButton(
+            index: 2,
+            icon: Icons.mic_rounded,
+            label: 'Voice',
+            visible: _showFabMenu,
+            onTap: () => _navigateToAdd(repo, 2),
+          ),
+          BouncingButton(
+            onTap: _toggleFabMenu,
+            child: Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: _primaryColor,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
+                  BoxShadow(
+                    color: _primaryColor.withOpacity(0.4),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  )
+                ],
+              ),
+              child: const Icon(Icons.add, size: 32, color: Colors.white),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -265,10 +383,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AddFoodPage(
-          repo: repo,
-          initialTab: tabIndex,
-        ),
+        builder: (_) => AddFoodPage(repo: repo, initialTab: tabIndex),
       ),
     );
     _refresh();
@@ -292,24 +407,23 @@ class _FabActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     const double fabSize = 56.0;
     const double gap = 16.0;
     final double bottomOffset = fabSize + gap + (index * (50 + gap));
-    final duration = Duration(milliseconds: 300 + (index * 100));
-    const curve = Curves.easeOutBack;
-
-    return AnimatedPositioned(
-      duration: duration,
-      curve: curve,
+    
+    // 修改点：改为 Positioned (不再使用 AnimatedPositioned)，并移除 bottom 的位移动画逻辑
+    return Positioned(
       right: 4,
-      bottom: visible ? bottomOffset : 0,
+      bottom: bottomOffset, // 固定位置，不再跳动
       child: AnimatedOpacity(
-        duration: Duration(milliseconds: 200 + (index * 50)),
-        opacity: visible ? 1 : 0,
-        child: AnimatedScale(
-          scale: visible ? 1.0 : 0.5,
-          duration: duration,
-          curve: curve,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut, // 建议使用 easeOut 让渐显更自然
+        opacity: visible ? 1.0 : 0.0,
+        child: IgnorePointer(
+          ignoring: !visible,
           child: Row(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.end,
@@ -318,11 +432,11 @@ class _FabActionButton extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 margin: const EdgeInsets.only(right: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: theme.cardColor,
                   borderRadius: BorderRadius.circular(10),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
+                      color: Colors.black.withOpacity(isDark ? 0.25 : 0.08),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -330,10 +444,10 @@ class _FabActionButton extends StatelessWidget {
                 ),
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: Colors.black87,
+                    color: colors.onSurface,
                   ),
                 ),
               ),
@@ -343,11 +457,11 @@ class _FabActionButton extends StatelessWidget {
                   width: 48,
                   height: 48,
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: theme.cardColor,
                     borderRadius: BorderRadius.circular(14),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withOpacity(isDark ? 0.3 : 0.1),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       ),
@@ -364,7 +478,6 @@ class _FabActionButton extends StatelessWidget {
   }
 }
 
-// 复用的 BouncingButton
 class BouncingButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;

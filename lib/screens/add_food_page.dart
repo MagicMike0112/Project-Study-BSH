@@ -76,7 +76,6 @@ class _AddFoodPageState extends State<AddFoodPage>
   StorageScanMode? _activeProcessingScanMode;
 
   // 统一背景色
-  static const Color _backgroundColor = Color(0xFFF8F9FC);
   static const Color _primaryColor = Color(0xFF005F87);
 
   @override
@@ -599,21 +598,25 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final bgColor = theme.scaffoldBackgroundColor;
+
     return Scaffold(
-      backgroundColor: _backgroundColor,
+      backgroundColor: bgColor,
       appBar: AppBar(
         title: Text(
           widget.itemToEdit != null ? 'Edit Item' : 'Add Item',
           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
         ),
-        backgroundColor: _backgroundColor,
+        backgroundColor: bgColor,
         elevation: 0,
         centerTitle: false,
         bottom: TabBar(
           controller: _tabController,
           labelColor: _primaryColor,
           labelStyle: const TextStyle(fontWeight: FontWeight.w700),
-          unselectedLabelColor: Colors.grey,
+          unselectedLabelColor: colors.onSurface.withOpacity(0.6),
           indicatorColor: _primaryColor,
           indicatorSize: TabBarIndicatorSize.label,
           dividerColor: Colors.transparent,
@@ -654,7 +657,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               children: [
                 TextFormField(
                   initialValue: _name,
-                  decoration: _inputDecoration('Name', Icons.edit_outlined),
+                  decoration: _inputDecoration(context, 'Name', Icons.edit_outlined),
                   onChanged: (v) {
                     setState(() {
                       _name = v;
@@ -672,7 +675,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                       child: TextFormField(
                         initialValue: _qty.toString(),
                         keyboardType: TextInputType.number,
-                        decoration: _inputDecoration('Quantity', Icons.numbers),
+                        decoration: _inputDecoration(context, 'Quantity', Icons.numbers),
                         onSaved: (v) => _qty = double.tryParse(v ?? '1') ?? 1,
                       ),
                     ),
@@ -685,7 +688,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                             .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                             .toList(),
                         onChanged: (v) => setState(() => _unit = v!),
-                        decoration: _inputDecoration('Unit', null),
+                        decoration: _inputDecoration(context, 'Unit', null),
                       ),
                     ),
                   ],
@@ -694,7 +697,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                 TextFormField(
                   initialValue: _minQty?.toString() ?? '',
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: _inputDecoration('Min Stock Warning (Optional)', Icons.notifications_active_outlined).copyWith(
+                  decoration: _inputDecoration(context, 'Min Stock Warning (Optional)', Icons.notifications_active_outlined).copyWith(
                     hintText: 'e.g. 2 (Notify when below)',
                     helperText: 'Leave empty for no warnings',
                   ),
@@ -729,7 +732,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                   style: ButtonStyle(
                     visualDensity: VisualDensity.compact,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    side: WidgetStateProperty.all(BorderSide(color: Colors.grey.shade300)),
+                    side: WidgetStateProperty.all(BorderSide(color: Theme.of(context).dividerColor)),
                   ),
                 ),
               ],
@@ -794,6 +797,8 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   // --- Scan Tab ---
   Widget _buildScanTab() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -802,9 +807,9 @@ class _AddFoodPageState extends State<AddFoodPage>
           Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: theme.cardColor,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: theme.dividerColor),
             ),
             child: Row(
               children: [
@@ -827,7 +832,7 @@ class _AddFoodPageState extends State<AddFoodPage>
             icon: Icons.photo_library_rounded,
             label: 'Upload (Max 4)',
             subtitle: 'Choose multiple from gallery',
-            color: Colors.grey.shade800,
+            color: colors.onSurface.withOpacity(0.8),
             isOutlined: true,
             onTap: _pickFromGallery,
           ),
@@ -838,7 +843,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               ? 'AI will extract items from your receipt(s).'
               : 'AI will identify items in your fridge or pantry.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13),
           ),
         ],
       ),
@@ -848,6 +853,8 @@ class _AddFoodPageState extends State<AddFoodPage>
   // --- Voice Tab ---
   Widget _buildVoiceTab() {
     final hasText = _voiceController.text.trim().length > 2;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -881,13 +888,13 @@ class _AddFoodPageState extends State<AddFoodPage>
                   width: 100,
                   height: 100,
                   decoration: BoxDecoration(
-                    color: _isListening ? _primaryColor : Colors.white,
+                    color: _isListening ? _primaryColor : theme.cardColor,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
                         color: _isListening 
                             ? _primaryColor.withOpacity(0.4) 
-                            : Colors.grey.shade300,
+                            : colors.onSurface.withOpacity(0.2),
                         blurRadius: _isListening ? 20 : 10,
                         spreadRadius: _isListening ? 5 : 2,
                         offset: const Offset(0, 4)
@@ -915,7 +922,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               style: TextStyle(
                 fontSize: 18, 
                 fontWeight: FontWeight.w600, 
-                color: _isListening ? _primaryColor : Colors.grey.shade700
+                color: _isListening ? _primaryColor : colors.onSurface.withOpacity(0.7)
               ),
             ),
           ),
@@ -924,7 +931,7 @@ class _AddFoodPageState extends State<AddFoodPage>
           if (!_isListening && !hasText)
             Text(
               'Try saying: "3 apples, milk, and 1kg of rice"',
-              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+              style: TextStyle(color: colors.onSurface.withOpacity(0.5), fontSize: 13),
             ),
 
           const SizedBox(height: 40),
@@ -932,20 +939,22 @@ class _AddFoodPageState extends State<AddFoodPage>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: theme.cardColor,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: hasText ? _primaryColor.withOpacity(0.5) : Colors.grey.shade200),
+              border: Border.all(
+                color: hasText ? _primaryColor.withOpacity(0.5) : theme.dividerColor,
+              ),
             ),
             child: TextField(
               controller: _voiceController,
               minLines: 2,
               maxLines: 4,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 18, color: Colors.black87),
-              decoration: const InputDecoration(
+              style: TextStyle(fontSize: 18, color: colors.onSurface),
+              decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: 'Transcript will appear here...',
-                hintStyle: TextStyle(color: Colors.black12),
+                hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.4)),
               ),
             ),
           ),
@@ -982,11 +991,13 @@ class _AddFoodPageState extends State<AddFoodPage>
   // ================== Helper Widgets ==================
 
   Widget _buildFormCard({required String title, required List<Widget> children}) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4)),
@@ -995,7 +1006,14 @@ class _AddFoodPageState extends State<AddFoodPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Colors.grey)),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: colors.onSurface.withOpacity(0.6),
+            ),
+          ),
           const SizedBox(height: 16),
           ...children,
         ],
@@ -1003,25 +1021,33 @@ class _AddFoodPageState extends State<AddFoodPage>
     );
   }
 
-  InputDecoration _inputDecoration(String label, IconData? icon) {
+  InputDecoration _inputDecoration(BuildContext context, String label, IconData? icon) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     return InputDecoration(
       labelText: label,
-      prefixIcon: icon != null ? Icon(icon, size: 20, color: Colors.grey.shade600) : null,
+      labelStyle: TextStyle(color: colors.onSurface.withOpacity(0.7)),
+      hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
+      prefixIcon: icon != null ? Icon(icon, size: 20, color: colors.onSurface.withOpacity(0.7)) : null,
       filled: true,
-      fillColor: const Color(0xFFF9FAFB),
+      fillColor: isDark
+          ? colors.surfaceVariant.withOpacity(0.35)
+          : const Color(0xFFF9FAFB),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide.none,
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade200),
+        borderSide: BorderSide(color: theme.dividerColor),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     );
   }
 
   Widget _buildDateRow(String label, DateTime? date, ValueChanged<DateTime?> onChanged, {bool canClear = false}) {
+    final colors = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => _pickDate(
         initial: date ?? DateTime.now(),
@@ -1034,13 +1060,19 @@ class _AddFoodPageState extends State<AddFoodPage>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.black87)),
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: colors.onSurface,
+              ),
+            ),
             Row(
               children: [
                 Text(
                   _formatDate(date),
                   style: TextStyle(
-                    color: date == null ? Colors.grey : _primaryColor,
+                    color: date == null ? colors.onSurface.withOpacity(0.6) : _primaryColor,
                     fontWeight: date == null ? FontWeight.normal : FontWeight.w700,
                   ),
                 ),
@@ -1048,10 +1080,10 @@ class _AddFoodPageState extends State<AddFoodPage>
                 if (canClear && date != null)
                   InkWell(
                     onTap: () => onChanged(null),
-                    child: const Icon(Icons.close_rounded, size: 16, color: Colors.grey),
+                    child: Icon(Icons.close_rounded, size: 16, color: colors.onSurface.withOpacity(0.6)),
                   )
                 else
-                  const Icon(Icons.calendar_today_rounded, size: 16, color: Colors.grey),
+                  Icon(Icons.calendar_today_rounded, size: 16, color: colors.onSurface.withOpacity(0.6)),
               ],
             ),
           ],
@@ -1061,6 +1093,9 @@ class _AddFoodPageState extends State<AddFoodPage>
   }
 
   Widget _buildExpiryAiCard() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final canPredict = _name.trim().isNotEmpty && !_isPredictingExpiry;
 
     return Container(
@@ -1068,11 +1103,15 @@ class _AddFoodPageState extends State<AddFoodPage>
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         gradient: LinearGradient(
-          colors: [Colors.blue.shade50, Colors.purple.shade50],
+          colors: isDark
+              ? const [Color(0xFF1C2430), Color(0xFF1A1E2A)]
+              : [Colors.blue.shade50, Colors.purple.shade50],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        border: Border.all(color: Colors.blue.withOpacity(0.1)),
+        border: Border.all(
+          color: isDark ? Colors.white.withOpacity(0.08) : Colors.blue.withOpacity(0.1),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1081,18 +1120,21 @@ class _AddFoodPageState extends State<AddFoodPage>
             children: [
               Icon(Icons.auto_awesome, size: 18, color: Colors.purple.shade400),
               const SizedBox(width: 8),
-              const Text('AI Expiry Prediction', style: TextStyle(fontWeight: FontWeight.w700)),
+              Text(
+                'AI Expiry Prediction',
+                style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+              ),
             ],
           ),
           const SizedBox(height: 8),
           
           if (_isPredictingExpiry)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 10),
               child: Row(children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-                SizedBox(width: 10),
-                Text('Thinking...', style: TextStyle(color: Colors.grey)),
+                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(width: 10),
+                Text('Thinking...', style: TextStyle(color: colors.onSurface.withOpacity(0.6))),
               ]),
             )
           else if (_predictedExpiryFromAi != null)
@@ -1106,7 +1148,11 @@ class _AddFoodPageState extends State<AddFoodPage>
                         children: [
                           Text(
                             _formatDate(_predictedExpiryFromAi),
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: Colors.black87),
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                              color: colors.onSurface,
+                            ),
                           ),
                           const SizedBox(width: 8),
                           Container(
@@ -1117,7 +1163,10 @@ class _AddFoodPageState extends State<AddFoodPage>
                         ],
                       ),
                       if (_bestBefore != null && _bestBefore != _predictedExpiryFromAi)
-                         const Text('Manual date will override this', style: TextStyle(fontSize: 10, color: Colors.orange)),
+                         Text(
+                           'Manual date will override this',
+                           style: TextStyle(fontSize: 10, color: colors.onSurface.withOpacity(0.6)),
+                         ),
                     ],
                   ),
                 ),
@@ -1138,7 +1187,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               children: [
                 Text(
                   'Let AI suggest based on food type and storage.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                  style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
                 ),
                 if (_predictionError != null)
                   Padding(
@@ -1149,8 +1198,14 @@ class _AddFoodPageState extends State<AddFoodPage>
                 OutlinedButton(
                   onPressed: canPredict ? _predictExpiryWithAi : null,
                   style: OutlinedButton.styleFrom(
-                    backgroundColor: Colors.white.withOpacity(0.6),
-                    side: BorderSide(color: Colors.purple.withOpacity(0.2)),
+                    backgroundColor: isDark
+                        ? colors.surfaceVariant.withOpacity(0.2)
+                        : Colors.white.withOpacity(0.6),
+                    side: BorderSide(
+                      color: isDark
+                          ? colors.onSurface.withOpacity(0.2)
+                          : Colors.purple.withOpacity(0.2),
+                    ),
                   ),
                   child: const Text('Predict Expiry'),
                 ),
@@ -1163,6 +1218,7 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   Widget _buildScanModeOption(StorageScanMode mode, String label, IconData icon) {
     final isSelected = _scanMode == mode;
+    final colors = Theme.of(context).colorScheme;
     return Expanded(
       child: GestureDetector(
         onTap: () => setState(() => _scanMode = mode),
@@ -1175,12 +1231,12 @@ class _AddFoodPageState extends State<AddFoodPage>
           ),
           child: Column(
             children: [
-              Icon(icon, color: isSelected ? Colors.white : Colors.grey),
+              Icon(icon, color: isSelected ? Colors.white : colors.onSurface.withOpacity(0.6)),
               const SizedBox(height: 4),
               Text(
                 label,
                 style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.grey,
+                  color: isSelected ? Colors.white : colors.onSurface.withOpacity(0.6),
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
@@ -1200,15 +1256,17 @@ class _AddFoodPageState extends State<AddFoodPage>
     required VoidCallback onTap,
     bool isOutlined = false,
   }) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
-          color: isOutlined ? Colors.white : color,
+          color: isOutlined ? theme.cardColor : color,
           borderRadius: BorderRadius.circular(20),
-          border: isOutlined ? Border.all(color: Colors.grey.shade300) : null,
+          border: isOutlined ? Border.all(color: theme.dividerColor) : null,
           boxShadow: isOutlined ? [] : [
             BoxShadow(color: color.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4)),
           ],
@@ -1218,7 +1276,7 @@ class _AddFoodPageState extends State<AddFoodPage>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: isOutlined ? Colors.grey.shade100 : Colors.white.withOpacity(0.2),
+                color: isOutlined ? colors.onSurface.withOpacity(0.08) : Colors.white.withOpacity(0.2),
                 shape: BoxShape.circle,
               ),
               child: Icon(icon, color: isOutlined ? color : Colors.white, size: 28),
@@ -1230,7 +1288,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                 Text(
                   label,
                   style: TextStyle(
-                    color: isOutlined ? Colors.black87 : Colors.white,
+                    color: isOutlined ? colors.onSurface : Colors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 16,
                   ),
@@ -1238,7 +1296,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                 Text(
                   subtitle,
                   style: TextStyle(
-                    color: isOutlined ? Colors.grey : Colors.white.withOpacity(0.8),
+                    color: isOutlined ? colors.onSurface.withOpacity(0.6) : Colors.white.withOpacity(0.8),
                     fontSize: 12,
                   ),
                 ),
@@ -1252,6 +1310,8 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   Widget _buildProcessingOverlay() {
     final isReceipt = _activeProcessingScanMode == StorageScanMode.receipt;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       color: Colors.black.withOpacity(0.6),
       child: Center(
@@ -1259,7 +1319,7 @@ class _AddFoodPageState extends State<AddFoodPage>
           width: 280,
           padding: const EdgeInsets.all(30),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: theme.cardColor,
             borderRadius: BorderRadius.circular(24),
           ),
           child: Column(
@@ -1272,13 +1332,17 @@ class _AddFoodPageState extends State<AddFoodPage>
               const SizedBox(height: 24),
               Text(
                 isReceipt ? 'Scanning Receipts...' : 'Analyzing...',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: colors.onSurface,
+                ),
               ),
               const SizedBox(height: 8),
               Text(
                 'AI is processing your images/voice and identifying items.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey.shade600),
+                style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
               ),
             ],
           ),
@@ -1294,25 +1358,37 @@ class _AddFoodPageState extends State<AddFoodPage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setStateSheet) {
-            final count = selected.where((v) => v).length;
-            return Container(
-              height: MediaQuery.of(ctx).size.height * 0.8,
-              decoration: const BoxDecoration(
-                color: _backgroundColor,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
+        builder: (ctx) {
+          return StatefulBuilder(
+            builder: (ctx, setStateSheet) {
+              final count = selected.where((v) => v).length;
+              final bgColor = Theme.of(ctx).cardColor;
+              final colors = Theme.of(ctx).colorScheme;
+              return Container(
+                height: MediaQuery.of(ctx).size.height * 0.8,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
               child: Column(
                 children: [
                   Padding(
                     padding: const EdgeInsets.all(20),
                     child: Row(
                       children: [
-                        const Text('Scanned Items', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                        Text(
+                          'Scanned Items',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: colors.onSurface,
+                          ),
+                        ),
                         const Spacer(),
-                        IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(ctx, false)),
+                        IconButton(
+                          icon: Icon(Icons.close, color: colors.onSurface),
+                          onPressed: () => Navigator.pop(ctx, false),
+                        ),
                       ],
                     ),
                   ),
@@ -1330,10 +1406,10 @@ class _AddFoodPageState extends State<AddFoodPage>
                           child: Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: Theme.of(ctx).cardColor,
                               borderRadius: BorderRadius.circular(16),
                               border: Border.all(
-                                color: isSel ? _primaryColor : Colors.transparent,
+                                color: isSel ? _primaryColor : Theme.of(ctx).dividerColor,
                                 width: 2
                               ),
                               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 4))],
@@ -1348,7 +1424,7 @@ class _AddFoodPageState extends State<AddFoodPage>
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
+                                    color: colors.onSurface.withOpacity(0.08),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(_locationIcon(it.location), color: _primaryColor, size: 20),
@@ -1358,10 +1434,13 @@ class _AddFoodPageState extends State<AddFoodPage>
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(it.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+                                      Text(
+                                        it.name,
+                                        style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+                                      ),
                                       Text(
                                         '${_formatQty(it.quantity)} ${it.unit} • ${_locationLabel(it.location)}',
-                                        style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                        style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 12),
                                       ),
                                     ],
                                   ),

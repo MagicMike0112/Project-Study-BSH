@@ -41,6 +41,7 @@ class FoodCard extends StatelessWidget {
     return Card(
       elevation: 0,
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         // ✅ 如果传了 leading 就用传入的；否则维持原样（不动其它逻辑）
         leading: leading ??
             CircleAvatar(
@@ -49,10 +50,19 @@ class FoodCard extends StatelessWidget {
             ),
         title: Text(
           item.name,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 15,
+            color: scheme.onSurface,
+          ),
         ),
         subtitle: Text(
           '${item.daysToExpiry} days left • ${_locationLabel(item.location)}',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: scheme.onSurface.withOpacity(0.6),
+          ),
         ),
         trailing: PopupMenuButton(
           itemBuilder: (ctx) => const [
