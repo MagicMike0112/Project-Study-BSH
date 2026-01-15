@@ -374,21 +374,10 @@ No markdown, no extra text.
     };
   });
 
-  const includeImages = body.includeImages !== false;
+  const includeImages = false;
   if (!includeImages) {
     return res.status(200).json({ recipes: cleaned, imageGenVersion: IMAGE_GEN_VERSION });
   }
-
-  const images = await Promise.all(
-    cleaned.map((r) => generateRecipeImage(r.title, r.ingredients))
-  );
-
-  const withImages = cleaned.map((r, idx) => ({
-    ...r,
-    imageUrl: images[idx],
-  }));
-
-  return res.status(200).json({ recipes: withImages, imageGenVersion: IMAGE_GEN_VERSION });
 }
 
 // ========= 分支 C：周报分析与智能分类 (Diet Analysis) =========
