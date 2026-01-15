@@ -1,13 +1,19 @@
 // lib/main.dart
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'repositories/inventory_repository.dart';
+import 'screens/add_food_page.dart';
 import 'screens/auth_root.dart';
+import 'screens/archive_recipe_detail_page.dart';
+import 'services/archive_service.dart';
 import 'services/notification_service.dart';
 import 'utils/theme_controller.dart';
 
@@ -22,6 +28,27 @@ class BshColors {
 }
 
 const double kDefaultRadius = 16.0;
+
+const MethodChannel _widgetChannel = MethodChannel('widget_channel');
+final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+Future<void> _pushInventorySnapshot(InventoryRepository repo) async {
+  final prefs = await SharedPreferences.getInstance();
+  final studentMode = prefs.getBool('student_mode') ?? false;
+  final items = repo.getActiveItems();
+  final payload = {
+    'studentMode': studentMode,
+    'items': items
+        .map((e) => {
+              'name': e.name,
+              'category': e.category,
+              'daysToExpiry': e.daysToExpiry,
+            })
+        .toList(),
+  };
+  await _widgetChannel.invokeMethod('updateInventorySnapshot', jsonEncode(payload));
+  await _widgetChannel.invokeMethod('refreshRecipeWidget');
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -54,6 +81,20 @@ Future<void> main() async {
   final themeController = ThemeController();
   await themeController.load();
 
+  _widgetChannel.setMethodCallHandler((call) async {
+    if (call.method != 'openRoute') return;
+    final route = call.arguments as String?;
+    if (route == null || route.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigatorKey.currentState?.pushNamed(route);
+    });
+  });
+
+  inventoryRepo.addListener(() {
+    _pushInventorySnapshot(inventoryRepo);
+  });
+  _pushInventorySnapshot(inventoryRepo);
+
   runApp(
     MultiProvider(
       providers: [
@@ -67,6 +108,21 @@ Future<void> main() async {
 
 class SmartFoodApp extends StatelessWidget {
   const SmartFoodApp({super.key});
+
+  Route<dynamic>? _onGenerateRoute(RouteSettings settings) {
+    if (settings.name == '/add-food-scan') {
+      return MaterialPageRoute(
+        builder: (context) {
+          final repo = Provider.of<InventoryRepository>(context, listen: false);
+          return AddFoodPage(repo: repo, initialTab: 1);
+        },
+      );
+    }
+    if (settings.name == '/widget-recipe') {
+      return MaterialPageRoute(builder: (_) => const _WidgetRecipeRoute());
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -148,6 +204,8 @@ class SmartFoodApp extends StatelessWidget {
         return MaterialApp(
           title: 'Smart Food Home',
           debugShowCheckedModeBanner: false,
+          navigatorKey: _navigatorKey,
+          onGenerateRoute: _onGenerateRoute,
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: themeController.themeMode,
@@ -157,5 +215,107 @@ class SmartFoodApp extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _WidgetRecipeRoute extends StatefulWidget {
+  const _WidgetRecipeRoute();
+
+  @override
+  State<_WidgetRecipeRoute> createState() => _WidgetRecipeRouteState();
+}
+
+class _WidgetRecipeRouteState extends State<_WidgetRecipeRoute> {
+  ArchivedRecipe? _recipe;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecipe();
+  }
+
+  Future<void> _loadRecipe() async {
+    final pendingJson = await _widgetChannel.invokeMethod<String>('getPendingRecipe');
+    final pendingOpenId = await _widgetChannel.invokeMethod<String>('getPendingOpenRecipeId');
+
+    ArchivedRecipe? pendingRecipe;
+    if (pendingJson != null && pendingJson.trim().isNotEmpty) {
+      try {
+        pendingRecipe = ArchivedRecipe.fromJson(jsonDecode(pendingJson));
+        final exists = await ArchiveService.instance.containsRecipeId(pendingRecipe.recipeId);
+        if (!exists) {
+          await ArchiveService.instance.add(pendingRecipe);
+        }
+        await _widgetChannel.invokeMethod('clearPendingRecipe');
+      } catch (_) {}
+    }
+
+    if (pendingOpenId != null) {
+      await _widgetChannel.invokeMethod('clearPendingOpenRecipeId');
+    }
+
+    ArchivedRecipe? resolved;
+    if (pendingOpenId != null && pendingOpenId.isNotEmpty) {
+      final list = await ArchiveService.instance.getAll();
+      for (final r in list) {
+        if (r.recipeId == pendingOpenId) {
+          resolved = r;
+          break;
+        }
+      }
+    }
+    resolved ??= pendingRecipe;
+
+    if (mounted) {
+      setState(() {
+        _recipe = resolved;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    if (_loading) {
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: Text('Recipe', style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w700)),
+          backgroundColor: theme.scaffoldBackgroundColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: colors.onSurface),
+        ),
+        body: Center(
+          child: Text(
+            'Chef is thinking...',
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
+          ),
+        ),
+      );
+    }
+
+    final recipe = _recipe;
+    if (recipe == null) {
+      return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        appBar: AppBar(
+          title: Text('Recipe', style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w700)),
+          backgroundColor: theme.scaffoldBackgroundColor,
+          elevation: 0,
+          iconTheme: IconThemeData(color: colors.onSurface),
+        ),
+        body: Center(
+          child: Text(
+            'Add items to get recipes',
+            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
+          ),
+        ),
+      );
+    }
+
+    return ArchiveRecipeDetailPage(recipe: recipe);
   }
 }

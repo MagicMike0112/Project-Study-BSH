@@ -1,6 +1,8 @@
 // lib/screens/shopping_list_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:showcaseview/showcaseview.dart';
 import 'package:uuid/uuid.dart';
 
 import '../repositories/inventory_repository.dart';
@@ -8,10 +10,70 @@ import '../widgets/add_by_recipe_sheet.dart';
 import 'fridge_camera_page.dart';
 import 'shopping_archive_page.dart';
 
-class ShoppingListPage extends StatefulWidget {
+class ShoppingListPageWrapper extends StatefulWidget {
   final InventoryRepository repo;
 
-  const ShoppingListPage({super.key, required this.repo});
+  const ShoppingListPageWrapper({super.key, required this.repo});
+
+  @override
+  State<ShoppingListPageWrapper> createState() => _ShoppingListPageWrapperState();
+}
+
+class _ShoppingListPageWrapperState extends State<ShoppingListPageWrapper> {
+  final GlobalKey _addKey = GlobalKey();
+  final GlobalKey _aiKey = GlobalKey();
+  final GlobalKey _fridgeKey = GlobalKey();
+  final GlobalKey _historyKey = GlobalKey();
+  bool _didShow = false;
+
+  Future<void> _maybeShowTutorial(BuildContext context) async {
+    if (_didShow) return;
+    _didShow = true;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final hasShown = prefs.getBool('hasShownIntro_shopping_v1') ?? false;
+    if (!hasShown) {
+      try {
+        ShowCaseWidget.of(context).startShowCase([_addKey, _aiKey, _fridgeKey, _historyKey]);
+        await prefs.setBool('hasShownIntro_shopping_v1', true);
+      } catch (e) {
+        debugPrint('Showcase error: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ShowCaseWidget(
+      builder: (context) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial(context));
+        return ShoppingListPage(
+          repo: widget.repo,
+          addKey: _addKey,
+          aiKey: _aiKey,
+          fridgeKey: _fridgeKey,
+          historyKey: _historyKey,
+        );
+      },
+    );
+  }
+}
+
+class ShoppingListPage extends StatefulWidget {
+  final InventoryRepository repo;
+  final GlobalKey? addKey;
+  final GlobalKey? aiKey;
+  final GlobalKey? fridgeKey;
+  final GlobalKey? historyKey;
+
+  const ShoppingListPage({
+    super.key,
+    required this.repo,
+    this.addKey,
+    this.aiKey,
+    this.fridgeKey,
+    this.historyKey,
+  });
 
   @override
   State<ShoppingListPage> createState() => _ShoppingListPageState();
@@ -19,6 +81,22 @@ class ShoppingListPage extends StatefulWidget {
 
 class _ShoppingListPageState extends State<ShoppingListPage> {
   final TextEditingController _controller = TextEditingController();
+  Widget _wrapShowcase({
+    required GlobalKey? key,
+    required String title,
+    required String description,
+    required Widget child,
+  }) {
+    if (key == null) return child;
+    return Showcase(
+      key: key,
+      title: title,
+      description: description,
+      targetBorderRadius: BorderRadius.circular(16),
+      child: child,
+    );
+  }
+
   
   // 智能建议列表
   final List<String> _suggestions = [
@@ -102,6 +180,58 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
     _controller.clear();
   }
 
+  Future<void> _editShoppingNote(ShoppingItem item) async {
+    final controller = TextEditingController(text: item.note ?? '');
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Item note', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Add a short note...',
+            hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1E2229) : const Color(0xFFF5F7FA),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colors.outline.withOpacity(0.4)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colors.outline.withOpacity(0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colors.primary, width: 1.4),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      await widget.repo.updateShoppingItemNote(item, result);
+    }
+  }
+
   String _guessCategory(String name) {
     final n = name.toLowerCase();
     if (n.contains('peanut butter')) return 'pantry';
@@ -157,30 +287,40 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
         centerTitle: false,
         systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         actions: [
-          IconButton(
-            tooltip: 'Fridge Camera',
-            icon: Icon(Icons.kitchen_rounded, color: colors.onSurface),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const FridgeCameraPage()),
-              );
-            },
+          _wrapShowcase(
+            key: widget.fridgeKey,
+            title: 'Fridge Camera',
+            description: 'Have a sight inside your fridge to know what to buy',
+            child: IconButton(
+              tooltip: 'Fridge Camera',
+              icon: Icon(Icons.kitchen_rounded, color: colors.onSurface),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const FridgeCameraPage()),
+                );
+              },
+            ),
           ),
-          IconButton(
-            tooltip: 'Purchase History',
-            icon: Icon(Icons.history_rounded, color: colors.onSurface),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ShoppingArchivePage(
-                    repo: widget.repo,
-                    onAddBack: (name, category) => _addItem(name),
+          _wrapShowcase(
+            key: widget.historyKey,
+            title: 'Purchase History',
+            description: 'Review items you marked as bought.',
+            child: IconButton(
+              tooltip: 'Purchase History',
+              icon: Icon(Icons.history_rounded, color: colors.onSurface),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ShoppingArchivePage(
+                      repo: widget.repo,
+                      onAddBack: (name, category) => _addItem(name),
+                    ),
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -190,88 +330,96 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
           final allItems = widget.repo.getShoppingList();
           final activeItems = allItems.where((i) => !i.isChecked).toList();
           final checkedItems = allItems.where((i) => i.isChecked).toList();
+          final itemTiles = <Widget>[
+            ...activeItems.asMap().entries.map((entry) => FadeInSlide(
+              key: ValueKey(entry.value.id),
+              index: 1 + (entry.key > 5 ? 5 : entry.key),
+              child: _buildDismissibleItem(entry.value),
+            )),
+            if (activeItems.isNotEmpty && checkedItems.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Row(
+                  children: [
+                    const Expanded(child: Divider()),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        'COMPLETED',
+                        style: TextStyle(
+                          color: colors.onSurface.withOpacity(0.4),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    const Expanded(child: Divider()),
+                  ],
+                ),
+              ),
+            ...checkedItems.asMap().entries.map((entry) => FadeInSlide(
+              key: ValueKey(entry.value.id),
+              index: 1 + activeItems.length + (entry.key > 5 ? 5 : entry.key),
+              child: _buildDismissibleItem(entry.value),
+            )),
+          ];
 
-          return Column(
-            children: [
-              // 顶部建议栏
-              if (_suggestions.isNotEmpty)
-                FadeInSlide(
-                  index: 0,
-                  child: SizedBox(
-                    height: 60,
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _suggestions.length,
-                      itemBuilder: (ctx, i) {
-                        final sug = _suggestions[i];
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 8),
-                          child: BouncingButton(
-                            onTap: () => _addItem(sug),
-                            child: Chip(
-                              elevation: 0,
-                              side: BorderSide(color: primary.withOpacity(0.1)),
-                              backgroundColor: theme.cardColor,
-                              label: Text(
-                                sug,
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: colors.onSurface),
+          return RefreshIndicator(
+            color: primary,
+            onRefresh: widget.repo.refreshAll,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                if (_suggestions.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: FadeInSlide(
+                      index: 0,
+                      child: SizedBox(
+                        height: 60,
+                        child: ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: _suggestions.length,
+                          itemBuilder: (ctx, i) {
+                            final sug = _suggestions[i];
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 8),
+                              child: BouncingButton(
+                                onTap: () => _addItem(sug),
+                                child: Chip(
+                                  elevation: 0,
+                                  side: BorderSide(color: primary.withOpacity(0.1)),
+                                  backgroundColor: theme.cardColor,
+                                  label: Text(
+                                    sug,
+                                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: colors.onSurface),
+                                  ),
+                                  avatar: const Icon(Icons.add_rounded, size: 16, color: primary),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                ),
                               ),
-                              avatar: const Icon(Icons.add_rounded, size: 16, color: primary),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            ),
-                          ),
-                        );
-                      },
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              
-              Expanded(
-                child: allItems.isEmpty
-                    ? FadeInSlide(index: 1, child: _buildEmptyState())
-                    : ListView(
-                        // 🟢 增加底部 Padding (220) 以确保列表内容不被加高的 BottomSheet 遮挡
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 220), 
-                        children: [
-                          ...activeItems.asMap().entries.map((entry) => FadeInSlide(
-                            key: ValueKey(entry.value.id),
-                            index: 1 + (entry.key > 5 ? 5 : entry.key),
-                            child: _buildDismissibleItem(entry.value),
-                          )),
-                          
-                          if (activeItems.isNotEmpty && checkedItems.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 24),
-                              child: Row(
-                                children: [
-                                  const Expanded(child: Divider()),
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                                    child: Text(
-                                      'COMPLETED',
-                                      style: TextStyle(
-                                        color: colors.onSurface.withOpacity(0.4),
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w800,
-                                        letterSpacing: 1.2,
-                                      ),
-                                    ),
-                                  ),
-                                  const Expanded(child: Divider()),
-                                ],
-                              ),
-                            ),
-
-                          ...checkedItems.asMap().entries.map((entry) => FadeInSlide(
-                            key: ValueKey(entry.value.id),
-                            index: 1 + activeItems.length + (entry.key > 5 ? 5 : entry.key),
-                            child: _buildDismissibleItem(entry.value),
-                          )),
-                        ],
-                      ),
-              ),
-            ],
+                if (allItems.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: FadeInSlide(index: 1, child: _buildEmptyState()),
+                  )
+                else
+                  SliverPadding(
+                    // 🟢 增加底部 Padding (220) 以确保列表内容不被加高的 BottomSheet 遮挡
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 220),
+                    sliver: SliverList(
+                      delegate: SliverChildListDelegate(itemTiles),
+                    ),
+                  ),
+              ],
+            ),
           );
         },
       ),
@@ -330,26 +478,31 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                 Row(
                   children: [
                     Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: _addItem,
-                        decoration: InputDecoration(
-                          hintText: 'Add item (e.g. Milk)...',
-                          hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.4)),
-                          filled: true,
-                          fillColor: isDark ? const Color(0xFF1C1F24) : const Color(0xFFF1F5F9),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          suffixIcon: UnconstrainedBox(
-                            child: Padding(
-                              padding: const EdgeInsets.only(right: 8),
-                              child: BouncingButton(
-                                onTap: () => _addItem(_controller.text),
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: const BoxDecoration(color: primary, shape: BoxShape.circle),
-                                  child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 18),
+                      child: _wrapShowcase(
+                        key: widget.addKey,
+                        title: 'Quick Add',
+                        description: 'Type an item and press enter to add it.',
+                        child: TextField(
+                          controller: _controller,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: _addItem,
+                          decoration: InputDecoration(
+                            hintText: 'Add item (e.g. Milk)...',
+                            hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.4)),
+                            filled: true,
+                            fillColor: isDark ? const Color(0xFF1C1F24) : const Color(0xFFF1F5F9),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            suffixIcon: UnconstrainedBox(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: BouncingButton(
+                                  onTap: () => _addItem(_controller.text),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: const BoxDecoration(color: primary, shape: BoxShape.circle),
+                                    child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 18),
+                                  ),
                                 ),
                               ),
                             ),
@@ -358,28 +511,33 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // 🪄 AI 导入入口
-                    BouncingButton(
-                      onTap: _showAiImportSheet,
-                      child: Container(
-                        height: 48,
-                        width: 48,
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(
-                            colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                    // AI import entry
+                    _wrapShowcase(
+                      key: widget.aiKey,
+                      title: 'AI Import',
+                      description: 'Paste a recipe and auto-build a shopping list.',
+                      child: BouncingButton(
+                        onTap: _showAiImportSheet,
+                        child: Container(
+                          height: 48,
+                          width: 48,
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF2575FC).withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              )
+                            ],
                           ),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF2575FC).withOpacity(0.3), 
-                              blurRadius: 8, 
-                              offset: const Offset(0, 4)
-                            )
-                          ],
+                          child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
                         ),
-                        child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
                       ),
                     ),
                   ],
@@ -387,13 +545,14 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
               ],
             ),
           );
-        }
+        },
       ),
     );
   }
 
   Widget _buildDismissibleItem(ShoppingItem item) {
     final ownerLabel = _resolveOwnerLabel(item);
+    final buyerLabel = item.isChecked ? widget.repo.getBuyerNameForItemId(item.id) : null;
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
@@ -415,10 +574,12 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
       child: _ShoppingTile(
         item: item,
         ownerLabel: ownerLabel,
+        buyerLabel: buyerLabel,
         onToggle: () {
           HapticFeedback.selectionClick();
           widget.repo.toggleShoppingItemStatus(item);
         },
+        onLongPress: () => _editShoppingNote(item),
       ),
     );
   }
@@ -460,7 +621,7 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Add items manually or use AI Scan.',
+            'Add items manually or use recipe import.',
             style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 14),
           ),
           const SizedBox(height: 100),
@@ -501,8 +662,16 @@ class _UserAvatarTag extends StatelessWidget {
 class _ShoppingTile extends StatelessWidget {
   final ShoppingItem item;
   final String? ownerLabel;
+  final String? buyerLabel;
   final VoidCallback onToggle;
-  const _ShoppingTile({required this.item, required this.onToggle, this.ownerLabel});
+  final VoidCallback? onLongPress;
+  const _ShoppingTile({
+    required this.item,
+    required this.onToggle,
+    this.ownerLabel,
+    this.buyerLabel,
+    this.onLongPress,
+  });
 
   Color _itemColor(ShoppingItem item) {
     final n = item.name.toLowerCase();
@@ -596,8 +765,13 @@ class _ShoppingTile extends StatelessWidget {
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
+    final badgeLabel = (item.isChecked && buyerLabel != null && buyerLabel!.isNotEmpty)
+        ? buyerLabel
+        : ownerLabel;
+
     return BouncingButton(
       onTap: onToggle,
+      onLongPress: onLongPress,
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 200),
         opacity: isDone ? 0.4 : 1.0,
@@ -642,19 +816,37 @@ class _ShoppingTile extends StatelessWidget {
                       decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
                       child: Icon(_itemIcon(item), size: 18, color: color),
                     ),
-                    if (ownerLabel != null && ownerLabel!.isNotEmpty)
-                      Positioned(right: -5, bottom: -5, child: _UserAvatarTag(name: ownerLabel!, size: 16)),
+                    if (badgeLabel != null && badgeLabel!.isNotEmpty)
+                      Positioned(right: -5, bottom: -5, child: _UserAvatarTag(name: badgeLabel!, size: 16)),
                   ],
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Text(
-                    item.name,
-                    style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600,
-                      color: isDone ? colors.onSurface.withOpacity(0.5) : colors.onSurface,
-                      decoration: isDone ? TextDecoration.lineThrough : null,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600,
+                          color: isDone ? colors.onSurface.withOpacity(0.5) : colors.onSurface,
+                          decoration: isDone ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      if (item.note != null && item.note!.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          item.note!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.onSurface.withOpacity(0.55),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
@@ -669,12 +861,14 @@ class _ShoppingTile extends StatelessWidget {
 class BouncingButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool enabled;
 
   const BouncingButton({
     super.key,
     required this.child,
     required this.onTap,
+    this.onLongPress,
     this.enabled = true,
   });
 
@@ -720,6 +914,7 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
       onTapCancel: () {
         if (widget.enabled) _controller.reverse();
       },
+      onLongPress: widget.enabled ? widget.onLongPress : null,
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, child) => Transform.scale(

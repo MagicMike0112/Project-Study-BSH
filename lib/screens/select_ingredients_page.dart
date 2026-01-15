@@ -120,14 +120,28 @@ class RecipeArchiveStore {
 
   static Future<void> _maybeMigrateLegacy() async {
     final sp = await SharedPreferences.getInstance();
-    final raw = sp.getString(_kRecipeArchiveKey);
-    if (raw == null || raw.trim().isEmpty) return;
+    final raw = sp.get(_kRecipeArchiveKey);
+    if (raw == null) return;
 
     try {
-      final legacy = (jsonDecode(raw) as List<dynamic>)
-          .map((e) => (e as Map).cast<String, dynamic>())
-          .map(RecipeArchiveEntry.fromJson)
-          .toList();
+      final List<RecipeArchiveEntry> legacy;
+      if (raw is String) {
+        if (raw.trim().isEmpty) return;
+        legacy = (jsonDecode(raw) as List<dynamic>)
+            .map((e) => (e as Map).cast<String, dynamic>())
+            .map(RecipeArchiveEntry.fromJson)
+            .toList();
+      } else if (raw is List) {
+        legacy = raw
+            .whereType<String>()
+            .map((e) => jsonDecode(e))
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .map(RecipeArchiveEntry.fromJson)
+            .toList();
+      } else {
+        return;
+      }
       for (final entry in legacy) {
         final r = entry.recipe;
         final archived = ArchivedRecipe(

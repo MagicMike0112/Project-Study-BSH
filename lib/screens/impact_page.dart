@@ -1,6 +1,8 @@
 // lib/screens/impact_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:showcaseview/showcaseview.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:provider/provider.dart';
 import 'dart:math' as math;
@@ -13,15 +15,87 @@ import 'weekly_report_page.dart';
 
 enum ImpactRange { week, month, year }
 
+class ImpactPageWrapper extends StatefulWidget {
+  final InventoryRepository repo;
+
+  const ImpactPageWrapper({super.key, required this.repo});
+
+  @override
+  State<ImpactPageWrapper> createState() => _ImpactPageWrapperState();
+}
+
+class _ImpactPageWrapperState extends State<ImpactPageWrapper> {
+  final GlobalKey _weeklyKey = GlobalKey();
+  final GlobalKey _rangeKey = GlobalKey();
+  final GlobalKey _heroKey = GlobalKey();
+  bool _didShow = false;
+
+  Future<void> _maybeShowTutorial(BuildContext context) async {
+    if (_didShow) return;
+    _didShow = true;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final hasShown = prefs.getBool('hasShownIntro_impact_v1') ?? false;
+    if (!hasShown) {
+      try {
+        ShowCaseWidget.of(context).startShowCase([_weeklyKey, _rangeKey, _heroKey]);
+        await prefs.setBool('hasShownIntro_impact_v1', true);
+      } catch (e) {
+        debugPrint('Showcase error: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ShowCaseWidget(
+      builder: (context) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial(context));
+        return ImpactPage(
+          repo: widget.repo,
+          weeklyKey: _weeklyKey,
+          rangeKey: _rangeKey,
+          heroKey: _heroKey,
+        );
+      },
+    );
+  }
+}
+
 class ImpactPage extends StatefulWidget {
   final InventoryRepository repo;
-  const ImpactPage({super.key, required this.repo});
+  final GlobalKey? weeklyKey;
+  final GlobalKey? rangeKey;
+  final GlobalKey? heroKey;
+  const ImpactPage({
+    super.key,
+    required this.repo,
+    this.weeklyKey,
+    this.rangeKey,
+    this.heroKey,
+  });
 
   @override
   State<ImpactPage> createState() => _ImpactPageState();
 }
 
 class _ImpactPageState extends State<ImpactPage> {
+  Widget _wrapShowcase({
+    required GlobalKey? key,
+    required String title,
+    required String description,
+    required Widget child,
+  }) {
+    if (key == null) return child;
+    return Showcase(
+      key: key,
+      title: title,
+      description: description,
+      targetBorderRadius: BorderRadius.circular(16),
+      child: child,
+    );
+  }
+
   ImpactRange _range = ImpactRange.week;
 
   DateTime _rangeStart() {
@@ -95,6 +169,9 @@ class _ImpactPageState extends State<ImpactPage> {
         final moneyTotal = events.fold<double>(0, (sum, e) => sum + e.moneySaved);
         final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
         final savedCount = events.length;
+        final recentEvents = List<ImpactEvent>.from(events)
+          ..sort((a, b) => b.date.compareTo(a.date));
+        final recent = recentEvents.take(5).toList();
 
         // --- Top Savers ---
         final categoryMap = <String, double>{};
@@ -174,11 +251,16 @@ class _ImpactPageState extends State<ImpactPage> {
                     children: [
                       FadeInSlide(
                         index: 0,
-                        child: _WeeklyReportBanner(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => WeeklyReportPage(repo: widget.repo),
+                        child: _wrapShowcase(
+                          key: widget.weeklyKey,
+                          title: 'Weekly Report',
+                          description: 'AI summary and insights for your week.',
+                          child: _WeeklyReportBanner(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => WeeklyReportPage(repo: widget.repo),
+                              ),
                             ),
                           ),
                         ),
@@ -187,19 +269,29 @@ class _ImpactPageState extends State<ImpactPage> {
 
                       FadeInSlide(
                         index: 1,
-                        child: _SlidingRangeSelector(
-                          currentRange: _range,
-                          onChanged: _changeRange,
+                        child: _wrapShowcase(
+                          key: widget.rangeKey,
+                          title: 'Range Selector',
+                          description: 'Switch between 7 days, 30 days, and 1 year.',
+                          child: _SlidingRangeSelector(
+                            currentRange: _range,
+                            onChanged: _changeRange,
+                          ),
                         ),
                       ),
                       const SizedBox(height: 20),
 
                       FadeInSlide(
                         index: 2,
-                        child: _ImpactHeroCard(
-                          moneySaved: moneyTotal,
-                          savedCount: savedCount,
-                          rangeMode: _range.name, 
+                        child: _wrapShowcase(
+                          key: widget.heroKey,
+                          title: 'Impact Summary',
+                          description: 'Money saved and meals rescued in this range.',
+                          child: _ImpactHeroCard(
+                            moneySaved: moneyTotal,
+                            savedCount: savedCount,
+                            rangeMode: _range.name, 
+                          ),
                         ),
                       ),
                       const SizedBox(height: 16),
@@ -235,9 +327,35 @@ class _ImpactPageState extends State<ImpactPage> {
                       
                       const SizedBox(height: 24),
 
-                      if (topCategories.isNotEmpty) ...[
+                      if (recent.isNotEmpty) ...[
                         FadeInSlide(
                           index: 4,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Recent Actions',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: colors.onSurface.withOpacity(0.75),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              ...recent.map(
+                                (e) => _RecentActionTile(
+                                  event: e,
+                                  actorName: widget.repo.resolveUserNameById(e.userId),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+
+                      if (topCategories.isNotEmpty) ...[
+                        FadeInSlide(
+                          index: 5,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -257,7 +375,7 @@ class _ImpactPageState extends State<ImpactPage> {
                       ],
 
                       FadeInSlide(
-                        index: 5,
+                        index: 6,
                         child: _GuineaPigCard(
                           petQty: petQty,
                           petShare: petShare,
@@ -268,7 +386,7 @@ class _ImpactPageState extends State<ImpactPage> {
 
                       if (hasEnoughData) ...[
                         FadeInSlide(
-                          index: 6,
+                          index: 7,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -290,7 +408,7 @@ class _ImpactPageState extends State<ImpactPage> {
                           ),
                         ),
                       ] else if (events.isEmpty) ...[
-                        FadeInSlide(index: 6, child: _EmptyStateCard()),
+                        FadeInSlide(index: 7, child: _EmptyStateCard()),
                       ],
 
                       const SizedBox(height: 100), 
@@ -307,6 +425,137 @@ class _ImpactPageState extends State<ImpactPage> {
 }
 
 // ===================== UI Components =====================
+
+class _RecentActionTile extends StatelessWidget {
+  final ImpactEvent event;
+  final String? actorName;
+  const _RecentActionTile({required this.event, required this.actorName});
+
+  String _actionLabel(ImpactType type) {
+    switch (type) {
+      case ImpactType.eaten:
+        return 'Cooked';
+      case ImpactType.fedToPet:
+        return 'Fed to pet';
+      case ImpactType.trash:
+        return 'Wasted';
+    }
+  }
+
+  Color _actionColor(ImpactType type) {
+    switch (type) {
+      case ImpactType.eaten:
+        return const Color(0xFF2E7D32);
+      case ImpactType.fedToPet:
+        return const Color(0xFF6A1B9A);
+      case ImpactType.trash:
+        return const Color(0xFFD32F2F);
+    }
+  }
+
+  IconData _actionIcon(ImpactType type) {
+    switch (type) {
+      case ImpactType.eaten:
+        return Icons.restaurant_rounded;
+      case ImpactType.fedToPet:
+        return Icons.pets_rounded;
+      case ImpactType.trash:
+        return Icons.delete_sweep_rounded;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final action = _actionLabel(event.type);
+    final color = _actionColor(event.type);
+    final name = actorName ?? 'Family';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+        leading: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(_actionIcon(event.type), size: 18, color: color),
+            ),
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: _UserAvatarBadge(name: name, size: 16),
+            ),
+          ],
+        ),
+        title: Text(
+          event.itemName ?? 'Item',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+        ),
+        subtitle: Text(
+          action,
+          style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
+        ),
+        trailing: Text(
+          '${event.quantity.toStringAsFixed(1)} ${event.unit}',
+          style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserAvatarBadge extends StatelessWidget {
+  final String name;
+  final double size;
+  const _UserAvatarBadge({required this.name, this.size = 18});
+
+  Color _getNameColor(String name) {
+    if (name.isEmpty) return Colors.grey;
+    final colors = [Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple, Colors.teal, Colors.pink];
+    return colors[name.hashCode.abs() % colors.length].shade400;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getNameColor(name);
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 1.5),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(fontSize: size * 0.5, fontWeight: FontWeight.bold, color: Colors.white),
+      ),
+    );
+  }
+}
 
 class _WeeklyReportBanner extends StatelessWidget {
   final VoidCallback onTap;

@@ -17,26 +17,36 @@ import '../models/shopping_item.dart';
 import '../models/shopping_history_item.dart';
 import '../models/impact_event.dart';
 import '../services/expiry_service.dart';
-
 // ================== Exports ==================
 // 保持对外的兼容性，让引用了 InventoryRepository 的文件无需修改 imports
 export '../models/shopping_item.dart';
 export '../models/shopping_history_item.dart';
 export '../models/impact_event.dart';
 
+enum MigrationAction { join, leave }
+enum MigrationPhase { idle, preparing, migrating, cleaning, completed, failed }
+
 // ================== The Repository ==================
 
-class InventoryRepository extends ChangeNotifier {
+class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   RealtimeChannel? _inventoryChannel;
   RealtimeChannel? _shoppingChannel;
+  RealtimeChannel? _impactChannel;
+  RealtimeChannel? _historyChannel;
   StreamSubscription<AuthState>? _authSubscription;
 
   List<FoodItem> _items = [];
   List<ImpactEvent> _impactEvents = [];
   List<ShoppingHistoryItem> _shoppingHistory = [];
   List<ShoppingItem> _activeShoppingList = [];
+  DateTime? _lastActivityAt;
+  DateTime? _lastSeenActivityAt;
+
+  static const String _kShoppingClearDateKey = 'shopping_clear_date_v1';
+  static const String _kExampleInventorySeedKey = 'seed_example_inventory_v1';
+  Timer? _shoppingMidnightTimer;
   
   List<Map<String, dynamic>> _pendingUploads = [];
 
@@ -44,6 +54,21 @@ class InventoryRepository extends ChangeNotifier {
 
   bool hasShownPetWarning = false;
   int _streakDays = 0;
+
+  // Migration status
+  MigrationPhase _migrationPhase = MigrationPhase.idle;
+  MigrationAction? _migrationAction;
+  String? _migrationMessage;
+  String? _migrationError;
+  int _migrationAttempt = 0;
+  DateTime? _migrationUpdatedAt;
+
+  MigrationPhase get migrationPhase => _migrationPhase;
+  MigrationAction? get migrationAction => _migrationAction;
+  String? get migrationMessage => _migrationMessage;
+  String? get migrationError => _migrationError;
+  int get migrationAttempt => _migrationAttempt;
+  DateTime? get migrationUpdatedAt => _migrationUpdatedAt;
 
   // 家庭模式状态
   bool _isSharedUsage = true;
@@ -68,10 +93,80 @@ class InventoryRepository extends ChangeNotifier {
     _initAuthListener();
   }
 
+  Future<void> _saveMigrationMeta() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('migration_phase_v1', _migrationPhase.name);
+      await prefs.setString('migration_action_v1', _migrationAction?.name ?? '');
+      await prefs.setString('migration_message_v1', _migrationMessage ?? '');
+      await prefs.setString('migration_error_v1', _migrationError ?? '');
+      await prefs.setInt('migration_attempt_v1', _migrationAttempt);
+      await prefs.setString('migration_updated_v1', _migrationUpdatedAt?.toIso8601String() ?? '');
+    } catch (_) {}
+  }
+
+  Future<void> _clearMigrationMeta() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('migration_phase_v1');
+      await prefs.remove('migration_action_v1');
+      await prefs.remove('migration_message_v1');
+      await prefs.remove('migration_error_v1');
+      await prefs.remove('migration_attempt_v1');
+      await prefs.remove('migration_updated_v1');
+    } catch (_) {}
+  }
+
+  void _setMigrationState(
+    MigrationPhase phase, {
+    MigrationAction? action,
+    String? message,
+    String? error,
+    int? attempt,
+  }) {
+    _migrationPhase = phase;
+    if (action != null) _migrationAction = action;
+    if (message != null) _migrationMessage = message;
+    _migrationError = error;
+    if (attempt != null) _migrationAttempt = attempt;
+    _migrationUpdatedAt = DateTime.now();
+    notifyListeners();
+    _saveMigrationMeta();
+  }
+
+  Future<T> _withRetry<T>(
+    Future<T> Function() task, {
+    int maxAttempts = 3,
+    Duration baseDelay = const Duration(milliseconds: 400),
+    String? stepLabel,
+    MigrationAction? action,
+  }) async {
+    Object? lastError;
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        _setMigrationState(
+          MigrationPhase.migrating,
+          action: action,
+          message: stepLabel ?? 'Migrating...',
+          attempt: attempt,
+          error: null,
+        );
+        return await task();
+      } catch (e) {
+        lastError = e;
+        if (attempt < maxAttempts) {
+          await Future.delayed(baseDelay * attempt);
+        }
+      }
+    }
+    throw lastError ?? Exception('Unknown migration error');
+  }
+
   static Future<InventoryRepository> create() async {
     final repo = InventoryRepository._();
     await repo._loadLocalMeta();
     await repo._loadLocalCache();
+    repo._initShoppingAutoClear();
     
     repo._initFamilySession().then((_) {
       repo._fetchAllData();
@@ -86,7 +181,17 @@ class InventoryRepository extends ChangeNotifier {
   void dispose() {
     _authSubscription?.cancel();
     _cleanupRealtime();
+    _shoppingMidnightTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _runDailyShoppingClearIfNeeded();
+      _scheduleShoppingMidnightClear();
+    }
   }
 
   // 切换家庭模式
@@ -125,8 +230,73 @@ class InventoryRepository extends ChangeNotifier {
   void _cleanupRealtime() {
     if (_inventoryChannel != null) _supabase.removeChannel(_inventoryChannel!);
     if (_shoppingChannel != null) _supabase.removeChannel(_shoppingChannel!);
+    if (_impactChannel != null) _supabase.removeChannel(_impactChannel!);
+    if (_historyChannel != null) _supabase.removeChannel(_historyChannel!);
     _inventoryChannel = null;
     _shoppingChannel = null;
+    _impactChannel = null;
+    _historyChannel = null;
+  }
+
+  void _initShoppingAutoClear() {
+    WidgetsBinding.instance.addObserver(this);
+    _runDailyShoppingClearIfNeeded();
+    _scheduleShoppingMidnightClear();
+  }
+
+  void _scheduleShoppingMidnightClear() {
+    _shoppingMidnightTimer?.cancel();
+    final now = DateTime.now();
+    final nextMidnight = DateTime(now.year, now.month, now.day + 1);
+    final delay = nextMidnight.difference(now);
+    _shoppingMidnightTimer = Timer(delay, () async {
+      await _runDailyShoppingClearIfNeeded();
+      _scheduleShoppingMidnightClear();
+    });
+  }
+
+  String _dateKey(DateTime d) {
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$mm-$dd';
+  }
+
+  Future<void> _runDailyShoppingClearIfNeeded() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final todayKey = _dateKey(DateTime.now());
+      final lastKey = prefs.getString(_kShoppingClearDateKey);
+      if (lastKey == todayKey) return;
+
+      await _clearCheckedShoppingItems();
+      await prefs.setString(_kShoppingClearDateKey, todayKey);
+    } catch (e) {
+      debugPrint('Auto clear shopping error: $e');
+    }
+  }
+
+  Future<void> _clearCheckedShoppingItems() async {
+    final checkedItems = _activeShoppingList.where((i) => i.isChecked).toList();
+    if (checkedItems.isEmpty) return;
+
+    final checkedIds = checkedItems.map((i) => i.id).toSet();
+    _activeShoppingList.removeWhere((i) => checkedIds.contains(i.id));
+    _pendingUploads.removeWhere((e) {
+      final table = e['meta_table'] ?? 'inventory_items';
+      final id = e['id']?.toString();
+      return table == 'shopping_items' && id != null && checkedIds.contains(id);
+    });
+    notifyListeners();
+    await _saveLocalCache();
+
+    if (!_isLoggedIn) return;
+    try {
+      await _ensureFamily();
+      if (_currentFamilyId == null) return;
+      await _supabase.from('shopping_items').delete().inFilter('id', checkedIds.toList());
+    } catch (e) {
+      debugPrint('Auto clear shopping server delete error: $e');
+    }
   }
 
   void _initAuthListener() {
@@ -274,6 +444,7 @@ class InventoryRepository extends ChangeNotifier {
           .toList();
       
       _items = [...pendingInventory, ...serverItems];
+      await _maybeSeedExampleInventoryItem(setFlag: true);
 
       // Merge Shopping List
       final serverShopping = (results[1] as List).map((e) {
@@ -294,6 +465,7 @@ class InventoryRepository extends ChangeNotifier {
       _shoppingHistory = (results[2] as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
       _impactEvents = (results[3] as List).map((e) => ImpactEvent.fromJson(e)).toList();
 
+      _updateLatestActivityFromData();
       _calculateStreakFromLocalEvents();
       await _saveLocalCache();
       notifyListeners();
@@ -333,6 +505,24 @@ class InventoryRepository extends ChangeNotifier {
           filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
           callback: (payload) => _handleShoppingRealtime(payload),
         ).subscribe();
+
+    _historyChannel = _supabase.channel('public:shopping_history:$_currentFamilyId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'shopping_history',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
+          callback: (payload) => _handleShoppingHistoryRealtime(payload),
+        ).subscribe();
+
+    _impactChannel = _supabase.channel('public:impact:$_currentFamilyId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'impact_events',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
+          callback: (payload) => _handleImpactRealtime(payload),
+        ).subscribe();
   }
 
   void _handleInventoryRealtime(PostgresChangePayload payload) {
@@ -350,6 +540,46 @@ class InventoryRepository extends ChangeNotifier {
     } else if (payload.eventType == PostgresChangeEvent.delete) {
       _items.removeWhere((i) => i.id == oldRec['id']);
     }
+    _saveLocalCache();
+    notifyListeners();
+  }
+
+  void _handleImpactRealtime(PostgresChangePayload payload) {
+    if (_currentFamilyId == null) return;
+    final newRec = payload.newRecord;
+    final oldRec = payload.oldRecord;
+
+    if (payload.eventType == PostgresChangeEvent.insert) {
+      if (!_impactEvents.any((e) => e.id == newRec['id'])) {
+        _impactEvents.insert(0, ImpactEvent.fromJson(newRec));
+      }
+    } else if (payload.eventType == PostgresChangeEvent.update) {
+      final idx = _impactEvents.indexWhere((e) => e.id == newRec['id']);
+      if (idx != -1) _impactEvents[idx] = ImpactEvent.fromJson(newRec);
+    } else if (payload.eventType == PostgresChangeEvent.delete) {
+      _impactEvents.removeWhere((e) => e.id == oldRec['id']);
+    }
+    _updateLatestActivityFromData();
+    _saveLocalCache();
+    notifyListeners();
+  }
+
+  void _handleShoppingHistoryRealtime(PostgresChangePayload payload) {
+    if (_currentFamilyId == null) return;
+    final newRec = payload.newRecord;
+    final oldRec = payload.oldRecord;
+
+    if (payload.eventType == PostgresChangeEvent.insert) {
+      if (!_shoppingHistory.any((e) => e.id == newRec['id'])) {
+        _shoppingHistory.insert(0, ShoppingHistoryItem.fromJson(newRec));
+      }
+    } else if (payload.eventType == PostgresChangeEvent.update) {
+      final idx = _shoppingHistory.indexWhere((e) => e.id == newRec['id']);
+      if (idx != -1) _shoppingHistory[idx] = ShoppingHistoryItem.fromJson(newRec);
+    } else if (payload.eventType == PostgresChangeEvent.delete) {
+      _shoppingHistory.removeWhere((e) => e.id == oldRec['id']);
+    }
+    _updateLatestActivityFromData();
     _saveLocalCache();
     notifyListeners();
   }
@@ -455,6 +685,18 @@ class InventoryRepository extends ChangeNotifier {
 
   List<FoodItem> getActiveItems() => _items.where((i) => i.status == FoodStatus.good).toList();
   List<FoodItem> getExpiringItems(int days) => getActiveItems().where((i) => i.daysToExpiry <= days).toList();
+
+  Future<void> removeExampleInventoryItems() async {
+    final before = _items.length;
+    _items.removeWhere((i) => i.source == 'example');
+    if (_items.length == before) return;
+    notifyListeners();
+    await _saveLocalCache();
+  }
+
+  Future<void> refreshAll() async {
+    await _fetchAllData();
+  }
 
   Future<void> addItem(FoodItem item) async {
     final effectiveOwner = currentUserName;
@@ -647,9 +889,11 @@ class InventoryRepository extends ChangeNotifier {
         co2Saved: co2,
         itemName: item.name,
         itemCategory: item.category ?? 'general',
+        userId: _currentUserId,
       );
 
       _impactEvents.insert(0, event);
+      _updateLatestActivityFromData();
       _updateStreakOnConsumed();
       _saveMeta();
       notifyListeners();
@@ -676,6 +920,46 @@ class InventoryRepository extends ChangeNotifier {
   // ================== Shopping List ==================
 
   List<ShoppingItem> getShoppingList() => List.unmodifiable(_activeShoppingList);
+
+  bool get hasUnreadActivity {
+    if (_lastActivityAt == null) return false;
+    if (_lastSeenActivityAt == null) return true;
+    return _lastActivityAt!.isAfter(_lastSeenActivityAt!);
+  }
+
+  Future<void> markActivitySeen() async {
+    _lastSeenActivityAt = _lastActivityAt ?? DateTime.now();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('last_seen_activity_v1', _lastSeenActivityAt!.toIso8601String());
+    notifyListeners();
+  }
+
+  String? resolveUserNameById(String? userId) {
+    if (userId == null || userId.isEmpty) return null;
+    if (_currentUserId != null && userId == _currentUserId) return currentUserName;
+    return _familyMemberCache[userId] ?? 'Family';
+  }
+
+  String? getBuyerNameForItemId(String itemId) {
+    final match = _shoppingHistory.firstWhere(
+      (e) => e.shoppingItemId == itemId,
+      orElse: () => ShoppingHistoryItem(id: '', name: '', category: '', date: DateTime.now()),
+    );
+    if (match.id.isEmpty) return null;
+    return resolveUserNameById(match.userId);
+  }
+
+  void _updateLatestActivityFromData() {
+    DateTime? latest;
+    if (_shoppingHistory.isNotEmpty) {
+      latest = _shoppingHistory.map((e) => e.date).reduce((a, b) => a.isAfter(b) ? a : b);
+    }
+    if (_impactEvents.isNotEmpty) {
+      final impactLatest = _impactEvents.map((e) => e.date).reduce((a, b) => a.isAfter(b) ? a : b);
+      if (latest == null || impactLatest.isAfter(latest)) latest = impactLatest;
+    }
+    _lastActivityAt = latest;
+  }
 
   Future<void> saveShoppingItem(ShoppingItem item) async {
     final idx = _activeShoppingList.indexWhere((i) => i.id == item.id);
@@ -706,6 +990,24 @@ class InventoryRepository extends ChangeNotifier {
     } else {
       await removeRecentHistoryItem(item.name);
     }
+  }
+
+  Future<void> updateItemNote(FoodItem item, String? note) async {
+    final updated = item.copyWith(note: (note != null && note.trim().isEmpty) ? null : note);
+    await updateItem(updated);
+  }
+
+  Future<void> updateShoppingItemNote(ShoppingItem item, String? note) async {
+    final updated = ShoppingItem(
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      isChecked: item.isChecked,
+      ownerName: item.ownerName,
+      userId: item.userId,
+      note: (note != null && note.trim().isEmpty) ? null : note,
+    );
+    await saveShoppingItem(updated);
   }
 
   Future<void> deleteShoppingItem(ShoppingItem item) async {
@@ -761,8 +1063,16 @@ class InventoryRepository extends ChangeNotifier {
   Future<void> archiveShoppingItems(List<ShoppingItem> items) async {
     final now = DateTime.now();
     for (var item in items) {
-      final historyItem = ShoppingHistoryItem(id: const Uuid().v4(), name: item.name, category: item.category, date: now);
+      final historyItem = ShoppingHistoryItem(
+        id: const Uuid().v4(),
+        name: item.name,
+        category: item.category,
+        date: now,
+        userId: _currentUserId,
+        shoppingItemId: item.id,
+      );
       _shoppingHistory.insert(0, historyItem);
+      _updateLatestActivityFromData();
       
       _ensureFamily().then((_) async {
         if (_currentFamilyId != null) {
@@ -859,14 +1169,48 @@ class InventoryRepository extends ChangeNotifier {
         _impactEvents = (jsonDecode(s4) as List).map((e) => ImpactEvent.fromJson(e)).toList();
         _calculateStreakFromLocalEvents();
       }
+      _updateLatestActivityFromData();
       
       final sPending = prefs.getString('pending_uploads');
       if (sPending != null) {
         _pendingUploads = List<Map<String, dynamic>>.from(jsonDecode(sPending));
       }
 
+      final didSeedExample = await _maybeSeedExampleInventoryItem(setFlag: false);
+      if (didSeedExample) {
+        await _saveLocalCache();
+      }
       notifyListeners();
     } catch (_) {}
+  }
+
+  Future<bool> _maybeSeedExampleInventoryItem({required bool setFlag}) async {
+    if (_items.isNotEmpty) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final alreadySeeded = prefs.getBool(_kExampleInventorySeedKey) ?? false;
+    if (alreadySeeded) return false;
+
+    final now = DateTime.now();
+    _items.insert(
+      0,
+      FoodItem(
+        id: const Uuid().v4(),
+        name: 'Apple',
+        location: StorageLocation.fridge,
+        quantity: 3,
+        unit: 'pcs',
+        purchasedDate: now,
+        predictedExpiry: now.add(const Duration(days: 5)),
+        category: 'produce',
+        source: 'example',
+        ownerName: 'Me',
+      ),
+    );
+
+    if (setFlag) {
+      await prefs.setBool(_kExampleInventorySeedKey, true);
+    }
+    return true;
   }
 
   Future<void> _loadLocalMeta() async {
@@ -874,6 +1218,31 @@ class InventoryRepository extends ChangeNotifier {
     hasShownPetWarning = prefs.getBool('petWarningShown') ?? false;
     _streakDays = prefs.getInt('streakDays') ?? 0;
     _isSharedUsage = prefs.getBool('is_shared_usage_v1') ?? true;
+    final lastSeen = prefs.getString('last_seen_activity_v1');
+    if (lastSeen != null) {
+      _lastSeenActivityAt = DateTime.tryParse(lastSeen);
+    }
+    final phase = prefs.getString('migration_phase_v1');
+    if (phase != null && phase.isNotEmpty) {
+      _migrationPhase = MigrationPhase.values.firstWhere(
+        (e) => e.name == phase,
+        orElse: () => MigrationPhase.idle,
+      );
+    }
+    final action = prefs.getString('migration_action_v1');
+    if (action != null && action.isNotEmpty) {
+      _migrationAction = MigrationAction.values.firstWhere(
+        (e) => e.name == action,
+        orElse: () => MigrationAction.join,
+      );
+    }
+    _migrationMessage = prefs.getString('migration_message_v1');
+    _migrationError = prefs.getString('migration_error_v1');
+    _migrationAttempt = prefs.getInt('migration_attempt_v1') ?? 0;
+    final updated = prefs.getString('migration_updated_v1');
+    if (updated != null && updated.isNotEmpty) {
+      _migrationUpdatedAt = DateTime.tryParse(updated);
+    }
   }
 
   Future<void> _saveMeta() async {
@@ -989,50 +1358,444 @@ class InventoryRepository extends ChangeNotifier {
     try {
       final invite = await _supabase.from('family_invites').select().eq('code', code).gt('expires_at', DateTime.now().toIso8601String()).maybeSingle();
       if (invite == null) return false;
+      if (_currentUserId == null) return false;
 
-      await _supabase.from('family_members').insert({
-        'family_id': invite['family_id'],
-        'user_id': _currentUserId, 
-        'role': 'member'
-      });
+      final newFamilyId = invite['family_id']?.toString();
+      if (newFamilyId == null || newFamilyId.isEmpty) return false;
+      final oldFamilyId = _currentFamilyId;
+      final userId = _currentUserId!;
+      final shouldMigrate = oldFamilyId != null && oldFamilyId != newFamilyId;
+
+      List<Map<String, dynamic>> myInventory = [];
+      List<Map<String, dynamic>> myShopping = [];
+      List<Map<String, dynamic>> myShoppingHistory = [];
+      List<Map<String, dynamic>> myImpact = [];
+
+      if (shouldMigrate) {
+        _setMigrationState(
+          MigrationPhase.preparing,
+          action: MigrationAction.join,
+          message: 'Preparing your data...',
+        );
+        try {
+          final result = await _withRetry<Map<String, List<Map<String, dynamic>>>>(
+            () async {
+              final inventory = List<Map<String, dynamic>>.from(
+                await _supabase
+                    .from('inventory_items')
+                    .select()
+                    .eq('family_id', oldFamilyId)
+                    .eq('user_id', userId),
+              );
+              final shopping = List<Map<String, dynamic>>.from(
+                await _supabase
+                    .from('shopping_items')
+                    .select()
+                    .eq('family_id', oldFamilyId)
+                    .eq('user_id', userId),
+              );
+              final history = List<Map<String, dynamic>>.from(
+                await _supabase
+                    .from('shopping_history')
+                    .select()
+                    .eq('family_id', oldFamilyId)
+                    .eq('user_id', userId),
+              );
+              final impact = List<Map<String, dynamic>>.from(
+                await _supabase
+                    .from('impact_events')
+                    .select()
+                    .eq('family_id', oldFamilyId)
+                    .eq('user_id', userId),
+              );
+              return {
+                'inventory': inventory,
+                'shopping': shopping,
+                'history': history,
+                'impact': impact,
+              };
+            },
+            stepLabel: 'Preparing your data...',
+            action: MigrationAction.join,
+          );
+          myInventory = result['inventory'] ?? [];
+          myShopping = result['shopping'] ?? [];
+          myShoppingHistory = result['history'] ?? [];
+          myImpact = result['impact'] ?? [];
+        } catch (e) {
+          _setMigrationState(
+            MigrationPhase.failed,
+            action: MigrationAction.join,
+            message: 'Migration failed while preparing data.',
+            error: e.toString(),
+          );
+          return false;
+        }
+      }
+
+      try {
+        await _withRetry(
+          () => _supabase.from('family_members').upsert({
+            'family_id': newFamilyId,
+            'user_id': _currentUserId,
+            'role': 'member'
+          }, onConflict: 'family_id,user_id'),
+          stepLabel: 'Joining new family...',
+          action: MigrationAction.join,
+        );
+      } catch (e) {
+        _setMigrationState(
+          MigrationPhase.failed,
+          action: MigrationAction.join,
+          message: 'Failed to join new family.',
+          error: e.toString(),
+        );
+        return false;
+      }
+
+      if (shouldMigrate) {
+        _currentFamilyId = newFamilyId;
+        try {
+          if (myInventory.isNotEmpty) {
+            final payloads = myInventory.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = newFamilyId;
+              payload['user_id'] = userId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('inventory_items').upsert(payloads),
+              stepLabel: 'Migrating inventory...',
+              action: MigrationAction.join,
+            );
+          }
+          if (myShopping.isNotEmpty) {
+            final payloads = myShopping.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = newFamilyId;
+              payload['user_id'] = userId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('shopping_items').upsert(payloads),
+              stepLabel: 'Migrating shopping list...',
+              action: MigrationAction.join,
+            );
+          }
+          if (myShoppingHistory.isNotEmpty) {
+            final payloads = myShoppingHistory.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = newFamilyId;
+              payload['user_id'] = userId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('shopping_history').upsert(payloads),
+              stepLabel: 'Migrating shopping history...',
+              action: MigrationAction.join,
+            );
+          }
+          if (myImpact.isNotEmpty) {
+            final payloads = myImpact.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = newFamilyId;
+              payload['user_id'] = userId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('impact_events').upsert(payloads),
+              stepLabel: 'Migrating impact data...',
+              action: MigrationAction.join,
+            );
+          }
+
+        await _withRetry(
+          () async {
+            await _supabase
+                .from('inventory_items')
+                .delete()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId);
+            await _supabase
+                .from('shopping_items')
+                .delete()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId);
+            await _supabase
+                .from('shopping_history')
+                .delete()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId);
+          },
+          stepLabel: 'Cleaning up old data...',
+          action: MigrationAction.join,
+        );
+          await _withRetry(
+            () => _supabase.from('family_members').delete().eq('family_id', oldFamilyId).eq('user_id', userId),
+            stepLabel: 'Finalizing...',
+            action: MigrationAction.join,
+          );
+        } catch (e) {
+          _setMigrationState(
+            MigrationPhase.failed,
+            action: MigrationAction.join,
+            message: 'Migration failed while transferring data.',
+            error: e.toString(),
+          );
+          return false;
+        }
+      }
       
       final tempUid = _currentUserId;
       _resetState(); 
       _currentUserId = tempUid;
       _currentFamilyId = null;
-      
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cache_inventory');
+      await prefs.remove('cache_shopping');
+      await prefs.remove('cache_history');
+      await prefs.remove('cache_impact');
+      await prefs.remove('pending_uploads');
+
       await _initFamilySession();
       await _fetchAllData();
-      
+      if (shouldMigrate) {
+        _setMigrationState(
+          MigrationPhase.completed,
+          action: MigrationAction.join,
+          message: 'Migration completed.',
+        );
+      } else {
+        _setMigrationState(
+          MigrationPhase.idle,
+          action: MigrationAction.join,
+          message: '',
+          error: null,
+          attempt: 0,
+        );
+        await _clearMigrationMeta();
+      }
       return true;
     } catch (e) {
-      debugPrint('Join failed: $e');
+      _setMigrationState(
+        MigrationPhase.failed,
+        action: MigrationAction.join,
+        message: 'Migration failed.',
+        error: e.toString(),
+      );
       return false;
     }
   }
 
   Future<bool> leaveFamily() async {
     if (_currentUserId == null || _currentFamilyId == null) return false;
+    final oldFamilyId = _currentFamilyId!;
+    final userId = _currentUserId!;
+    List<Map<String, dynamic>> myInventory = [];
+    List<Map<String, dynamic>> myShopping = [];
+    List<Map<String, dynamic>> myShoppingHistory = [];
+    List<Map<String, dynamic>> myImpact = [];
     try {
-      await _supabase.from('family_members').delete().eq('family_id', _currentFamilyId!).eq('user_id', _currentUserId!);
-      
+      _setMigrationState(
+        MigrationPhase.preparing,
+        action: MigrationAction.leave,
+        message: 'Preparing your data...',
+      );
+      final result = await _withRetry<Map<String, List<Map<String, dynamic>>>>(
+        () async {
+          final inventory = List<Map<String, dynamic>>.from(
+            await _supabase
+                .from('inventory_items')
+                .select()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId),
+          );
+          final shopping = List<Map<String, dynamic>>.from(
+            await _supabase
+                .from('shopping_items')
+                .select()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId),
+          );
+          final history = List<Map<String, dynamic>>.from(
+            await _supabase
+                .from('shopping_history')
+                .select()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId),
+          );
+          final impact = List<Map<String, dynamic>>.from(
+            await _supabase
+                .from('impact_events')
+                .select()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId),
+          );
+          return {
+            'inventory': inventory,
+            'shopping': shopping,
+            'history': history,
+            'impact': impact,
+          };
+        },
+        stepLabel: 'Preparing your data...',
+        action: MigrationAction.leave,
+      );
+      myInventory = result['inventory'] ?? [];
+      myShopping = result['shopping'] ?? [];
+      myShoppingHistory = result['history'] ?? [];
+      myImpact = result['impact'] ?? [];
+    } catch (e) {
+      _setMigrationState(
+        MigrationPhase.failed,
+        action: MigrationAction.leave,
+        message: 'Migration failed while preparing data.',
+        error: e.toString(),
+      );
+      return false;
+    }
+
+    try {
       final tempUid = _currentUserId;
       _resetState();
-      
+
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('cache_inventory');
       await prefs.remove('cache_shopping');
       await prefs.remove('cache_history');
       await prefs.remove('cache_impact');
-      await prefs.remove('pending_uploads'); 
-      
+      await prefs.remove('pending_uploads');
+
       _currentUserId = tempUid;
       await _createNewDefaultFamily(_currentUserId!);
-      
+
+      if (_currentFamilyId != null) {
+        try {
+          if (myInventory.isNotEmpty) {
+            final payloads = myInventory.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = _currentFamilyId;
+              payload['user_id'] = _currentUserId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('inventory_items').upsert(payloads),
+              stepLabel: 'Migrating inventory...',
+              action: MigrationAction.leave,
+            );
+          }
+          if (myShopping.isNotEmpty) {
+            final payloads = myShopping.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = _currentFamilyId;
+              payload['user_id'] = _currentUserId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('shopping_items').upsert(payloads),
+              stepLabel: 'Migrating shopping list...',
+              action: MigrationAction.leave,
+            );
+          }
+          if (myShoppingHistory.isNotEmpty) {
+            final payloads = myShoppingHistory.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = _currentFamilyId;
+              payload['user_id'] = _currentUserId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('shopping_history').upsert(payloads),
+              stepLabel: 'Migrating shopping history...',
+              action: MigrationAction.leave,
+            );
+          }
+          if (myImpact.isNotEmpty) {
+            final payloads = myImpact.map((item) {
+              final payload = Map<String, dynamic>.from(item);
+              payload['family_id'] = _currentFamilyId;
+              payload['user_id'] = _currentUserId;
+              return _cleanJsonForDb(payload);
+            }).toList();
+            await _withRetry(
+              () => _supabase.from('impact_events').upsert(payloads),
+              stepLabel: 'Migrating impact data...',
+              action: MigrationAction.leave,
+            );
+          }
+        } catch (e) {
+          _setMigrationState(
+            MigrationPhase.failed,
+            action: MigrationAction.leave,
+            message: 'Migration failed while transferring data.',
+            error: e.toString(),
+          );
+          return false;
+        }
+      }
+
+      try {
+        await _withRetry(
+          () async {
+            await _supabase
+                .from('inventory_items')
+                .delete()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId);
+            await _supabase
+                .from('shopping_items')
+                .delete()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId);
+            await _supabase
+                .from('shopping_history')
+                .delete()
+                .eq('family_id', oldFamilyId)
+                .eq('user_id', userId);
+          },
+          stepLabel: 'Cleaning up old data...',
+          action: MigrationAction.leave,
+        );
+      } catch (e) {
+        _setMigrationState(
+          MigrationPhase.failed,
+          action: MigrationAction.leave,
+          message: 'Migration failed while cleaning up old data.',
+          error: e.toString(),
+        );
+        return false;
+      }
+
+      try {
+        await _withRetry(
+          () => _supabase.from('family_members').delete().eq('family_id', oldFamilyId).eq('user_id', userId),
+          stepLabel: 'Finalizing...',
+          action: MigrationAction.leave,
+        );
+      } catch (e) {
+        _setMigrationState(
+          MigrationPhase.failed,
+          action: MigrationAction.leave,
+          message: 'Migration failed while finalizing.',
+          error: e.toString(),
+        );
+        return false;
+      }
       await _fetchAllData();
+      _setMigrationState(
+        MigrationPhase.completed,
+        action: MigrationAction.leave,
+        message: 'Migration completed.',
+      );
       return true;
     } catch (e) {
-      debugPrint('Leave failed: $e');
+      _setMigrationState(
+        MigrationPhase.failed,
+        action: MigrationAction.leave,
+        message: 'Migration failed.',
+        error: e.toString(),
+      );
       return false;
     }
   }

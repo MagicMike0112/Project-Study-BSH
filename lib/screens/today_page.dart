@@ -2,24 +2,98 @@
 import 'dart:ui'; // Required for ImageFilter if used elsewhere, kept for compatibility
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:showcaseview/showcaseview.dart';
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
+import '../widgets/inventory_components.dart';
 import '../widgets/food_card.dart';
 import 'select_ingredients_page.dart';
 
-class TodayPage extends StatelessWidget {
+class TodayPageWrapper extends StatefulWidget {
   final InventoryRepository repo;
   final VoidCallback onRefresh;
 
-  const TodayPage({
+  const TodayPageWrapper({
     super.key,
     required this.repo,
     required this.onRefresh,
   });
 
+  @override
+  State<TodayPageWrapper> createState() => _TodayPageWrapperState();
+}
+
+class _TodayPageWrapperState extends State<TodayPageWrapper> {
+  final GlobalKey _aiKey = GlobalKey();
+  final GlobalKey _expiringKey = GlobalKey();
+  bool _didShow = false;
+
+  Future<void> _maybeShowTutorial(BuildContext context) async {
+    if (_didShow) return;
+    _didShow = true;
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    final hasShown = prefs.getBool('hasShownIntro_today_v1') ?? false;
+    if (!hasShown) {
+      try {
+        ShowCaseWidget.of(context).startShowCase([_aiKey, _expiringKey]);
+        await prefs.setBool('hasShownIntro_today_v1', true);
+      } catch (e) {
+        debugPrint('Showcase error: $e');
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ShowCaseWidget(
+      builder: (context) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _maybeShowTutorial(context));
+        return TodayPage(
+          repo: widget.repo,
+          onRefresh: widget.onRefresh,
+          aiKey: _aiKey,
+          expiringKey: _expiringKey,
+        );
+      },
+    );
+  }
+}
+
+class TodayPage extends StatelessWidget {
+  final InventoryRepository repo;
+  final VoidCallback onRefresh;
+  final GlobalKey? aiKey;
+  final GlobalKey? expiringKey;
+
+  const TodayPage({
+    super.key,
+    required this.repo,
+    required this.onRefresh,
+    this.aiKey,
+    this.expiringKey,
+  });
+
   // BSH Palette
   static const Color _primaryBlue = Color(0xFF0E7AA8);
   static const Color _surfaceColor = Color(0xFFF5F7FA); // 冷灰背景，更干净
+
+  Widget _wrapShowcase({
+    required GlobalKey? key,
+    required String title,
+    required String description,
+    required Widget child,
+  }) {
+    if (key == null) return child;
+    return Showcase(
+      key: key,
+      title: title,
+      description: description,
+      targetBorderRadius: BorderRadius.circular(16),
+      child: child,
+    );
+  }
 
   void _showBottomSnackBar(BuildContext context, String message, {VoidCallback? onUndo}) {
     if (!context.mounted) return;
@@ -97,7 +171,7 @@ class TodayPage extends StatelessWidget {
           backgroundColor: bgColor,
           appBar: AppBar(
             title: Text(
-              'Smart Home',
+              'Today',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 22, color: colors.onSurface),
             ),
             centerTitle: false,
@@ -112,9 +186,14 @@ class TodayPage extends StatelessWidget {
               // 1. AI Chef Button
               FadeInSlide(
                 index: 0,
-                child: BouncingButton(
-                  onTap: () => _showAiRecipeFlow(context, expiring),
-                  child: _buildAiButton(context), 
+                child: _wrapShowcase(
+                  key: aiKey,
+                  title: 'AI Chef',
+                  description: 'Generate recipes with your expiring items.',
+                  child: BouncingButton(
+                    onTap: () => _showAiRecipeFlow(context, expiring),
+                    child: _buildAiButton(context), 
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
@@ -132,7 +211,12 @@ class TodayPage extends StatelessWidget {
               // 3. Expiring Header
               FadeInSlide(
                 index: 2,
-                child: _buildSectionHeader(context, expiring.length),
+                child: _wrapShowcase(
+                  key: expiringKey,
+                  title: 'Expiring Soon',
+                  description: 'Tap items here to manage before they go bad.',
+                  child: _buildSectionHeader(context, expiring.length),
+                ),
               ),
               const SizedBox(height: 12),
 
@@ -150,7 +234,10 @@ class TodayPage extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 8),
                       child: FoodCard(
                         item: entry.value,
-                        leading: _buildInventoryStyleLeading(entry.value),
+                        leading: _buildInventoryStyleLeading(
+                          entry.value,
+                          ownerLabel: _resolveOwnerLabel(entry.value),
+                        ),
                         onAction: (action) async {
                           HapticFeedback.mediumImpact();
                           final item = entry.value;
@@ -225,17 +312,44 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  Widget _buildInventoryStyleLeading(FoodItem item) {
+  Widget _buildInventoryStyleLeading(FoodItem item, {String? ownerLabel}) {
     final leading = _leadingIcon(item);
     return Container(
-      width: 48,
-      height: 48,
-      decoration: BoxDecoration(
-        color: leading.color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(14),
+      width: 52,
+      height: 52,
+      alignment: Alignment.center,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: leading.color.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(leading.icon, color: leading.color, size: 22),
+          ),
+          if (ownerLabel != null && ownerLabel.isNotEmpty)
+            Positioned(
+              right: -4,
+              bottom: -4,
+              child: UserAvatarTag(
+                name: ownerLabel,
+                size: 16,
+                currentUserName: repo.currentUserName,
+              ),
+            ),
+        ],
       ),
-      child: Icon(leading.icon, color: leading.color, size: 22),
     );
+  }
+
+  String? _resolveOwnerLabel(FoodItem item) {
+    if (!repo.isSharedUsage) return null;
+    final name = item.ownerName?.trim();
+    if (name == null || name.isEmpty) return null;
+    return name == 'Me' ? repo.currentUserName : name;
   }
 
   _Leading _leadingIcon(FoodItem item) {

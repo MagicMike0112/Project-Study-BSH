@@ -7,6 +7,7 @@ class ShoppingItem {
   bool isChecked;
   final String? ownerName;
   final String? userId;
+  final String? note;
 
   ShoppingItem({
     required this.id,
@@ -15,6 +16,7 @@ class ShoppingItem {
     this.isChecked = false,
     this.ownerName,
     this.userId,
+    this.note,
   });
 
   Map<String, dynamic> toDbJson(String familyId, String currentUserId) {
@@ -26,6 +28,7 @@ class ShoppingItem {
       'category': category,
       'is_checked': isChecked,
       'updated_at': DateTime.now().toIso8601String(),
+      'note': note,
     };
   }
 
@@ -53,6 +56,7 @@ class ShoppingItem {
       isChecked: json['is_checked'] ?? false,
       ownerName: extractName(json),
       userId: json['user_id']?.toString(),
+      note: json['note'],
     );
   }
 }

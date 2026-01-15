@@ -61,6 +61,7 @@ class UserFilterChip extends StatelessWidget {
 
 class QuickActionButton extends StatelessWidget {
   final IconData icon;
+  final Widget? iconWidget;
   final Color color;
   final VoidCallback onTap;
   final String tooltip;
@@ -68,6 +69,7 @@ class QuickActionButton extends StatelessWidget {
   const QuickActionButton({
     super.key,
     required this.icon,
+    this.iconWidget,
     required this.color,
     required this.onTap,
     required this.tooltip,
@@ -87,7 +89,9 @@ class QuickActionButton extends StatelessWidget {
             shape: BoxShape.circle,
             border: Border.all(color: color.withOpacity(0.3), width: 1),
           ),
-          child: Icon(icon, color: color, size: 20),
+          child: Center(
+            child: iconWidget ?? Icon(icon, color: color, size: 20),
+          ),
         ),
       ),
     );

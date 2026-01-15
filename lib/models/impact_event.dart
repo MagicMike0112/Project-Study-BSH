@@ -15,6 +15,7 @@ class ImpactEvent {
   final String unit;
   final double moneySaved;
   final double co2Saved;
+  final String? userId;
   
   final String? itemName;
   final String? itemCategory;
@@ -29,6 +30,7 @@ class ImpactEvent {
     required this.co2Saved,
     this.itemName,
     this.itemCategory,
+    this.userId,
   });
 
   Map<String, dynamic> toJson(String familyId, String userId) {
@@ -69,6 +71,7 @@ class ImpactEvent {
       co2Saved: (json['co2_saved'] as num?)?.toDouble() ?? 0.0,
       itemName: json['item_name'],
       itemCategory: json['item_category'],
+      userId: json['user_id']?.toString(),
     );
   }
 }

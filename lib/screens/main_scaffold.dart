@@ -172,15 +172,16 @@ class _MainScaffoldState extends State<MainScaffold> {
 
     final repo = context.watch<InventoryRepository>();
 
+    final hasUnreadActivity = repo.hasUnreadActivity;
     final pages = [
-      TodayPage(repo: repo, onRefresh: _refresh),
+      TodayPageWrapper(repo: repo, onRefresh: _refresh),
       InventoryPageWrapper(
         repo: repo,
         onRefresh: _refresh,
         showSnackBar: (msg, {onUndo}) => showAppToast(msg, onUndo: onUndo),
       ),
-      ShoppingListPage(repo: repo),
-      ImpactPage(repo: repo),
+      ShoppingListPageWrapper(repo: repo),
+      ImpactPageWrapper(repo: repo),
     ];
 
     return Scaffold(
@@ -195,6 +196,9 @@ class _MainScaffoldState extends State<MainScaffold> {
                 _currentIndex = idx;
                 _showFabMenu = false;
               });
+              if (idx == 3) {
+                repo.markActivitySeen();
+              }
             },
             children: pages,
           ),
@@ -260,7 +264,7 @@ class _MainScaffoldState extends State<MainScaffold> {
                       _buildNavItem(0, Icons.dashboard_outlined, Icons.dashboard, 'Today'),
                       _buildNavItem(1, Icons.inventory_2_outlined, Icons.inventory_2, 'Inventory'),
                       _buildNavItem(2, Icons.shopping_cart_outlined, Icons.shopping_cart, 'Shopping'),
-                      _buildNavItem(3, Icons.eco_outlined, Icons.eco, 'Impact'),
+                      _buildNavItem(3, Icons.eco_outlined, Icons.eco, 'Impact', showDot: hasUnreadActivity),
                     ],
                   ),
                 ),
@@ -285,7 +289,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, IconData activeIcon, String label) {
+  Widget _buildNavItem(int index, IconData icon, IconData activeIcon, String label, {bool showDot = false}) {
     final isSelected = _currentIndex == index;
     final colors = Theme.of(context).colorScheme;
     return Expanded(
@@ -302,10 +306,28 @@ class _MainScaffoldState extends State<MainScaffold> {
                 color: isSelected ? _primaryColor.withOpacity(0.15) : Colors.transparent,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                isSelected ? activeIcon : icon,
-                color: isSelected ? _primaryColor : colors.onSurface.withOpacity(0.6),
-                size: 24,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    isSelected ? activeIcon : icon,
+                    color: isSelected ? _primaryColor : colors.onSurface.withOpacity(0.6),
+                    size: 24,
+                  ),
+                  if (showDot)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFE53935),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             if (isSelected) ...[

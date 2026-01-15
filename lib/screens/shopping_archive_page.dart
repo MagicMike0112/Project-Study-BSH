@@ -115,7 +115,7 @@ class ShoppingArchivePage extends StatelessWidget {
                         child: ListTile(
                           dense: true,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                          leading: Icon(Icons.check_circle_outline, color: colors.onSurface.withOpacity(0.3), size: 20),
+                          leading: _historyLeading(context, item),
                           title: Text(
                             item.name,
                             style: const TextStyle(fontWeight: FontWeight.w600),
@@ -178,6 +178,62 @@ class ShoppingArchivePage extends StatelessWidget {
             style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _historyLeading(BuildContext context, ShoppingHistoryItem item) {
+    final theme = Theme.of(context);
+    final buyerName = repo.resolveUserNameById(item.userId);
+    return SizedBox(
+      width: 42,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 0,
+            top: 2,
+            child: Icon(Icons.check_circle_outline, color: theme.colorScheme.onSurface.withOpacity(0.3), size: 20),
+          ),
+          if (buyerName != null && buyerName.isNotEmpty)
+            Positioned(
+              right: -2,
+              bottom: -2,
+              child: _UserAvatarBadge(name: buyerName, size: 18),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _UserAvatarBadge extends StatelessWidget {
+  final String name;
+  final double size;
+  const _UserAvatarBadge({required this.name, this.size = 18});
+
+  Color _getNameColor(String name) {
+    if (name.isEmpty) return Colors.grey;
+    final colors = [Colors.blue, Colors.red, Colors.green, Colors.orange, Colors.purple, Colors.teal, Colors.pink];
+    return colors[name.hashCode.abs() % colors.length].shade400;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _getNameColor(name);
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        border: Border.all(color: Theme.of(context).scaffoldBackgroundColor, width: 1.5),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(fontSize: size * 0.5, fontWeight: FontWeight.bold, color: Colors.white),
       ),
     );
   }

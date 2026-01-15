@@ -275,6 +275,70 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
+  String _themeLabel(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.system:
+        return 'Follow system';
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.dark:
+        return 'Dark';
+    }
+  }
+
+  void _showThemePicker(ThemeController themeController) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).cardColor,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final colors = theme.colorScheme;
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                'Theme',
+                style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+              ),
+              const SizedBox(height: 8),
+              RadioListTile<ThemeMode>(
+                value: ThemeMode.system,
+                groupValue: themeController.themeMode,
+                onChanged: (val) {
+                  if (val != null) themeController.setThemeMode(val);
+                  Navigator.pop(ctx);
+                },
+                title: const Text('Follow system'),
+              ),
+              RadioListTile<ThemeMode>(
+                value: ThemeMode.light,
+                groupValue: themeController.themeMode,
+                onChanged: (val) {
+                  if (val != null) themeController.setThemeMode(val);
+                  Navigator.pop(ctx);
+                },
+                title: const Text('Light'),
+              ),
+              RadioListTile<ThemeMode>(
+                value: ThemeMode.dark,
+                groupValue: themeController.themeMode,
+                onChanged: (val) {
+                  if (val != null) themeController.setThemeMode(val);
+                  Navigator.pop(ctx);
+                },
+                title: const Text('Dark'),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   // ================== Build Method ==================
 
   @override
@@ -349,21 +413,12 @@ class _AccountPageState extends State<AccountPage> {
                     icon: Icons.dark_mode_rounded,
                     iconColor: Colors.blueGrey,
                     title: 'Night Mode',
-                    subtitle: 'Use a darker color scheme',
-                    trailing: Switch.adaptive(
-                      value: themeController.isDark,
-                      activeColor: _primaryColor,
-                      onChanged: (value) {
-                        themeController.setThemeMode(
-                          value ? ThemeMode.dark : ThemeMode.light,
-                        );
-                      },
+                    subtitle: _themeLabel(themeController.themeMode),
+                    trailing: Text(
+                      _themeLabel(themeController.themeMode),
+                      style: TextStyle(color: colors.onSurface.withOpacity(0.5), fontSize: 12),
                     ),
-                    onTap: () {
-                      themeController.setThemeMode(
-                        themeController.isDark ? ThemeMode.light : ThemeMode.dark,
-                      );
-                    },
+                    onTap: () => _showThemePicker(themeController),
                   ),
 
                   const _Divider(),

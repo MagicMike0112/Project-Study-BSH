@@ -49,6 +49,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   late String _unit;
   double? _minQty;
   late StorageLocation _location;
+  late String _note;
 
   // 日期字段
   late DateTime _purchased;
@@ -111,6 +112,7 @@ class _AddFoodPageState extends State<AddFoodPage>
     _unit = item?.unit ?? 'pcs';
     _minQty = item?.minQuantity;
     _location = item?.location ?? StorageLocation.fridge;
+    _note = item?.note ?? '';
 
     const allowedUnits = [
       'pcs', 'kg', 'g', 'L', 'ml', 'pack', 'box', 'cup',
@@ -219,6 +221,7 @@ class _AddFoodPageState extends State<AddFoodPage>
       bestBeforeDate: _bestBefore,
       predictedExpiry: effectiveExpiry,
       category: 'manual',
+      note: _note.trim().isEmpty ? null : _note.trim(),
     );
 
     if (widget.itemToEdit != null) {
@@ -768,6 +771,20 @@ class _AddFoodPageState extends State<AddFoodPage>
                     _resetPrediction();
                   });
                 }, canClear: true),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            _buildFormCard(
+              title: 'Notes',
+              children: [
+                TextFormField(
+                  initialValue: _note,
+                  maxLines: 3,
+                  decoration: _inputDecoration(context, 'Add a short note', Icons.sticky_note_2_outlined),
+                  onChanged: (v) => _note = v,
+                  onSaved: (v) => _note = v ?? '',
+                ),
               ],
             ),
             const SizedBox(height: 20),
@@ -1340,7 +1357,7 @@ class _AddFoodPageState extends State<AddFoodPage>
               ),
               const SizedBox(height: 8),
               Text(
-                'AI is processing your images/voice and identifying items.',
+                'Processing',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
               ),

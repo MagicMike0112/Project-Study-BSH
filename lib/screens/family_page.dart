@@ -356,21 +356,26 @@ class _FamilyPageState extends State<FamilyPage> {
                 return ListView(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                   children: [
+                    if (_shouldShowMigrationBanner(widget.repo))
+                      FadeInSlide(
+                        index: 0,
+                        child: _buildMigrationBanner(widget.repo),
+                      ),
                     FadeInSlide(
-                      index: 0,
+                      index: 1,
                       child: _buildHeaderCard(),
                     ),
                     const SizedBox(height: 32),
 
                     // 🟢 2. Inventory Mode Selection (新增)
                     FadeInSlide(
-                      index: 1,
+                      index: 2,
                       child: _buildModeSelection(),
                     ),
                     const SizedBox(height: 32),
 
                     FadeInSlide(
-                      index: 2,
+                      index: 3,
                       child: Row(
                         children: [
                           Text(
@@ -410,14 +415,14 @@ class _FamilyPageState extends State<FamilyPage> {
                       )
                     else
                       ..._members.asMap().entries.map((e) => FadeInSlide(
-                        index: 3 + e.key,
+                        index: 4 + e.key,
                         child: _MemberTile(member: e.value),
                       )),
                     
                     const SizedBox(height: 48),
 
                     FadeInSlide(
-                      index: 3 + (_members.isEmpty ? 1 : _members.length),
+                      index: 4 + (_members.isEmpty ? 1 : _members.length),
                       child: Column(
                         children: [
                           BouncingButton(
@@ -534,6 +539,105 @@ class _FamilyPageState extends State<FamilyPage> {
           Text(
             'Inventory & Shopping List Synced',
             style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  bool _shouldShowMigrationBanner(InventoryRepository repo) {
+    return repo.migrationPhase == MigrationPhase.preparing ||
+        repo.migrationPhase == MigrationPhase.migrating ||
+        repo.migrationPhase == MigrationPhase.cleaning ||
+        repo.migrationPhase == MigrationPhase.failed;
+  }
+
+  Widget _buildMigrationBanner(InventoryRepository repo) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final isFailed = repo.migrationPhase == MigrationPhase.failed;
+    final bg = isFailed
+        ? (isDark ? const Color(0xFF2A1B1B) : const Color(0xFFFFF3F3))
+        : (isDark ? colors.surfaceVariant.withOpacity(0.35) : const Color(0xFFF2F6FB));
+    final borderColor = isFailed ? Colors.redAccent : const Color(0xFF005F87);
+    final title = isFailed ? 'Migration failed' : 'Migrating your data';
+    final subtitle = repo.migrationMessage ?? 'Please keep the app open.';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: borderColor.withOpacity(0.5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: borderColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isFailed ? Icons.error_outline_rounded : Icons.sync_rounded,
+              color: borderColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: colors.onSurface,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: colors.onSurface.withOpacity(0.6),
+                  ),
+                ),
+                if (!isFailed) ...[
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    minHeight: 6,
+                    color: const Color(0xFF005F87),
+                    backgroundColor: colors.onSurface.withOpacity(0.08),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Attempt ${repo.migrationAttempt} / 3',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colors.onSurface.withOpacity(0.5),
+                    ),
+                  ),
+                ],
+                if (isFailed && repo.migrationError != null && repo.migrationError!.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    repo.migrationError!,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: colors.onSurface.withOpacity(0.6),
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
         ],
       ),

@@ -27,6 +27,7 @@ class FoodItem {
   
   // 🟢 谁买的/谁添加的
   final String? ownerName;
+  final String? note;
   // 🟢 私有物品标记
   final bool isPrivate; 
 
@@ -45,6 +46,7 @@ class FoodItem {
     this.category,
     this.source,
     this.ownerName,
+    this.note,
     this.isPrivate = false,
   });
 
@@ -84,6 +86,7 @@ class FoodItem {
     String? category,
     String? source,
     String? ownerName,
+    String? note,
     bool? isPrivate,
   }) {
     return FoodItem(
@@ -101,6 +104,7 @@ class FoodItem {
       category: category ?? this.category,
       source: source ?? this.source,
       ownerName: ownerName ?? this.ownerName,
+      note: note ?? this.note,
       isPrivate: isPrivate ?? this.isPrivate,
     );
   }
@@ -123,6 +127,7 @@ class FoodItem {
       'category': category,
       'source': source,
       'owner_name': ownerName,
+      'note': note,
       'is_private': isPrivate,
     };
   }
@@ -197,6 +202,7 @@ class FoodItem {
       category: json['category'],
       source: json['source'],
       ownerName: extractName(json),
+      note: json['note'],
       isPrivate: json['is_private'] ?? false,
     );
   }

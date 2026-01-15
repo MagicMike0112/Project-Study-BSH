@@ -1,5 +1,6 @@
 // lib/screens/inventory_page.dart
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -130,6 +131,9 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       try {
         ShowCaseWidget.of(context).startShowCase([_searchKey]);
         await prefs.setBool('hasShownIntro_v6', true);
+        Future.delayed(const Duration(milliseconds: 800), () {
+          widget.repo.removeExampleInventoryItems();
+        });
       } catch (e) {
         debugPrint("Showcase error: $e");
       }
@@ -334,11 +338,22 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
           centerTitle: false,
           systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
         ),
-      body: !hasAnyItems
-          ? _buildEmptyState(context)
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
+      body: RefreshIndicator(
+        color: const Color(0xFF005F87),
+        onRefresh: widget.repo.refreshAll,
+        child: !hasAnyItems
+            ? CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _buildEmptyState(context),
+                  ),
+                ],
+              )
+            : CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -421,10 +436,11 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                     isSharedMode: isSharedMode,
                     currentUserName: currentUserName,
                   ),
-                
+
                 const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
               ],
             ),
+      ),
     );
   }
 
@@ -694,6 +710,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         icon: Icons.water_drop_rounded,
         color: Colors.orangeAccent,
         tooltip: "Defrost",
+        iconWidget: _defrostIcon(Colors.orangeAccent),
         onTap: () => _quickMoveItem(item, StorageLocation.fridge),
       );
     } else {
@@ -782,6 +799,19 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                       _expiryPill(context, urgency, daysLabel),
                     ],
                   ),
+                  if (item.note != null && item.note!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      item.note!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colors.onSurface.withOpacity(0.55),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -834,6 +864,54 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     );
   }
 
+  Widget _defrostIcon(Color color) {
+    final lineColor = Colors.white.withOpacity(0.9);
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Icon(Icons.water_drop_rounded, color: color, size: 20),
+          ),
+          Positioned(
+            top: 6,
+            left: 6,
+            child: Transform.rotate(
+              angle: -0.7,
+              alignment: Alignment.center,
+              child: Container(
+                width: 10,
+                height: 1.6,
+                decoration: BoxDecoration(
+                  color: lineColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 5,
+            right: 5,
+            child: Transform.rotate(
+              angle: 0.6,
+              alignment: Alignment.center,
+              child: Container(
+                width: 8,
+                height: 1.6,
+                decoration: BoxDecoration(
+                  color: lineColor.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   _Leading _leadingIcon(FoodItem item) {
     switch (item.location) {
       case StorageLocation.fridge:
@@ -851,6 +929,59 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       context,
       MaterialPageRoute(builder: (_) => AddFoodPage(repo: widget.repo, itemToEdit: item)),
     );
+  }
+
+  Future<void> _editItemNote(BuildContext context, FoodItem item) async {
+    final controller = TextEditingController(text: item.note ?? '');
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final result = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Item note', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: controller,
+          maxLines: 3,
+          decoration: InputDecoration(
+            hintText: 'Add a short note...',
+            hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
+            filled: true,
+            fillColor: isDark ? const Color(0xFF1E2229) : const Color(0xFFF5F7FA),
+            isDense: true,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colors.outline.withOpacity(0.4)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colors.outline.withOpacity(0.3)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(color: colors.primary, width: 1.4),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            style: TextButton.styleFrom(foregroundColor: colors.primary),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      await widget.repo.updateItemNote(item, result);
+    }
   }
 
   Future<void> _showItemActionsSheet(BuildContext context, FoodItem item, List<String> users, bool isSharedMode) async {
@@ -1013,6 +1144,16 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                     child: Divider(thickness: 1, height: 1, color: theme.dividerColor),
                   ),
                 ],
+
+                SheetTile(
+                  icon: Icons.sticky_note_2_outlined,
+                  title: (item.note != null && item.note!.trim().isNotEmpty) ? 'Edit note' : 'Add note',
+                  subtitle: 'Leave a quick reminder',
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _editItemNote(context, item);
+                  },
+                ),
 
                 SheetTile(
                   icon: Icons.restaurant_menu_rounded,
