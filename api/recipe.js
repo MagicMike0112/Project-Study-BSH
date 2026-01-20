@@ -391,6 +391,12 @@ async function handleDietAnalysis(body, res) {
     body.consumptionCounts && typeof body.consumptionCounts === "object"
       ? body.consumptionCounts
       : null;
+  const plannedMealsThisWeek = Array.isArray(body.plannedMealsThisWeek)
+    ? body.plannedMealsThisWeek
+    : [];
+  const plannedMealsNextWeek = Array.isArray(body.plannedMealsNextWeek)
+    ? body.plannedMealsNextWeek
+    : [];
 
   if (consumedItems.length === 0) {
     return res.status(200).json({
@@ -424,11 +430,35 @@ Last week summary: ${JSON.stringify(history.lastWeek || {})}
 `
     : "No history summary available.";
 
+  const normalizePlanned = (list) =>
+    list
+      .map((m) => {
+        const date = String(m?.date || "");
+        const slot = String(m?.slot || "");
+        const mealName = String(m?.mealName || "");
+        const recipeName = String(m?.recipeName || "");
+        const itemIds = Array.isArray(m?.itemIds) ? m.itemIds : [];
+        return { date, slot, mealName, recipeName, itemIdsCount: itemIds.length };
+      })
+      .filter((m) => m.date || m.mealName || m.recipeName || m.slot);
+
+  const plannedThisWeek = normalizePlanned(plannedMealsThisWeek);
+  const plannedNextWeek = normalizePlanned(plannedMealsNextWeek);
+
+  const plannedBlock = `
+Planned meals (this week):
+${plannedThisWeek.length ? JSON.stringify(plannedThisWeek) : "None"}
+
+Planned meals (next week):
+${plannedNextWeek.length ? JSON.stringify(plannedNextWeek) : "None"}
+`;
+
   const prompt = `
 You are a friendly, professional nutrition assistant${studentMode ? " for a busy student on a budget" : ""}.
 The user has consumed the following items this week: "${itemsStr}".
 ${consumptionBlock}
 ${historyBlock}
+${plannedBlock}
 
 User's plan for planning restock:
 - This week: "${String(weekContext.thisWeek || "").trim()}"
@@ -437,7 +467,8 @@ User's plan for planning restock:
 Your Tasks:
 1. Insight: Provide a concise, friendly 2-3 sentence assessment focused on THIS WEEK. If last week data exists, mention 1-2 meaningful changes (e.g., less veggies, more snacks).
 2. Suggestions: Suggest 3-5 ingredients to restock based on what they ACTUALLY consumed most, plus the user's plan for this/next week. Use the frequency list to prioritize staples they eat often, and add 1-2 complementary items to balance gaps (e.g., more veggies if diet is heavy in carbs). Keep reasons practical and encouraging.
-3. Categorization (CRITICAL): Map EACH item in the input list to EXACTLY ONE of these categories for a pie chart:
+3. Next week meal help: If next week's planned meals are provided, add 1-2 brief adjustments (ingredients or swaps) to make those meals more balanced or realistic.
+4. Categorization (CRITICAL): Map EACH item in the input list to EXACTLY ONE of these categories for a pie chart:
    [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, Condiments, Other].
    
    Examples:
@@ -454,6 +485,10 @@ Return ONLY JSON:
   "suggestions": [
     { "name": "Broccoli", "category": "Veggies", "reason": "More fiber needed!" },
     { "name": "Chicken", "category": "Protein", "reason": "Good protein source." }
+  ],
+  "nextWeekAdvice": [
+    "Add a leafy green to your planned dinners to balance fiber.",
+    "Swap one lunch carb for a protein-forward option."
   ],
   "categorization": {
     "Banana": "Fruits",
