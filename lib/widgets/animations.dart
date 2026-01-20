@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -20,11 +21,12 @@ class BouncingButton extends StatefulWidget {
 }
 
 class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  AnimationController? _controller;
 
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) return;
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 100),
@@ -35,33 +37,40 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_controller == null) {
+      return GestureDetector(
+        onTap: widget.enabled ? widget.onTap : null,
+        onLongPress: widget.onLongPress,
+        child: widget.child,
+      );
+    }
     return GestureDetector(
       onTapDown: (_) {
         if (widget.enabled) {
-          _controller.forward();
+          _controller!.forward();
           HapticFeedback.lightImpact();
         }
       },
       onTapUp: (_) {
         if (widget.enabled) {
-          _controller.reverse();
+          _controller!.reverse();
           widget.onTap?.call();
         }
       },
       onTapCancel: () {
-        if (widget.enabled) _controller.reverse();
+        if (widget.enabled) _controller!.reverse();
       },
       onLongPress: widget.onLongPress,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: _controller!,
         builder: (context, child) => Transform.scale(
-          scale: 1.0 - _controller.value,
+          scale: 1.0 - _controller!.value,
           child: widget.child,
         ),
       ),
@@ -86,34 +95,39 @@ class FadeInSlide extends StatefulWidget {
 }
 
 class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<Offset> _offsetAnim;
-  late Animation<double> _fadeAnim;
+  AnimationController? _controller;
+  Animation<Offset>? _offsetAnim;
+  Animation<double>? _fadeAnim;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration);
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+    if (kIsWeb) return;
+    final controller = AnimationController(vsync: this, duration: widget.duration);
+    _controller = controller;
+    final curve = CurvedAnimation(parent: controller, curve: Curves.easeOutCubic);
     _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
     _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
     final delay = widget.index * 50;
     Future.delayed(Duration(milliseconds: delay), () {
-      if (mounted) _controller.forward();
+      if (mounted) _controller?.forward();
     });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_controller == null) {
+      return widget.child;
+    }
     return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(position: _offsetAnim, child: widget.child),
+      opacity: _fadeAnim!,
+      child: SlideTransition(position: _offsetAnim!, child: widget.child),
     );
   }
 }

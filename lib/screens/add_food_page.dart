@@ -50,6 +50,7 @@ class _AddFoodPageState extends State<AddFoodPage>
   double? _minQty;
   late StorageLocation _location;
   late String _note;
+  late String _categoryKey;
 
   // 日期字段
   late DateTime _purchased;
@@ -78,6 +79,20 @@ class _AddFoodPageState extends State<AddFoodPage>
 
   // 统一背景色
   static const Color _primaryColor = Color(0xFF005F87);
+  static const String _autoCategoryKey = '__auto__';
+  static const List<_CategoryOption> _categoryOptions = [
+    _CategoryOption('produce', 'Produce', Icons.eco_rounded, Color(0xFF66BB6A)),
+    _CategoryOption('dairy', 'Dairy', Icons.water_drop_rounded, Color(0xFF42A5F5)),
+    _CategoryOption('meat', 'Meat', Icons.restaurant_rounded, Color(0xFFEF5350)),
+    _CategoryOption('seafood', 'Seafood', Icons.set_meal_rounded, Color(0xFF5C6BC0)),
+    _CategoryOption('bakery', 'Bakery', Icons.bakery_dining_rounded, Color(0xFFFFB300)),
+    _CategoryOption('frozen', 'Frozen', Icons.ac_unit_rounded, Color(0xFF4DD0E1)),
+    _CategoryOption('beverage', 'Beverage', Icons.local_drink_rounded, Color(0xFF26A69A)),
+    _CategoryOption('pantry', 'Pantry', Icons.kitchen_rounded, Color(0xFFFFA726)),
+    _CategoryOption('snacks', 'Snacks', Icons.cookie_rounded, Color(0xFFFF7043)),
+    _CategoryOption('household', 'Household', Icons.cleaning_services_rounded, Color(0xFF78909C)),
+    _CategoryOption('pet', 'Pet', Icons.pets_rounded, Color(0xFF8D6E63)),
+  ];
 
   @override
   void initState() {
@@ -113,6 +128,12 @@ class _AddFoodPageState extends State<AddFoodPage>
     _minQty = item?.minQuantity;
     _location = item?.location ?? StorageLocation.fridge;
     _note = item?.note ?? '';
+    _categoryKey = widget.repo.isExplicitCategory(item?.category)
+        ? _normalizeCategoryKey(item!.category!.trim().toLowerCase())
+        : _autoCategoryKey;
+    if (!_isValidCategoryKey(_categoryKey)) {
+      _categoryKey = _autoCategoryKey;
+    }
 
     const allowedUnits = [
       'pcs', 'kg', 'g', 'L', 'ml', 'pack', 'box', 'cup',
@@ -208,6 +229,10 @@ class _AddFoodPageState extends State<AddFoodPage>
     _formKey.currentState!.save();
 
     final DateTime? effectiveExpiry = _bestBefore ?? _expiry;
+    final resolvedCategory = _categoryKey == _autoCategoryKey
+        ? widget.repo.inferCategoryForName(_name, existingCategory: widget.itemToEdit?.category)
+        : _categoryKey;
+    final categoryToSave = resolvedCategory ?? 'general';
 
     final newItem = FoodItem(
       id: widget.itemToEdit?.id ?? const Uuid().v4(),
@@ -220,7 +245,7 @@ class _AddFoodPageState extends State<AddFoodPage>
       openDate: _openDate,
       bestBeforeDate: _bestBefore,
       predictedExpiry: effectiveExpiry,
-      category: 'manual',
+      category: categoryToSave,
       note: _note.trim().isEmpty ? null : _note.trim(),
     );
 
@@ -228,6 +253,10 @@ class _AddFoodPageState extends State<AddFoodPage>
       await widget.repo.updateItem(newItem);
     } else {
       await widget.repo.addItem(newItem);
+    }
+
+    if (_categoryKey != _autoCategoryKey) {
+      await widget.repo.rememberCategoryForName(_name, _categoryKey);
     }
 
     if (mounted) Navigator.pop(context);
@@ -743,6 +772,33 @@ class _AddFoodPageState extends State<AddFoodPage>
             const SizedBox(height: 20),
 
             _buildFormCard(
+              title: 'Category',
+              children: [
+                DropdownButtonFormField<String>(
+                  value: _effectiveCategoryKey(),
+                  items: [
+                    DropdownMenuItem(
+                      value: _autoCategoryKey,
+                      child: Text(_autoCategoryLabel()),
+                    ),
+                    ..._categoryOptions.map(
+                      (option) => DropdownMenuItem(
+                        value: option.key,
+                        child: Text(option.label),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _categoryKey = _normalizeCategoryKey(value));
+                  },
+                  decoration: _inputDecoration(context, 'Category', Icons.category_outlined),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            _buildFormCard(
               title: 'Dates',
               children: [
                 _buildDateRow('Purchased', _purchased, (d) {
@@ -810,6 +866,90 @@ class _AddFoodPageState extends State<AddFoodPage>
         ),
       ),
     );
+  }
+
+  String _autoCategoryLabel() {
+    final inferred = widget.repo.inferCategoryForName(_name, existingCategory: widget.itemToEdit?.category);
+    if (inferred == null) return 'Auto (Unknown)';
+    return 'Auto (${_categoryLabelForKey(inferred)})';
+  }
+
+  String _effectiveCategoryKey() {
+    final normalized = _normalizeCategoryKey(_categoryKey);
+    if (_isValidCategoryKey(normalized)) return normalized;
+    return _autoCategoryKey;
+  }
+
+  bool _isValidCategoryKey(String key) {
+    if (key == _autoCategoryKey) return true;
+    for (final option in _categoryOptions) {
+      if (option.key == key) return true;
+    }
+    return false;
+  }
+
+  String _normalizeCategoryKey(String key) {
+    final value = key.trim().toLowerCase();
+    switch (value) {
+      case _autoCategoryKey:
+        return _autoCategoryKey;
+      case 'drink':
+      case 'drinks':
+      case 'beverages':
+      case 'beverage':
+      case 'bev':
+        return 'beverage';
+      case 'snack':
+      case 'snacks':
+        return 'snacks';
+      case 'vegetable':
+      case 'vegetables':
+      case 'veggie':
+      case 'veggies':
+      case 'greens':
+      case 'produce':
+        return 'produce';
+      case 'dairy':
+      case 'milk':
+      case 'cheese':
+        return 'dairy';
+      case 'protein':
+      case 'meat':
+      case 'poultry':
+        return 'meat';
+      case 'fish':
+      case 'seafood':
+        return 'seafood';
+      case 'bread':
+      case 'bakery':
+      case 'baked':
+        return 'bakery';
+      case 'frozen':
+      case 'freezer':
+        return 'frozen';
+      case 'pantry':
+      case 'staple':
+      case 'staples':
+      case 'condiment':
+      case 'condiments':
+        return 'pantry';
+      case 'household':
+      case 'cleaning':
+        return 'household';
+      case 'pet':
+      case 'pets':
+        return 'pet';
+      default:
+        return value;
+    }
+  }
+
+  String _categoryLabelForKey(String key) {
+    final normalized = _normalizeCategoryKey(key);
+    for (final option in _categoryOptions) {
+      if (option.key == normalized) return option.label;
+    }
+    return 'Unknown';
   }
 
   // --- Scan Tab ---
@@ -1505,6 +1645,7 @@ class _AddFoodPageState extends State<AddFoodPage>
       if (!selected[i]) continue;
       final s = items[i];
       DateTime expiry = s.predictedExpiry ?? s.purchaseDate.add(const Duration(days: 7));
+      final resolvedCategory = widget.repo.inferCategoryForName(s.name, existingCategory: s.category) ?? s.category;
       
       final foodItem = FoodItem(
         id: const Uuid().v4(),
@@ -1514,7 +1655,7 @@ class _AddFoodPageState extends State<AddFoodPage>
         unit: s.unit,
         purchasedDate: s.purchaseDate,
         predictedExpiry: expiry,
-        category: s.category,
+        category: resolvedCategory,
       );
       await widget.repo.addItem(foodItem);
     }
@@ -1580,4 +1721,13 @@ class _ScannedItem {
     required this.confidence,
     required this.predictedExpiry,
   });
+}
+
+class _CategoryOption {
+  final String key;
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _CategoryOption(this.key, this.label, this.icon, this.color);
 }

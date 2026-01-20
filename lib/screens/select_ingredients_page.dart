@@ -216,6 +216,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
   void initState() {
     super.initState();
     _activeItems = widget.repo.getActiveItems();
+    _sortActiveItems();
     for (final item in widget.preselectedExpiring) {
       _selectedIds.add(item.id);
     }
@@ -302,6 +303,7 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
       _hasChanged = true;
       setState(() {
         _activeItems = widget.repo.getActiveItems();
+        _sortActiveItems();
       });
     }
 
@@ -319,11 +321,20 @@ class _SelectIngredientsPageState extends State<SelectIngredientsPage> {
             _hasChanged = true;
             setState(() {
               _activeItems = widget.repo.getActiveItems();
+              _sortActiveItems();
             });
           },
         ),
       ),
     );
+  }
+
+  void _sortActiveItems() {
+    _activeItems.sort((a, b) {
+      final aDays = a.daysToExpiry >= 999 ? 99999 : a.daysToExpiry;
+      final bDays = b.daysToExpiry >= 999 ? 99999 : b.daysToExpiry;
+      return aDays.compareTo(bDays);
+    });
   }
 
   @override
@@ -1999,8 +2010,14 @@ class RecipeSuggestion {
   Map<String, dynamic> toJson() => {'id': id, 'title': title, 'timeLabel': timeLabel, 'expiringCount': expiringCount, 'ingredients': ingredients, 'steps': steps, 'appliances': appliances, 'ovenTempC': ovenTempC, 'description': description, 'imageUrl': imageUrl};
 
   static RecipeSuggestion fromJson(Map<String, dynamic> m) {
-    final appliancesRaw = m['appliances'];
-    final appliances = (appliancesRaw is List) ? appliancesRaw.map((x) => x.toString()).toList() : const <String>[];
+    final appliancesRaw = m['appliances'] ?? m['tools'];
+    List<String> appliances = (appliancesRaw is List)
+        ? appliancesRaw.map((x) => x.toString()).toList()
+        : const <String>[];
+    if (appliances.isEmpty && m['toolPill'] is String) {
+      final pill = (m['toolPill'] as String).trim();
+      if (pill.isNotEmpty) appliances = [pill];
+    }
     int? ovenTempC;
     final v = m['ovenTempC'];
     if (v is int) {
@@ -2041,8 +2058,71 @@ class RecipeSuggestion {
   }
 
   String get appliancesLabel {
-    if (appliances.isEmpty) return 'No tools';
-    if (appliances.length == 1) return appliances.first;
-    return '${appliances.first} +${appliances.length - 1}';
+    final normalized = _normalizedTools(appliances);
+    if (normalized.isNotEmpty) {
+      if (normalized.length == 1) return normalized.first;
+      return '${normalized.first} +${normalized.length - 1}';
+    }
+    final inferred = _inferToolsFromText();
+    if (inferred.isNotEmpty) {
+      if (inferred.length == 1) return inferred.first;
+      return '${inferred.first} +${inferred.length - 1}';
+    }
+    return 'Basic tools';
+  }
+
+  List<String> _normalizedTools(List<String> tools) {
+    final seen = <String>{};
+    final out = <String>[];
+    for (final t in tools) {
+      final label = _formatToolName(t);
+      if (label.isEmpty || seen.contains(label)) continue;
+      seen.add(label);
+      out.add(label);
+    }
+    return out;
+  }
+
+  String _formatToolName(String raw) {
+    final v = raw.trim();
+    if (v.isEmpty) return '';
+    final k = v.toLowerCase();
+    if (k.contains('oven')) return 'Oven';
+    if (k.contains('microwave')) return 'Microwave';
+    if (k.contains('airfryer') || k.contains('air fryer')) return 'Air fryer';
+    if (k.contains('ricecooker') || k.contains('rice cooker')) return 'Rice cooker';
+    if (k.contains('blender')) return 'Blender';
+    if (k.contains('pan') || k.contains('skillet')) return 'Pan';
+    if (k.contains('pot')) return 'Pot';
+    if (k.contains('knife')) return 'Knife';
+    if (k.contains('stove') || k.contains('stovetop')) return 'Stovetop';
+    return v;
+  }
+
+  List<String> _inferToolsFromText() {
+    final text = ('$title\n${steps.join('\n')}').toLowerCase();
+    final tools = <String>[];
+    if (text.contains('oven') || text.contains('preheat') || text.contains('bake')) {
+      tools.add('Oven');
+    }
+    if (text.contains('microwave')) {
+      tools.add('Microwave');
+    }
+    if (text.contains('air fryer') || text.contains('airfryer')) {
+      tools.add('Air fryer');
+    }
+    if (text.contains('rice cooker') || text.contains('ricecooker')) {
+      tools.add('Rice cooker');
+    }
+    if (text.contains('blender')) {
+      tools.add('Blender');
+    }
+    if (text.contains('pan') || text.contains('skillet') || text.contains('fry')) {
+      tools.add('Pan');
+    }
+    if (text.contains('pot') || text.contains('boil') || text.contains('simmer')) {
+      tools.add('Pot');
+    }
+    return tools;
   }
 }

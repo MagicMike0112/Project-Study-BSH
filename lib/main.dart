@@ -130,8 +130,8 @@ class SmartFoodApp extends StatelessWidget {
       builder: (context, themeController, _) {
         final lightBase = ThemeData.light();
         final darkBase = ThemeData.dark();
-        final lightTextTheme = GoogleFonts.interTextTheme(lightBase.textTheme);
-        final darkTextTheme = GoogleFonts.interTextTheme(darkBase.textTheme);
+        final lightTextTheme = GoogleFonts.dmSansTextTheme(lightBase.textTheme);
+        final darkTextTheme = GoogleFonts.dmSansTextTheme(darkBase.textTheme);
 
         final lightTheme = ThemeData(
           brightness: Brightness.light,

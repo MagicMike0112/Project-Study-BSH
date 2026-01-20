@@ -4,14 +4,13 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:showcaseview/showcaseview.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:provider/provider.dart';
 import 'dart:math' as math;
 
-import '../models/food_item.dart'; 
+import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
-import '../utils/impact_helpers.dart'; 
-import '../widgets/profile_avatar_button.dart'; 
-import 'weekly_report_page.dart'; 
+import '../utils/impact_helpers.dart';
+import '../widgets/profile_avatar_button.dart';
+import 'weekly_report_page.dart';
 
 enum ImpactRange { week, month, year }
 
@@ -80,23 +79,47 @@ class ImpactPage extends StatefulWidget {
 }
 
 class _ImpactPageState extends State<ImpactPage> {
-  Widget _wrapShowcase({
-    required GlobalKey? key,
-    required String title,
-    required String description,
-    required Widget child,
-  }) {
-    if (key == null) return child;
-    return Showcase(
-      key: key,
-      title: title,
-      description: description,
-      targetBorderRadius: BorderRadius.circular(16),
-      child: child,
-    );
+  ImpactRange _range = ImpactRange.week;
+
+  // 缓存的统计数据，避免在 build 中重复计算
+  int _streak = 0;
+  double _moneyTotal = 0.0;
+  double _co2Total = 0.0;
+  int _savedCount = 0;
+  List<ImpactEvent> _recentEvents = [];
+  List<MapEntry<String, double>> _topCategories = [];
+  double _petQty = 0.0;
+  double _petShare = 0.0;
+  List<FlSpot> _moneySpots = [];
+  Map<int, String> _chartLabels = {};
+  bool _hasEnoughData = false;
+  bool _isEmpty = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.repo.addListener(_onRepoChanged);
+    _calculateImpactData();
   }
 
-  ImpactRange _range = ImpactRange.week;
+  @override
+  void dispose() {
+    widget.repo.removeListener(_onRepoChanged);
+    super.dispose();
+  }
+
+  void _onRepoChanged() {
+    _calculateImpactData();
+  }
+
+  void _changeRange(ImpactRange r) {
+    if (_range == r) return;
+    HapticFeedback.lightImpact();
+    setState(() {
+      _range = r;
+    });
+    _calculateImpactData();
+  }
 
   DateTime _rangeStart() {
     final now = DateTime.now();
@@ -111,14 +134,6 @@ class _ImpactPageState extends State<ImpactPage> {
   }
 
   String _shortDate(DateTime d) => '${d.month}/${d.day}';
-
-  static const Color _moneyColor = Color(0xFF2D3436); 
-  static const Color _accentColor = Color(0xFF005F87);
-
-  void _changeRange(ImpactRange r) {
-    HapticFeedback.lightImpact();
-    setState(() => _range = r);
-  }
 
   // 🟢 智能分类推断逻辑
   String _inferCategory(String? cat, String? name) {
@@ -135,291 +150,328 @@ class _ImpactPageState extends State<ImpactPage> {
     if (c.contains('drink') || c.contains('beverage') || c.contains('juice') || c.contains('coffee') || c.contains('tea')) return 'Drinks';
 
     // 2. 如果 Category 没匹配到，尝试匹配 Name 关键词
-    // Veggies
     if (n.contains('onion') || n.contains('carrot') || n.contains('potato') || n.contains('tomato') || n.contains('spinach') || n.contains('lettuce') || n.contains('cucumber') || n.contains('pepper') || n.contains('broccoli')) return 'Veggies';
-    // Fruits
     if (n.contains('banana') || n.contains('apple') || n.contains('orange') || n.contains('grape') || n.contains('berry') || n.contains('lemon')) return 'Fruits';
-    // Protein
     if (n.contains('egg') || n.contains('tofu') || n.contains('bean') || n.contains('sausage') || n.contains('ham')) return 'Protein';
-    // Carbs
     if (n.contains('rice') || n.contains('bread') || n.contains('toast') || n.contains('bagel') || n.contains('pizza')) return 'Carbs';
-    // Dairy
     if (n.contains('milk') || n.contains('butter') || n.contains('cream')) return 'Dairy';
-    // Drinks
     if (n.contains('water') || n.contains('coke') || n.contains('soda') || n.contains('beer') || n.contains('wine')) return 'Drinks';
 
     // 3. 兜底
     if (c == 'manual' || c.isEmpty) return 'General';
-    return c; 
+    return c;
   }
+
+  // 核心优化：一次性计算所有数据
+  void _calculateImpactData() {
+    final start = _rangeStart();
+    final allEvents = widget.repo.impactEvents;
+
+    // 预分配集合和变量
+    final relevantEvents = <ImpactEvent>[];
+    final categoryMap = <String, double>{};
+    final dailyMoney = <DateTime, double>{};
+    
+    double moneySum = 0;
+    double co2Sum = 0;
+    double petQtySum = 0;
+    double totalQtySum = 0;
+
+    // 单次遍历处理
+    for (final e in allEvents) {
+      if (!e.date.isBefore(start)) {
+        relevantEvents.add(e);
+
+        moneySum += e.moneySaved;
+        co2Sum += e.co2Saved;
+        totalQtySum += e.quantity;
+
+        // 分类统计 (Top Savers)
+        if (e.type == ImpactType.eaten) {
+          final cat = _inferCategory(e.itemCategory, e.itemName);
+          categoryMap[cat] = (categoryMap[cat] ?? 0) + e.moneySaved;
+        }
+
+        // 宠物统计
+        if (e.type == ImpactType.fedToPet) {
+          petQtySum += e.quantity;
+        }
+
+        // 图表数据聚合
+        final d = DateTime(e.date.year, e.date.month, e.date.day);
+        dailyMoney[d] = (dailyMoney[d] ?? 0) + e.moneySaved;
+      }
+    }
+
+    // 排序 Recent Events
+    relevantEvents.sort((a, b) => b.date.compareTo(a.date));
+    final recent = relevantEvents.take(5).toList();
+
+    // 排序 Categories
+    final sortedCategories = categoryMap.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final topCats = sortedCategories.take(3).toList();
+
+    // 计算宠物份额
+    final share = totalQtySum == 0 ? 0.0 : (petQtySum / totalQtySum).clamp(0.0, 1.0);
+
+    // 生成图表 Spots
+    final allDates = dailyMoney.keys.toList()..sort();
+    final spots = <FlSpot>[];
+    final labels = <int, String>{};
+
+    for (var i = 0; i < allDates.length; i++) {
+      final d = allDates[i];
+      final x = i.toDouble();
+      spots.add(FlSpot(x, dailyMoney[d] ?? 0));
+      labels[i] = _shortDate(d);
+    }
+
+    if (mounted) {
+      setState(() {
+        _streak = widget.repo.getCurrentStreakDays();
+        _moneyTotal = moneySum;
+        _co2Total = co2Sum;
+        _savedCount = relevantEvents.length;
+        _recentEvents = recent;
+        _topCategories = topCats;
+        _petQty = petQtySum;
+        _petShare = share;
+        _moneySpots = spots;
+        _chartLabels = labels;
+        _hasEnoughData = spots.isNotEmpty;
+        _isEmpty = relevantEvents.isEmpty;
+      });
+    }
+  }
+
+  Widget _wrapShowcase({
+    required GlobalKey? key,
+    required String title,
+    required String description,
+    required Widget child,
+  }) {
+    if (key == null) return child;
+    return Showcase(
+      key: key,
+      title: title,
+      description: description,
+      targetBorderRadius: BorderRadius.circular(16),
+      child: child,
+    );
+  }
+
+  static const Color _accentColor = Color(0xFF005F87);
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: widget.repo,
-      builder: (context, child) {
-        final start = _rangeStart();
-        
-        final events = widget.repo.impactEvents
-            .where((e) => !e.date.isBefore(start))
-            .toList();
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
 
-        // 核心数据计算
-        final streak = widget.repo.getCurrentStreakDays();
-        final moneyTotal = events.fold<double>(0, (sum, e) => sum + e.moneySaved);
-        final co2Total = events.fold<double>(0, (sum, e) => sum + e.co2Saved);
-        final savedCount = events.length;
-        final recentEvents = List<ImpactEvent>.from(events)
-          ..sort((a, b) => b.date.compareTo(a.date));
-        final recent = recentEvents.take(5).toList();
-
-        // --- Top Savers ---
-        final categoryMap = <String, double>{};
-        for (var e in events) {
-          if (e.type == ImpactType.eaten) {
-            final cat = _inferCategory(e.itemCategory, e.itemName);
-            categoryMap[cat] = (categoryMap[cat] ?? 0) + e.moneySaved;
-          }
-        }
-        final sortedCategories = categoryMap.entries.toList()
-          ..sort((a, b) => b.value.compareTo(a.value));
-        final topCategories = sortedCategories.take(3).toList();
-
-        // 宠物数据
-        final petEvents = events.where((e) => e.type == ImpactType.fedToPet).toList();
-        final petQty = petEvents.fold<double>(0, (sum, e) => sum + e.quantity);
-        final totalQty = events.fold<double>(0, (sum, e) => sum + e.quantity);
-        final petShare = totalQty == 0 ? 0.0 : (petQty / totalQty).clamp(0.0, 1.0);
-
-        // 图表数据
-        final dailyMoney = <DateTime, double>{};
-        for (final e in events) {
-          final d = DateTime(e.date.year, e.date.month, e.date.day);
-          dailyMoney[d] = (dailyMoney[d] ?? 0) + e.moneySaved;
-        }
-
-        final allDates = dailyMoney.keys.toList()..sort();
-        final moneySpots = <FlSpot>[];
-        final labels = <int, String>{};
-
-        for (var i = 0; i < allDates.length; i++) {
-          final d = allDates[i];
-          final x = i.toDouble();
-          moneySpots.add(FlSpot(x, dailyMoney[d] ?? 0));
-          labels[i] = _shortDate(d);
-        }
-
-        final bool hasEnoughData = moneySpots.isNotEmpty;
-
-        final theme = Theme.of(context);
-        final colors = theme.colorScheme;
-        final isDark = theme.brightness == Brightness.dark;
-
-        return Scaffold(
-            backgroundColor: theme.scaffoldBackgroundColor,
-            body: CustomScrollView(
-              slivers: [
-                SliverAppBar(
-                  expandedHeight: 100.0,
-                  floating: false,
-                  pinned: true,
-                  backgroundColor: theme.scaffoldBackgroundColor,
-                  elevation: 0,
-                  systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-                flexibleSpace: FlexibleSpaceBar(
-                  centerTitle: false,
-                  titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-                  title: Text(
-                    'Your Impact',
-                    style: TextStyle(
-                      color: colors.onSurface,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 28,
-                    ),
+    return Scaffold(
+        backgroundColor: theme.scaffoldBackgroundColor,
+        body: CustomScrollView(
+          slivers: [
+            SliverAppBar(
+              expandedHeight: 100.0,
+              floating: false,
+              pinned: true,
+              backgroundColor: theme.scaffoldBackgroundColor,
+              elevation: 0,
+              systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+              flexibleSpace: FlexibleSpaceBar(
+                centerTitle: false,
+                titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+                title: Text(
+                  'Your Impact',
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 28,
                   ),
                 ),
-                actions: [
-                  Center(child: ProfileAvatarButton(repo: widget.repo)),
-                  const SizedBox(width: 20),
-                ],
               ),
+              actions: [
+                Center(child: ProfileAvatarButton(repo: widget.repo)),
+                const SizedBox(width: 20),
+              ],
+            ),
 
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    children: [
-                      FadeInSlide(
-                        index: 0,
-                        child: _wrapShowcase(
-                          key: widget.weeklyKey,
-                          title: 'Weekly Report',
-                          description: 'AI summary and insights for your week.',
-                          child: _WeeklyReportBanner(
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => WeeklyReportPage(repo: widget.repo),
-                              ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Column(
+                  children: [
+                    FadeInSlide(
+                      index: 0,
+                      child: _wrapShowcase(
+                        key: widget.weeklyKey,
+                        title: 'Weekly Report',
+                        description: 'AI summary and insights for your week.',
+                        child: _WeeklyReportBanner(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => WeeklyReportPage(repo: widget.repo),
                             ),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                    ),
+                    const SizedBox(height: 24),
 
-                      FadeInSlide(
-                        index: 1,
-                        child: _wrapShowcase(
-                          key: widget.rangeKey,
-                          title: 'Range Selector',
-                          description: 'Switch between 7 days, 30 days, and 1 year.',
-                          child: _SlidingRangeSelector(
-                            currentRange: _range,
-                            onChanged: _changeRange,
-                          ),
+                    FadeInSlide(
+                      index: 1,
+                      child: _wrapShowcase(
+                        key: widget.rangeKey,
+                        title: 'Range Selector',
+                        description: 'Switch between 7 days, 30 days, and 1 year.',
+                        child: _SlidingRangeSelector(
+                          currentRange: _range,
+                          onChanged: _changeRange,
                         ),
                       ),
-                      const SizedBox(height: 20),
+                    ),
+                    const SizedBox(height: 20),
 
-                      FadeInSlide(
-                        index: 2,
-                        child: _wrapShowcase(
-                          key: widget.heroKey,
-                          title: 'Impact Summary',
-                          description: 'Money saved and meals rescued in this range.',
-                          child: _ImpactHeroCard(
-                            moneySaved: moneyTotal,
-                            savedCount: savedCount,
-                            rangeMode: _range.name, 
-                          ),
+                    FadeInSlide(
+                      index: 2,
+                      child: _wrapShowcase(
+                        key: widget.heroKey,
+                        title: 'Impact Summary',
+                        description: 'Money saved and meals rescued in this range.',
+                        child: _ImpactHeroCard(
+                          moneySaved: _moneyTotal,
+                          savedCount: _savedCount,
+                          rangeMode: _range.name,
                         ),
                       ),
-                      const SizedBox(height: 16),
+                    ),
+                    const SizedBox(height: 16),
 
+                    FadeInSlide(
+                      index: 3,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _StatBentoCard(
+                              title: 'CO₂ Avoided',
+                              value: '${_co2Total.toStringAsFixed(1)} kg',
+                              subtitle: ImpactHelpers.getCo2Equivalent(_co2Total),
+                              icon: Icons.forest_rounded,
+                              color: const Color(0xFF43A047),
+                              bgColor: const Color(0xFFE8F5E9),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _StatBentoCard(
+                              title: 'Streak',
+                              value: '$_streak Days',
+                              subtitle: 'Keep it up!',
+                              icon: Icons.local_fire_department_rounded,
+                              color: Colors.deepOrange,
+                              bgColor: Colors.deepOrange.withOpacity(0.1),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    if (_recentEvents.isNotEmpty) ...[
                       FadeInSlide(
-                        index: 3,
-                        child: Row(
+                        index: 4,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: _StatBentoCard(
-                                title: 'CO₂ Avoided',
-                                value: '${co2Total.toStringAsFixed(1)} kg',
-                                subtitle: ImpactHelpers.getCo2Equivalent(co2Total), 
-                                icon: Icons.forest_rounded,
-                                color: const Color(0xFF43A047),
-                                bgColor: const Color(0xFFE8F5E9),
+                            Text(
+                              'Recent Actions',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: colors.onSurface.withOpacity(0.75),
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: _StatBentoCard(
-                                title: 'Streak',
-                                value: '$streak Days',
-                                subtitle: 'Keep it up!',
-                                icon: Icons.local_fire_department_rounded,
-                                color: Colors.deepOrange,
-                                bgColor: Colors.deepOrange.withOpacity(0.1),
+                            const SizedBox(height: 12),
+                            ..._recentEvents.map(
+                                  (e) => _RecentActionTile(
+                                event: e,
+                                actorName: widget.repo.resolveUserNameById(e.userId),
                               ),
                             ),
                           ],
                         ),
                       ),
-                      
                       const SizedBox(height: 24),
+                    ],
 
-                      if (recent.isNotEmpty) ...[
-                        FadeInSlide(
-                          index: 4,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Recent Actions',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: colors.onSurface.withOpacity(0.75),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              ...recent.map(
-                                (e) => _RecentActionTile(
-                                  event: e,
-                                  actorName: widget.repo.resolveUserNameById(e.userId),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-
-                      if (topCategories.isNotEmpty) ...[
-                        FadeInSlide(
-                          index: 5,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Top Savers',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: colors.onSurface.withOpacity(0.75),
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-                              _CategoryBreakdownCard(categories: topCategories),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-
+                    if (_topCategories.isNotEmpty) ...[
                       FadeInSlide(
-                        index: 6,
-                        child: _GuineaPigCard(
-                          petQty: petQty,
-                          petShare: petShare,
+                        index: 5,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Top Savers',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: colors.onSurface.withOpacity(0.75),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _CategoryBreakdownCard(categories: _topCategories),
+                          ],
                         ),
                       ),
-
-                      const SizedBox(height: 32),
-
-                      if (hasEnoughData) ...[
-                        FadeInSlide(
-                          index: 7,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Savings Trend',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: colors.onSurface.withOpacity(0.75),
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              _ChartCard(
-                                spots: moneySpots,
-                                labels: labels,
-                                color: _accentColor,
-                                unit: '€',
-                              ),
-                            ],
-                          ),
-                        ),
-                      ] else if (events.isEmpty) ...[
-                        FadeInSlide(index: 7, child: _EmptyStateCard()),
-                      ],
-
-                      const SizedBox(height: 100), 
+                      const SizedBox(height: 24),
                     ],
-                  ),
+
+                    FadeInSlide(
+                      index: 6,
+                      child: _GuineaPigCard(
+                        petQty: _petQty,
+                        petShare: _petShare,
+                      ),
+                    ),
+
+                    const SizedBox(height: 32),
+
+                    if (_hasEnoughData) ...[
+                      FadeInSlide(
+                        index: 7,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Savings Trend',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w800,
+                                color: colors.onSurface.withOpacity(0.75),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            _ChartCard(
+                              spots: _moneySpots,
+                              labels: _chartLabels,
+                              color: _accentColor,
+                              unit: '€',
+                            ),
+                          ],
+                        ),
+                      ),
+                    ] else if (_isEmpty) ...[
+                      FadeInSlide(index: 7, child: _EmptyStateCard()),
+                    ],
+
+                    const SizedBox(height: 100),
+                  ],
                 ),
               ),
-            ],
-          ),
-        );
-      },
+            ),
+          ],
+        ),
     );
   }
 }
@@ -634,10 +686,10 @@ class _WeeklyReportBanner extends StatelessWidget {
 class _ImpactHeroCard extends StatelessWidget {
   final double moneySaved;
   final int savedCount;
-  final String rangeMode; 
+  final String rangeMode;
 
   const _ImpactHeroCard({
-    required this.moneySaved, 
+    required this.moneySaved,
     required this.savedCount,
     required this.rangeMode,
   });
@@ -788,11 +840,11 @@ class _CategoryBreakdownCard extends StatelessWidget {
           final idx = entry.key;
           final cat = entry.value.key;
           final amount = entry.value.value;
-          
+
           IconData icon = Icons.fastfood_rounded;
           Color color = Colors.orange;
           final c = cat.toLowerCase();
-          
+
           if (c.contains('veg') || c.contains('fruit')) { icon = Icons.eco_rounded; color = Colors.green; }
           else if (c.contains('meat') || c.contains('fish')) { icon = Icons.restaurant_rounded; color = Colors.redAccent; }
           else if (c.contains('dairy') || c.contains('milk')) { icon = Icons.egg_rounded; color = Colors.blueAccent; }
@@ -985,7 +1037,7 @@ class _ChartCard extends StatelessWidget {
   final List<FlSpot> spots;
   final Map<int, String> labels;
   final Color color;
-  final String unit; 
+  final String unit;
 
   const _ChartCard({
     required this.spots,
@@ -1022,9 +1074,9 @@ class _ChartCard extends StatelessWidget {
             drawVerticalLine: false,
             horizontalInterval: safeMaxY / 4,
             getDrawingHorizontalLine: (value) => FlLine(
-              color: colors.onSurface.withOpacity(0.08),
-              strokeWidth: 1, 
-              dashArray: [5, 5]
+                color: colors.onSurface.withOpacity(0.08),
+                strokeWidth: 1,
+                dashArray: [5, 5]
             ),
           ),
           titlesData: FlTitlesData(
@@ -1039,9 +1091,8 @@ class _ChartCard extends StatelessWidget {
                 getTitlesWidget: (value, meta) {
                   final idx = value.toInt();
                   if (idx >= 0 && idx < labels.length) {
-                    // 🟢 修复：使用 meta 参数替代 axisSide
                     return SideTitleWidget(
-                      meta: meta, 
+                      meta: meta,
                       space: 4,
                       child: Text(
                         labels[idx] ?? '',
@@ -1227,7 +1278,7 @@ class _SlidingRangeSelector extends StatelessWidget {
 
 class FadeInSlide extends StatefulWidget {
   final Widget child;
-  final int index; 
+  final int index;
   final Duration duration;
 
   const FadeInSlide({super.key, required this.child, required this.index, this.duration = const Duration(milliseconds: 600)});

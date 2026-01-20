@@ -1,12 +1,13 @@
-// lib/widgets/food_card.dart
+﻿// lib/widgets/food_card.dart
 import 'package:flutter/material.dart';
 import '../models/food_item.dart';
 
 class FoodCard extends StatelessWidget {
   final FoodItem item;
   final Function(String action) onAction; // 回调函数
+  final VoidCallback? onTap;
 
-  /// ✅ 可选：允许外部传入 leading（用于 TodayPage 与 InventoryPage 统一图标风格）
+  /// 可选：允许外部传入 leading（用于 TodayPage 与 InventoryPage 统一图标风格）
   /// 不传则保持你原来的 CircleAvatar(timer) 逻辑不变。
   final Widget? leading;
 
@@ -15,6 +16,7 @@ class FoodCard extends StatelessWidget {
     required this.item,
     required this.onAction,
     this.leading,
+    this.onTap,
   });
 
   String _locationLabel(StorageLocation loc) {
@@ -32,6 +34,9 @@ class FoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCritical = item.daysToExpiry <= 1;
     final scheme = Theme.of(context).colorScheme;
+    final daysLabel = item.daysToExpiry < 0
+        ? 'Expired ${-item.daysToExpiry}d ago'
+        : '${item.daysToExpiry} days left';
 
     final bgColor = isCritical
         ? scheme.errorContainer.withOpacity(0.15)
@@ -42,7 +47,8 @@ class FoodCard extends StatelessWidget {
       elevation: 0,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        // ✅ 如果传了 leading 就用传入的；否则维持原样（不动其它逻辑）
+        onTap: onTap,
+        // 如果传了 leading 就用传入的；否则维持原样（不动其它逻辑）
         leading: leading ??
             CircleAvatar(
               backgroundColor: bgColor,
@@ -57,7 +63,7 @@ class FoodCard extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          '${item.daysToExpiry} days left • ${_locationLabel(item.location)}',
+          '$daysLabel - ${_locationLabel(item.location)}',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w500,
@@ -100,10 +106,10 @@ class FoodCard extends StatelessWidget {
           onSelected: (val) {
             onAction(val);
             if (val == 'pet') {
-              // 你的专属彩蛋 🐹
+              // 你的小彩蛋 🐞
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
-                  content: Text('Little Shi & Little Yuan are happy! 🐹'),
+                  content: Text('Little Shi & Little Yuan are happy! 🐞'),
                 ),
               );
             }
@@ -113,3 +119,5 @@ class FoodCard extends StatelessWidget {
     );
   }
 }
+
+

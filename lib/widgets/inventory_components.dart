@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'animations.dart'; // 需要引入 BouncingButton
@@ -77,24 +78,23 @@ class QuickActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      child: BouncingButton(
-        onTap: onTap,
-        child: Container(
-          width: 36,
-          height: 36,
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
-            shape: BoxShape.circle,
-            border: Border.all(color: color.withOpacity(0.3), width: 1),
-          ),
-          child: Center(
-            child: iconWidget ?? Icon(icon, color: color, size: 20),
-          ),
+    final button = BouncingButton(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          shape: BoxShape.circle,
+          border: Border.all(color: color.withOpacity(0.3), width: 1),
+        ),
+        child: Center(
+          child: iconWidget ?? Icon(icon, color: color, size: 20),
         ),
       ),
     );
+    if (kIsWeb) return button;
+    return Tooltip(message: tooltip, child: button);
   }
 }
 

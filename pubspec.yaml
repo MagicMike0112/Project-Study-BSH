@@ -20,6 +20,7 @@ dependencies:
   fl_chart: ^0.70.2
   cupertino_icons: ^1.0.8
   google_fonts: ^6.2.1
+  animations: ^2.0.11
   
   # --- 网络 & 链接 ---
   # ⚠️ 修复了 "any"，并升级到支持 Web 的版本

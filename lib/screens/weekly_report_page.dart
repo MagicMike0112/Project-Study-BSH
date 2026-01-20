@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/foundation.dart'; // setEquals
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,14 +10,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/inventory_repository.dart';
 import '../models/food_item.dart';
 
-// 🟢 升级后的数据模型
+// 馃煝 鍗囩骇鍚庣殑鏁版嵁妯″瀷
 class WeeklyData {
   final double moneySaved;
-  final double moneyWasted; // 新增：浪费金额
+  final double moneyWasted; // 鏂板锛氭氮璐归噾棰?
   final double co2;
   final Set<String> uniqueItems;
   final Map<String, int> categories;
-  final Map<String, int> topItems; // 新增：高频食物统计 {Name: Count}
+  final Map<String, int> topItems; // top items
+  final String contextSnapshot;
   
   String? aiInsight;
   List<Map<String, String>>? aiSuggestions;
@@ -36,6 +37,7 @@ class WeeklyData {
     this.aiSuggestions,
     this.isAiLoading = true,
     this.analyzedItemsSnapshot = const {},
+    this.contextSnapshot = '',
   });
 
   Map<String, dynamic> toJson() {
@@ -49,13 +51,14 @@ class WeeklyData {
       'aiInsight': aiInsight,
       'aiSuggestions': aiSuggestions,
       'analyzedItemsSnapshot': analyzedItemsSnapshot.toList(),
+      'contextSnapshot': contextSnapshot,
     };
   }
 
   factory WeeklyData.fromJson(Map<String, dynamic> json) {
     return WeeklyData(
       moneySaved: (json['moneySaved'] as num?)?.toDouble() ?? 0.0,
-      // 兼容旧版本缓存：如果没有 wasted 字段，默认为 0
+      // 鍏煎鏃х増鏈紦瀛橈細濡傛灉娌℃湁 wasted 瀛楁锛岄粯璁や负 0
       moneyWasted: (json['moneyWasted'] as num?)?.toDouble() ?? 0.0, 
       co2: (json['co2'] as num).toDouble(),
       uniqueItems: (json['uniqueItems'] as List).map((e) => e.toString()).toSet(),
@@ -64,6 +67,7 @@ class WeeklyData {
       aiInsight: json['aiInsight'],
       aiSuggestions: (json['aiSuggestions'] as List?)?.map((e) => Map<String, String>.from(e)).toList(),
       analyzedItemsSnapshot: (json['analyzedItemsSnapshot'] as List?)?.map((e) => e.toString()).toSet() ?? {},
+      contextSnapshot: json['contextSnapshot']?.toString() ?? '',
       isAiLoading: false, 
     );
   }
@@ -85,7 +89,18 @@ class WeeklyReportPage extends StatefulWidget {
 
 class _WeeklyReportPageState extends State<WeeklyReportPage> {
   final Map<int, WeeklyData> _memoryCache = {};
-  int _weekOffset = 0; // 0 = 本周
+  int _weekOffset = 0; // 0 = this week
+  final TextEditingController _thisWeekController = TextEditingController();
+  final TextEditingController _nextWeekController = TextEditingController();
+  String _thisWeekPreset = '';
+  String _nextWeekPreset = '';
+  static const List<String> _contextPresets = [
+    'Working out',
+    'Finals week',
+    'Traveling',
+    'Hosting guests',
+    'Busy work week',
+  ];
 
   @override
   void initState() {
@@ -93,14 +108,23 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
     _loadWeekData(_weekOffset);
   }
 
-  // 🟢 核心逻辑：加载数据 + 统计浪费 + 统计频率
+  @override
+  void dispose() {
+    _thisWeekController.dispose();
+    _nextWeekController.dispose();
+    super.dispose();
+  }
+
+  // 馃煝 鏍稿績閫昏緫锛氬姞杞芥暟鎹?+ 缁熻娴垂 + 缁熻棰戠巼
   Future<void> _loadWeekData(int offset) async {
     final now = DateTime.now();
-    // 计算周的起止时间（假设周一到周日，或简单的7天推算）
+    // 璁＄畻鍛ㄧ殑璧锋鏃堕棿锛堝亣璁惧懆涓€鍒板懆鏃ワ紝鎴栫畝鍗曠殑7澶╂帹绠楋級
     final endDate = now.subtract(Duration(days: 7 * offset));
     final startDate = endDate.subtract(const Duration(days: 7));
+    final nextWeekStart = endDate;
+    final nextWeekEnd = endDate.add(const Duration(days: 7));
 
-    // 获取该时间段内的所有事件
+    // 鑾峰彇璇ユ椂闂存鍐呯殑鎵€鏈変簨浠?
     final events = widget.repo.impactEvents.where((e) {
       return e.date.isAfter(startDate) && e.date.isBefore(endDate);
     }).toList();
@@ -110,11 +134,11 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
     double co2 = 0;
     final currentUniqueItems = <String>{};
     final catCounts = <String, int>{};
-    final itemFreq = <String, int>{}; // 频率统计
+    final itemFreq = <String, int>{}; // 棰戠巼缁熻
     final rawItemNamesForAi = <String>[];
 
     for (var e in events) {
-      // 统计消耗 (Saved)
+      // 缁熻娑堣€?(Saved)
       if (e.type == ImpactType.eaten || e.type == ImpactType.fedToPet) {
         moneySaved += e.moneySaved;
         co2 += e.co2Saved;
@@ -124,28 +148,28 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
           currentUniqueItems.add(name);
           rawItemNamesForAi.add(name);
           
-          // 统计频率
+          // 缁熻棰戠巼
           itemFreq[name] = (itemFreq[name] ?? 0) + 1;
 
-          // 统计分类
+          // 缁熻鍒嗙被
           final key = _inferCategory(e.itemCategory, name);
           catCounts[key] = (catCounts[key] ?? 0) + 1;
         }
       } 
-      // 统计浪费 (Waste)
+      // 缁熻娴垂 (Waste)
       else if (e.type == ImpactType.trash) {
-        // 假设 ImpactEvent 中 moneySaved 在 trash 类型下代表损失的金额
-        // 如果你的逻辑不同，这里需要调整，比如 e.cost
+        // 鍋囪 ImpactEvent 涓?moneySaved 鍦?trash 绫诲瀷涓嬩唬琛ㄦ崯澶辩殑閲戦
+        // 濡傛灉浣犵殑閫昏緫涓嶅悓锛岃繖閲岄渶瑕佽皟鏁达紝姣斿 e.cost
         moneyWasted += e.moneySaved; 
       }
     }
 
-    // 对频率进行排序
+    // 瀵归鐜囪繘琛屾帓搴?
     final sortedTopItems = Map.fromEntries(
       itemFreq.entries.toList()..sort((a, b) => b.value.compareTo(a.value))
     );
 
-    // 尝试获取缓存
+    // 灏濊瘯鑾峰彇缂撳瓨
     WeeklyData? cachedData = _memoryCache[offset];
     if (cachedData == null) {
       cachedData = await _loadFromDisk(offset);
@@ -154,15 +178,22 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
       }
     }
 
-    // 判断是否可以使用缓存的 AI 报告
+    // 鍒ゆ柇鏄惁鍙互浣跨敤缂撳瓨鐨?AI 鎶ュ憡
+    final plannedMealsThisWeek = _buildPlannedMealsPayload(startDate, endDate);
+    final plannedMealsNextWeek = _buildPlannedMealsPayload(nextWeekStart, nextWeekEnd);
+    final plannedSnapshot = _buildPlannedMealsSnapshot(plannedMealsThisWeek, plannedMealsNextWeek);
+    final contextSnapshot = _buildAiContextSnapshot(plannedSnapshot);
     bool canUseCachedAi = false;
-    if (cachedData != null && 
+    if (offset > 0 && cachedData?.aiInsight != null) {
+      canUseCachedAi = true;
+    } else if (cachedData != null && 
         cachedData.aiInsight != null && 
-        setEquals(cachedData.analyzedItemsSnapshot, currentUniqueItems)) {
+        setEquals(cachedData.analyzedItemsSnapshot, currentUniqueItems) &&
+        cachedData.contextSnapshot == contextSnapshot) {
       canUseCachedAi = true;
     }
 
-    // 构建新数据对象
+    // 鏋勫缓鏂版暟鎹璞?
     final newData = WeeklyData(
       moneySaved: moneySaved,
       moneyWasted: moneyWasted,
@@ -174,14 +205,23 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
       aiSuggestions: canUseCachedAi ? cachedData!.aiSuggestions : cachedData?.aiSuggestions,
       isAiLoading: !canUseCachedAi && currentUniqueItems.isNotEmpty,
       analyzedItemsSnapshot: canUseCachedAi ? cachedData!.analyzedItemsSnapshot : const {},
+      contextSnapshot: contextSnapshot,
     );
 
     _memoryCache[offset] = newData;
     if (mounted) setState(() {});
 
-    // 请求 AI
+    // 璇锋眰 AI
     if (!canUseCachedAi && currentUniqueItems.isNotEmpty) {
-      await _fetchAiInsight(offset, rawItemNamesForAi, currentUniqueItems);
+      await _fetchAiInsight(
+        offset,
+        rawItemNamesForAi,
+        currentUniqueItems,
+        itemFreq,
+        contextSnapshot,
+        plannedMealsThisWeek,
+        plannedMealsNextWeek,
+      );
     } else if (currentUniqueItems.isEmpty) {
       _memoryCache[offset] = WeeklyData(
         moneySaved: moneySaved, moneyWasted: moneyWasted, co2: co2, 
@@ -197,7 +237,7 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
   Future<WeeklyData?> _loadFromDisk(int offset) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final key = 'weekly_report_v2_$offset'; // 升级 version key 以避免解析旧数据错误
+      final key = 'weekly_report_v2_$offset'; // 鍗囩骇 version key 浠ラ伩鍏嶈В鏋愭棫鏁版嵁閿欒
       final jsonString = prefs.getString(key);
       if (jsonString != null) {
         return WeeklyData.fromJson(jsonDecode(jsonString));
@@ -218,16 +258,30 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
     }
   }
 
-  Future<void> _fetchAiInsight(int offset, List<String> itemsList, Set<String> itemsSet) async {
+  Future<void> _fetchAiInsight(
+    int offset,
+    List<String> itemsList,
+    Set<String> itemsSet,
+    Map<String, int> itemFreq,
+    String contextSnapshot,
+    List<Map<String, dynamic>> plannedMealsThisWeek,
+    List<Map<String, dynamic>> plannedMealsNextWeek,
+  ) async {
     try {
       final uri = Uri.parse('https://project-study-bsh.vercel.app/api/recipe');
       final historyContext = _buildWeeklyComparisonContext(weekOffset: offset);
+      final consumptionCounts = itemFreq.map((k, v) => MapEntry(k, v));
+      final weekContext = _buildWeekContext();
       final resp = await http.post(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'action': 'analyze_diet',
           'consumed': itemsList,
+          'consumptionCounts': consumptionCounts,
+          'plannedMealsThisWeek': plannedMealsThisWeek,
+          'plannedMealsNextWeek': plannedMealsNextWeek,
+          'weekContext': weekContext,
           'studentMode': widget.studentMode,
           'history': historyContext,
         }),
@@ -255,6 +309,7 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
               }).toList(),
               isAiLoading: false,
               analyzedItemsSnapshot: itemsSet,
+              contextSnapshot: contextSnapshot,
             );
 
             _memoryCache[offset] = updatedData;
@@ -278,6 +333,7 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
               aiSuggestions: current.aiSuggestions ?? [],
               isAiLoading: false,
               analyzedItemsSnapshot: current.analyzedItemsSnapshot,
+              contextSnapshot: current.contextSnapshot,
             );
           }
         });
@@ -399,8 +455,178 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
       const SnackBar(
         behavior: SnackBarBehavior.floating,
         backgroundColor: Color(0xFF005F87),
-        content: Text('Added to shopping list ✅'),
+        content: Text('Added to shopping list.'),
         duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  String _restockContextSnapshot() {
+    return '${_thisWeekController.text.trim()}|${_nextWeekController.text.trim()}';
+  }
+
+  String _buildAiContextSnapshot(String plannedSnapshot) {
+    return '${_restockContextSnapshot()}|planned:$plannedSnapshot';
+  }
+
+  List<Map<String, dynamic>> _buildPlannedMealsPayload(DateTime start, DateTime end) {
+    final plans = widget.repo.getMealPlansForRange(start, end);
+    plans.sort((a, b) {
+      final dateCompare = a.planDate.compareTo(b.planDate);
+      if (dateCompare != 0) return dateCompare;
+      return a.slot.compareTo(b.slot);
+    });
+    return plans
+        .map((p) => {
+              'date': p.planDate.toIso8601String().substring(0, 10),
+              'slot': p.slot,
+              'mealName': p.mealName,
+              'recipeName': p.recipeName,
+              'itemIds': p.itemIds.toList(),
+            })
+        .toList();
+  }
+
+  String _buildPlannedMealsSnapshot(
+    List<Map<String, dynamic>> thisWeek,
+    List<Map<String, dynamic>> nextWeek,
+  ) {
+    String encode(List<Map<String, dynamic>> list) {
+      return list
+          .map((e) {
+            final items = (e['itemIds'] as List? ?? []).join(',');
+            return '${e['date']}|${e['slot']}|${e['recipeName'] ?? ''}|$items';
+          })
+          .join(';');
+    }
+    return '${encode(thisWeek)}||${encode(nextWeek)}';
+  }
+  Map<String, String> _buildWeekContext() {
+    return {
+      'thisWeek': _thisWeekController.text.trim(),
+      'nextWeek': _nextWeekController.text.trim(),
+    };
+  }
+
+  Widget _buildContextInputCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+
+    Widget buildPresetRow({
+      required String selected,
+      required ValueChanged<String> onSelected,
+    }) {
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: _contextPresets.map((preset) {
+          final isSelected = selected == preset;
+          return GestureDetector(
+            onTap: () => onSelected(preset),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFF005F87) : theme.cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: isSelected ? Colors.transparent : theme.dividerColor),
+              ),
+              child: Text(
+                preset,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: isSelected ? Colors.white : colors.onSurface.withOpacity(0.7),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Tell us your week',
+            style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'This week I am...',
+            style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _thisWeekController,
+            decoration: InputDecoration(
+              hintText: 'e.g. Working out',
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onChanged: (_) {
+              if (_thisWeekPreset.isNotEmpty) {
+                setState(() => _thisWeekPreset = '');
+              }
+            },
+          ),
+          const SizedBox(height: 10),
+          buildPresetRow(
+            selected: _thisWeekPreset,
+            onSelected: (preset) {
+              setState(() {
+                _thisWeekPreset = preset;
+                _thisWeekController.text = preset;
+              });
+            },
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Next week I will...',
+            style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _nextWeekController,
+            decoration: InputDecoration(
+              hintText: 'e.g. Finals week',
+              isDense: true,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            onChanged: (_) {
+              if (_nextWeekPreset.isNotEmpty) {
+                setState(() => _nextWeekPreset = '');
+              }
+            },
+          ),
+          const SizedBox(height: 10),
+          buildPresetRow(
+            selected: _nextWeekPreset,
+            onSelected: (preset) {
+              setState(() {
+                _nextWeekPreset = preset;
+                _nextWeekController.text = preset;
+              });
+            },
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => _loadWeekData(_weekOffset),
+              child: const Text('Update restock suggestions'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -448,7 +674,7 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
                   
                   const SizedBox(height: 24),
 
-                  // 🟢 新增：效率记分卡 (Saved vs Wasted)
+                  // 馃煝 鏂板锛氭晥鐜囪鍒嗗崱 (Saved vs Wasted)
                   _EfficiencyScorecard(
                     saved: data.moneySaved, 
                     wasted: data.moneyWasted, 
@@ -472,7 +698,7 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
                     const SizedBox(height: 24),
                   ],
 
-                  // 🟢 新增：Top Items (High Frequency)
+                  // 馃煝 鏂板锛歍op Items (High Frequency)
                   if (data.topItems.isNotEmpty) ...[
                      Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -509,7 +735,9 @@ class _WeeklyReportPageState extends State<WeeklyReportPage> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  
+                  _buildContextInputCard(context),
+                  const SizedBox(height: 16),
+
                   if (data.isAiLoading)
                       const _RestockLoadingSkeleton()
                   else if (data.aiSuggestions == null || data.aiSuggestions!.isEmpty)
@@ -564,7 +792,7 @@ class _EfficiencyScorecard extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final total = saved + wasted;
-    // 避免除以0
+    // 閬垮厤闄や互0
     final savedPct = total == 0 ? 0 : (saved / total * 100).toInt();
     final wastedPct = total == 0 ? 0 : (wasted / total * 100).toInt();
 
@@ -597,7 +825,7 @@ class _EfficiencyScorecard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  (total == 0) ? 'No Activity' : ((wasted == 0) ? 'Perfect! 🌟' : 'Analyze Waste'),
+                  (total == 0) ? 'No Activity' : ((wasted == 0) ? 'Perfect!' : 'Analyze Waste'),
                   style: TextStyle(
                     fontSize: 11, 
                     fontWeight: FontWeight.bold,
@@ -625,7 +853,10 @@ class _EfficiencyScorecard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text('€${saved.toStringAsFixed(0)}', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Color(0xFF005F87))),
+                    Text(
+                      'EUR ${saved.toStringAsFixed(0)}',
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, color: Color(0xFF005F87)),
+                    ),
                   ],
                 ),
               ),
@@ -645,7 +876,7 @@ class _EfficiencyScorecard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '-€${wasted.toStringAsFixed(0)}', 
+                      '-EUR ${wasted.toStringAsFixed(0)}',
                       style: TextStyle(
                         fontSize: 26, 
                         fontWeight: FontWeight.w800, 
@@ -681,7 +912,7 @@ class _EfficiencyScorecard extends StatelessWidget {
               Icon(Icons.forest_rounded, size: 16, color: Colors.green.shade400),
               const SizedBox(width: 6),
               Text(
-                '${co2.toStringAsFixed(1)}kg CO₂ avoided',
+                '${co2.toStringAsFixed(1)}kg CO2 avoided',
                 style: TextStyle(
                   fontSize: 13,
                   color: colors.onSurface.withOpacity(0.6),
@@ -697,7 +928,7 @@ class _EfficiencyScorecard extends StatelessWidget {
 }
 
 class _TopItemsList extends StatelessWidget {
-  final Map<String, int> topItems;
+  final Map<String, int> topItems; // top items
   final Set<String> allItems;
 
   const _TopItemsList({required this.topItems, required this.allItems});
@@ -804,14 +1035,7 @@ class _WeekSelector extends StatelessWidget {
   final VoidCallback onTapDate;
   final VoidCallback onReset;
 
-  const _WeekSelector({
-    required this.dateRange,
-    required this.offset,
-    required this.onPrev,
-    required this.onNext,
-    required this.onTapDate,
-    required this.onReset,
-  });
+  const _WeekSelector({    required this.dateRange,    required this.offset,    required this.onPrev,    required this.onNext,    required this.onTapDate,    required this.onReset,  });
 
   @override
   Widget build(BuildContext context) {
@@ -955,6 +1179,7 @@ class _InsightHeroCard extends StatelessWidget {
 
 class _RestockLoadingSkeleton extends StatelessWidget {
   const _RestockLoadingSkeleton();
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1003,6 +1228,7 @@ class _ShimmerBlockState extends State<_ShimmerBlock> with SingleTickerProviderS
 class _DietCompositionCard extends StatelessWidget {
   final Map<String, int> data;
   const _DietCompositionCard({required this.data});
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1055,6 +1281,7 @@ class _RestockCard extends StatelessWidget {
   final String reason;
   final VoidCallback onAdd;
   const _RestockCard({required this.name, required this.reason, required this.onAdd});
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1075,3 +1302,25 @@ class _RestockCard extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

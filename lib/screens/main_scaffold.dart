@@ -91,11 +91,7 @@ class _MainScaffoldState extends State<MainScaffold> {
     if (_currentIndex != index) {
       HapticFeedback.selectionClick();
       _closeFabMenu();
-      _pageController.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeOutQuart,
-      );
+      _pageController.jumpToPage(index);
     }
   }
 

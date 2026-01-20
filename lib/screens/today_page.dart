@@ -9,6 +9,7 @@ import '../repositories/inventory_repository.dart';
 import '../widgets/inventory_components.dart';
 import '../widgets/food_card.dart';
 import 'select_ingredients_page.dart';
+import 'cooking_calendar_page.dart';
 
 class TodayPageWrapper extends StatefulWidget {
   final InventoryRepository repo;
@@ -165,7 +166,8 @@ class TodayPage extends StatelessWidget {
         final colors = theme.colorScheme;
         final isDark = theme.brightness == Brightness.dark;
         final bgColor = theme.scaffoldBackgroundColor;
-        final expiring = repo.getExpiringItems(3);
+        final expiring = repo.getExpiringItems(3)
+          ..sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
 
         return Scaffold(
           backgroundColor: bgColor,
@@ -178,7 +180,14 @@ class TodayPage extends StatelessWidget {
             backgroundColor: bgColor,
             elevation: 0,
             scrolledUnderElevation: 0,
-            systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark, 
+            systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+            actions: [
+              IconButton(
+                tooltip: 'Recipe Archive',
+                onPressed: () => _openRecipeArchive(context),
+                icon: Icon(Icons.bookmark_border_rounded, color: colors.onSurface),
+              ),
+            ],
           ),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 120),
@@ -198,19 +207,19 @@ class TodayPage extends StatelessWidget {
               ),
               const SizedBox(height: 16),
 
-              // 2. Recipe Archive Entry
+              // 2. Cooking Calendar Hero
               FadeInSlide(
-                index: 1,
+                index: 2,
                 child: BouncingButton(
-                  onTap: () => _openRecipeArchive(context),
-                  child: _buildArchiveEntry(context),
+                  onTap: () => _openCookingCalendar(context),
+                  child: _buildCalendarHero(context),
                 ),
               ),
               const SizedBox(height: 20),
 
               // 3. Expiring Header
               FadeInSlide(
-                index: 2,
+                index: 3,
                 child: _wrapShowcase(
                   key: expiringKey,
                   title: 'Expiring Soon',
@@ -223,15 +232,15 @@ class TodayPage extends StatelessWidget {
               // 4. Expiring List
               if (expiring.isEmpty)
                 FadeInSlide(
-                  index: 3,
+                  index: 4,
                   child: _buildEmptyState(context),
                 )
               else
                 ...expiring.asMap().entries.map(
                   (entry) => FadeInSlide(
-                    index: 3 + entry.key,
+                    index: 4 + entry.key,
                     child: Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.only(bottom: 4),
                       child: FoodCard(
                         item: entry.value,
                         leading: _buildInventoryStyleLeading(
@@ -312,6 +321,13 @@ class TodayPage extends StatelessWidget {
     );
   }
 
+  Future<void> _openCookingCalendar(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => CookingCalendarPage(repo: repo)),
+    );
+  }
+
   Widget _buildInventoryStyleLeading(FoodItem item, {String? ownerLabel}) {
     final leading = _leadingIcon(item);
     return Container(
@@ -346,7 +362,6 @@ class TodayPage extends StatelessWidget {
   }
 
   String? _resolveOwnerLabel(FoodItem item) {
-    if (!repo.isSharedUsage) return null;
     final name = item.ownerName?.trim();
     if (name == null || name.isEmpty) return null;
     return name == 'Me' ? repo.currentUserName : name;
@@ -436,7 +451,7 @@ class TodayPage extends StatelessWidget {
                     color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE5F1F8),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.auto_awesome, color: Color(0xFF005F87), size: 24),
+                  child: const Icon(Icons.restaurant_menu, color: Color(0xFF005F87), size: 24),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -477,67 +492,101 @@ class TodayPage extends StatelessWidget {
     );
   }
 
-  Widget _buildArchiveEntry(BuildContext context) {
+  Widget _buildCalendarHero(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
     return Container(
-      height: 76,
+      height: 110,
       decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: theme.dividerColor),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? const [Color(0xFF18242B), Color(0xFF0E171C)]
+              : const [Color(0xFFF0F7F5), Color(0xFFE8F0FA)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE3ECEF)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.04),
-            blurRadius: 16,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
+      child: Stack(
+        children: [
+          Positioned(
+            right: -16,
+            top: -16,
+            child: Container(
+              width: 90,
+              height: 90,
               decoration: BoxDecoration(
-                color: _primaryBlue.withOpacity(isDark ? 0.2 : 0.15),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(Icons.archive_rounded, color: Color(0xFF005F87)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Recipe Archive',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: colors.onSurface,
-                    ),
-                  ),
-                  SizedBox(height: 2),
-                  Text(
-                    'View your saved recipes',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: colors.onSurface.withOpacity(0.6),
-                    ),
-                  ),
-                ],
+                color: isDark ? Colors.white.withOpacity(0.06) : const Color(0xFFDDEDF3),
+                shape: BoxShape.circle,
               ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded, color: colors.onSurface.withOpacity(0.5), size: 16),
-          ],
-        ),
+          ),
+          Positioned(
+            left: -12,
+            bottom: -12,
+            child: Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withOpacity(0.05) : const Color(0xFFE7F4EE),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE3F2ED),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.calendar_month_rounded, color: Color(0xFF0E7AA8), size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Plan Your Week！',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Tap to plan meals.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: colors.onSurface.withOpacity(0.6),
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward_ios_rounded, color: colors.onSurface.withOpacity(0.5), size: 16),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -758,3 +807,4 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
     );
   }
 }
+

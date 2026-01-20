@@ -1,4 +1,5 @@
 // lib/screens/shopping_list_page.dart
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -81,6 +82,90 @@ class ShoppingListPage extends StatefulWidget {
 
 class _ShoppingListPageState extends State<ShoppingListPage> {
   final TextEditingController _controller = TextEditingController();
+  List<ShoppingItem> _activeItems = [];
+  List<ShoppingItem> _checkedItems = [];
+  List<String> _suggestions = [];
+  Map<String, int> _activeIndexMap = {};
+  Map<String, int> _checkedIndexMap = {};
+  int _activeSignature = 0;
+  int _checkedSignature = 0;
+  int _historySignature = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.repo.addListener(_onRepoChanged);
+    _refreshFromRepo(forceSuggestions: true);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _refreshFromRepo();
+  }
+
+  @override
+  void dispose() {
+    widget.repo.removeListener(_onRepoChanged);
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _onRepoChanged() => _refreshFromRepo();
+
+  int _itemsSignature(Iterable<ShoppingItem> items) {
+    return Object.hashAll(items.map((item) => Object.hash(item.id, item.isChecked)));
+  }
+
+  int _historySig(List<ShoppingHistoryItem> history) {
+    if (history.isEmpty) return 0;
+    var latest = 0;
+    for (final item in history) {
+      final ts = item.date.millisecondsSinceEpoch;
+      if (ts > latest) latest = ts;
+    }
+    return Object.hash(history.length, latest);
+  }
+
+  void _refreshFromRepo({bool forceSuggestions = false}) {
+    final allItems = widget.repo.getShoppingList();
+    final activeItems = allItems.where((i) => !i.isChecked).toList();
+    final checkedItems = allItems.where((i) => i.isChecked).toList();
+    final activeIndexMap = <String, int>{};
+    for (var i = 0; i < activeItems.length; i++) {
+      activeIndexMap[activeItems[i].id] = i;
+    }
+    final checkedIndexMap = <String, int>{};
+    for (var i = 0; i < checkedItems.length; i++) {
+      checkedIndexMap[checkedItems[i].id] = i;
+    }
+    final activeSignature = _itemsSignature(activeItems);
+    final checkedSignature = _itemsSignature(checkedItems);
+    final historySignature = _historySig(widget.repo.shoppingHistory);
+
+    final shouldUpdateSuggestions = forceSuggestions ||
+        activeSignature != _activeSignature ||
+        historySignature != _historySignature;
+
+    if (!shouldUpdateSuggestions &&
+        activeSignature == _activeSignature &&
+        checkedSignature == _checkedSignature) {
+      return;
+    }
+
+    setState(() {
+      _activeItems = activeItems;
+      _checkedItems = checkedItems;
+      _activeIndexMap = activeIndexMap;
+      _checkedIndexMap = checkedIndexMap;
+      _activeSignature = activeSignature;
+      _checkedSignature = checkedSignature;
+      if (shouldUpdateSuggestions) {
+        _suggestions = _buildSuggestions(activeItems);
+        _historySignature = historySignature;
+      }
+    });
+  }
   Widget _wrapShowcase({
     required GlobalKey? key,
     required String title,
@@ -98,11 +183,72 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
   }
 
   
-  // 智能建议列表
-  final List<String> _suggestions = [
-    'Milk', 'Eggs', 'Avocado', 'Sourdough', 'Chicken Breast', 
-    'Toilet Paper', 'Olive Oil', 'Coffee', 'Greek Yogurt', 'Dark Chocolate'
+  // Fallback suggestions when history is insufficient.
+  static const List<String> _defaultSuggestions = [
+    'Milk',
+    'Eggs',
+    'Avocado',
+    'Sourdough',
+    'Chicken Breast',
+    'Toilet Paper',
+    'Olive Oil',
+    'Coffee',
+    'Greek Yogurt',
+    'Dark Chocolate',
   ];
+
+  String _normalizeName(String name) => name.trim().toLowerCase();
+
+  List<String> _buildSuggestions(List<ShoppingItem> activeItems) {
+    final activeSet = activeItems.map((e) => _normalizeName(e.name)).toSet();
+    final history = widget.repo.shoppingHistory;
+    final Map<String, _SuggestionStat> stats = {};
+
+    for (final item in history) {
+      final name = item.name.trim();
+      if (name.isEmpty) continue;
+      final key = _normalizeName(name);
+      final existing = stats[key];
+      if (existing == null) {
+        stats[key] = _SuggestionStat(name: name, count: 1, lastSeen: item.date);
+      } else {
+        final updatedDate = item.date.isAfter(existing.lastSeen) ? item.date : existing.lastSeen;
+        stats[key] = _SuggestionStat(
+          name: existing.name,
+          count: existing.count + 1,
+          lastSeen: updatedDate,
+        );
+      }
+    }
+
+    final ranked = stats.values.toList()
+      ..sort((a, b) {
+        final countCompare = b.count.compareTo(a.count);
+        if (countCompare != 0) return countCompare;
+        return b.lastSeen.compareTo(a.lastSeen);
+      });
+
+    final suggestions = <String>[];
+    for (final stat in ranked) {
+      final key = _normalizeName(stat.name);
+      if (activeSet.contains(key)) continue;
+      suggestions.add(stat.name);
+      if (suggestions.length >= 10) break;
+    }
+
+    if (suggestions.length < 6) {
+      for (final fallback in _defaultSuggestions) {
+        final key = _normalizeName(fallback);
+        if (activeSet.contains(key) || suggestions.any((s) => _normalizeName(s) == key)) {
+          continue;
+        }
+        suggestions.add(fallback);
+        if (suggestions.length >= 10) break;
+      }
+    }
+
+    return suggestions;
+  }
   
   void _showAutoDismissSnackBar(String message, {VoidCallback? onUndo}) {
     if (!mounted) return;
@@ -178,6 +324,37 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
 
     await widget.repo.saveShoppingItem(newItem);
     _controller.clear();
+  }
+
+  void _addItemFromInput() {
+    final value = _controller.text.trim();
+    if (value.isEmpty) return;
+    _addItem(value);
+  }
+
+  Widget _buildInputField() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return TextField(
+      controller: _controller,
+      textInputAction: TextInputAction.done,
+      onSubmitted: (_) => _addItemFromInput(),
+      decoration: InputDecoration(
+        hintText: 'Add item (e.g. Milk)',
+        isDense: true,
+        filled: true,
+        fillColor: theme.cardColor,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.outline.withOpacity(0.3)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide(color: colors.primary, width: 1.4),
+        ),
+      ),
+    );
   }
 
   Future<void> _editShoppingNote(ShoppingItem item) async {
@@ -324,47 +501,14 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
           ),
         ],
       ),
-      body: ListenableBuilder(
-        listenable: widget.repo,
-        builder: (context, child) {
-          final allItems = widget.repo.getShoppingList();
-          final activeItems = allItems.where((i) => !i.isChecked).toList();
-          final checkedItems = allItems.where((i) => i.isChecked).toList();
-          final itemTiles = <Widget>[
-            ...activeItems.asMap().entries.map((entry) => FadeInSlide(
-              key: ValueKey(entry.value.id),
-              index: 1 + (entry.key > 5 ? 5 : entry.key),
-              child: _buildDismissibleItem(entry.value),
-            )),
-            if (activeItems.isNotEmpty && checkedItems.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 24),
-                child: Row(
-                  children: [
-                    const Expanded(child: Divider()),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'COMPLETED',
-                        style: TextStyle(
-                          color: colors.onSurface.withOpacity(0.4),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                    const Expanded(child: Divider()),
-                  ],
-                ),
-              ),
-            ...checkedItems.asMap().entries.map((entry) => FadeInSlide(
-              key: ValueKey(entry.value.id),
-              index: 1 + activeItems.length + (entry.key > 5 ? 5 : entry.key),
-              child: _buildDismissibleItem(entry.value),
-            )),
-          ];
-
+      body: Builder(
+        builder: (context) {
+          final allItemsEmpty = _activeItems.isEmpty && _checkedItems.isEmpty;
+          final bottomInset = MediaQuery.of(context).padding.bottom;
+          const tabBarHeight = 64.0;
+          const tabBarMargin = 20.0;
+          final tabBarSpace = bottomInset + tabBarHeight + tabBarMargin;
+          final listBottomPadding = tabBarSpace + (_checkedItems.isNotEmpty ? 140.0 : 100.0);
           return RefreshIndicator(
             color: primary,
             onRefresh: widget.repo.refreshAll,
@@ -373,8 +517,7 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
               slivers: [
                 if (_suggestions.isNotEmpty)
                   SliverToBoxAdapter(
-                    child: FadeInSlide(
-                      index: 0,
+                    child: RepaintBoundary(
                       child: SizedBox(
                         height: 60,
                         child: ListView.builder(
@@ -405,31 +548,97 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                       ),
                     ),
                   ),
-                if (allItems.isEmpty)
+                if (allItemsEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
-                    child: FadeInSlide(index: 1, child: _buildEmptyState()),
+                    child: RepaintBoundary(child: _buildEmptyState()),
                   )
-                else
+                else ...[
                   SliverPadding(
-                    // 🟢 增加底部 Padding (220) 以确保列表内容不被加高的 BottomSheet 遮挡
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 220),
+                    // ð¢ å¢å åºé¨ Padding (220) ä»¥ç¡®ä¿åè¡¨åå®¹ä¸è¢«å é«ç BottomSheet é®æ¡
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                     sliver: SliverList(
-                      delegate: SliverChildListDelegate(itemTiles),
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item = _activeItems[index];
+                          return RepaintBoundary(
+                            key: ValueKey(item.id),
+                            child: _buildDismissibleItem(item),
+                          );
+                        },
+                        childCount: _activeItems.length,
+                        addAutomaticKeepAlives: false,
+                        addRepaintBoundaries: false,
+                        addSemanticIndexes: false,
+                        findChildIndexCallback: (key) {
+                          if (key is ValueKey<String>) {
+                            return _activeIndexMap[key.value];
+                          }
+                          return null;
+                        },
+                      ),
                     ),
                   ),
+                  if (_activeItems.isNotEmpty && _checkedItems.isNotEmpty)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Row(
+                          children: [
+                            const Expanded(child: Divider()),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Text(
+                                'COMPLETED',
+                                style: TextStyle(
+                                  color: colors.onSurface.withOpacity(0.4),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 1.2,
+                                ),
+                              ),
+                            ),
+                            const Expanded(child: Divider()),
+                          ],
+                        ),
+                      ),
+                    ),
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(20, 0, 20, listBottomPadding),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final item = _checkedItems[index];
+                          return RepaintBoundary(
+                            key: ValueKey(item.id),
+                            child: _buildDismissibleItem(item),
+                          );
+                        },
+                        childCount: _checkedItems.length,
+                        addAutomaticKeepAlives: false,
+                        addRepaintBoundaries: false,
+                        addSemanticIndexes: false,
+                        findChildIndexCallback: (key) {
+                          if (key is ValueKey<String>) {
+                            return _checkedIndexMap[key.value];
+                          }
+                          return null;
+                        },
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );
         },
       ),
-
-      // 底部工具栏
-      bottomSheet: ListenableBuilder(
-        listenable: widget.repo,
-        builder: (context, child) {
-          final items = widget.repo.getShoppingList();
-          final checkedItems = items.where((i) => i.isChecked).toList();
+      bottomSheet: Builder(
+        builder: (context) {
+          final bottomInset = MediaQuery.of(context).padding.bottom;
+          const tabBarHeight = 64.0;
+          const tabBarMargin = 20.0;
+          final tabBarSpace = bottomInset + tabBarHeight + tabBarMargin;
 
           return Container(
             decoration: BoxDecoration(
@@ -442,17 +651,17 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                 )
               ],
             ),
-            // 🟢 关键调整：底部 Padding 增加到 safeArea + 100
-            // 这样输入框和 AI 按钮会位于悬浮导航栏上方 (悬浮栏约高 84px)
-            padding: EdgeInsets.fromLTRB(20, 16, 20, MediaQuery.of(context).padding.bottom + 100),
+            // ð¢ å³é®è°æ´ï¼åºé¨Padding å¢å å°safeArea + 100
+            // è¿æ ·è¾å¥æ¡å AI æé®ä¼ä½äºæ¬æµ®å¯¼èªæ ä¸æ¹ (æ¬æµ®æ çº¦é«84px)
+            padding: EdgeInsets.fromLTRB(20, 16, 20, tabBarSpace + 8),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (checkedItems.isNotEmpty)
+                if (_checkedItems.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: BouncingButton(
-                      onTap: () => _moveCheckedToInventory(context, checkedItems),
+                      onTap: () => _moveCheckedToInventory(context, _checkedItems),
                       child: Container(
                         width: double.infinity,
                         height: 52,
@@ -466,82 +675,51 @@ class _ShoppingListPageState extends State<ShoppingListPage> {
                           children: [
                             const Icon(Icons.inventory_2_rounded, color: Colors.white, size: 20),
                             const SizedBox(width: 10),
-                            Text('Move ${checkedItems.length} items to Fridge', 
+                            Text('Move ${_checkedItems.length} items to Fridge',
                               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
                           ],
                         ),
                       ),
                     ),
                   ),
-                
-                // 输入栏 + AI入口
                 Row(
                   children: [
                     Expanded(
-                      child: _wrapShowcase(
-                        key: widget.addKey,
-                        title: 'Quick Add',
-                        description: 'Type an item and press enter to add it.',
-                        child: TextField(
-                          controller: _controller,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: _addItem,
-                          decoration: InputDecoration(
-                            hintText: 'Add item (e.g. Milk)...',
-                            hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.4)),
-                            filled: true,
-                            fillColor: isDark ? const Color(0xFF1C1F24) : const Color(0xFFF1F5F9),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            suffixIcon: UnconstrainedBox(
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 8),
-                                child: BouncingButton(
-                                  onTap: () => _addItem(_controller.text),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: const BoxDecoration(color: primary, shape: BoxShape.circle),
-                                    child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 18),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
+                      child: _buildInputField(),
+                    ),
+                    const SizedBox(width: 12),
+                    _wrapShowcase(
+                      key: widget.aiKey,
+                      title: 'AI Smart Add',
+                      description: 'Add items from a recipe',
+                      child: IconButton(
+                        onPressed: _showAiImportSheet,
+                        icon: const Icon(Icons.auto_awesome_rounded, color: Colors.white),
+                        padding: const EdgeInsets.all(14),
+                        style: IconButton.styleFrom(
+                          backgroundColor: primary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         ),
                       ),
                     ),
                     const SizedBox(width: 12),
-                    // AI import entry
                     _wrapShowcase(
-                      key: widget.aiKey,
-                      title: 'AI Import',
-                      description: 'Paste a recipe and auto-build a shopping list.',
-                      child: BouncingButton(
-                        onTap: _showAiImportSheet,
-                        child: Container(
-                          height: 48,
-                          width: 48,
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF6A11CB), Color(0xFF2575FC)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFF2575FC).withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 4),
-                              )
-                            ],
-                          ),
-                          child: const Icon(Icons.auto_awesome, color: Colors.white, size: 22),
+                      key: widget.addKey,
+                      title: 'Quick Add',
+                      description: 'Tap to add item',
+                      child: IconButton(
+                        onPressed: _addItemFromInput,
+                        icon: const Icon(Icons.add_rounded, color: Colors.white),
+                        padding: const EdgeInsets.all(14),
+                        style: IconButton.styleFrom(
+                          backgroundColor: primary,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         ),
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
               ],
             ),
           );
@@ -858,6 +1036,18 @@ class _ShoppingTile extends StatelessWidget {
   }
 }
 
+class _SuggestionStat {
+  final String name;
+  final int count;
+  final DateTime lastSeen;
+
+  const _SuggestionStat({
+    required this.name,
+    required this.count,
+    required this.lastSeen,
+  });
+}
+
 class BouncingButton extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -877,11 +1067,12 @@ class BouncingButton extends StatefulWidget {
 }
 
 class _BouncingButtonState extends State<BouncingButton> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
+  AnimationController? _controller;
 
   @override
   void initState() {
     super.initState();
+    if (kIsWeb) return;
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 100),
@@ -892,90 +1083,42 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
 
   @override
   void dispose() {
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_controller == null) {
+      return GestureDetector(
+        onTap: widget.enabled ? widget.onTap : null,
+        onLongPress: widget.onLongPress,
+        child: widget.child,
+      );
+    }
     return GestureDetector(
       onTapDown: (_) {
         if (widget.enabled) {
-          _controller.forward();
+          _controller!.forward();
           HapticFeedback.lightImpact();
         }
       },
       onTapUp: (_) {
         if (widget.enabled) {
-          _controller.reverse();
+          _controller!.reverse();
           widget.onTap();
         }
       },
       onTapCancel: () {
-        if (widget.enabled) _controller.reverse();
+        if (widget.enabled) _controller!.reverse();
       },
       onLongPress: widget.enabled ? widget.onLongPress : null,
       child: AnimatedBuilder(
-        animation: _controller,
+        animation: _controller!,
         builder: (context, child) => Transform.scale(
-          scale: 1.0 - _controller.value,
+          scale: 1.0 - _controller!.value,
           child: widget.child,
         ),
-      ),
-    );
-  }
-}
-
-class FadeInSlide extends StatefulWidget {
-  final Widget child;
-  final int index; 
-  final Duration duration;
-
-  const FadeInSlide({
-    super.key,
-    required this.child,
-    required this.index,
-    this.duration = const Duration(milliseconds: 500),
-  });
-
-  @override
-  State<FadeInSlide> createState() => _FadeInSlideState();
-}
-
-class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<Offset> _offsetAnim;
-  late Animation<double> _fadeAnim;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration);
-    
-    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
-
-    _offsetAnim = Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(curve);
-    _fadeAnim = Tween<double>(begin: 0.0, end: 1.0).animate(curve);
-
-    final delay = widget.index * 50; 
-    Future.delayed(Duration(milliseconds: delay), () {
-      if (mounted) _controller.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _fadeAnim,
-      child: SlideTransition(
-        position: _offsetAnim,
-        child: widget.child,
       ),
     );
   }

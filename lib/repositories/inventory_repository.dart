@@ -16,6 +16,7 @@ import '../utils/impact_calculator.dart';
 import '../models/shopping_item.dart';
 import '../models/shopping_history_item.dart';
 import '../models/impact_event.dart';
+import '../models/meal_plan.dart';
 import '../services/expiry_service.dart';
 // ================== Exports ==================
 // 保持对外的兼容性，让引用了 InventoryRepository 的文件无需修改 imports
@@ -35,10 +36,13 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
   RealtimeChannel? _shoppingChannel;
   RealtimeChannel? _impactChannel;
   RealtimeChannel? _historyChannel;
+  RealtimeChannel? _mealPlanChannel;
   StreamSubscription<AuthState>? _authSubscription;
 
   List<FoodItem> _items = [];
   List<ImpactEvent> _impactEvents = [];
+  List<MealPlan> _mealPlans = [];
+  final Map<String, MealPlan> _mealPlanIndex = {};
   List<ShoppingHistoryItem> _shoppingHistory = [];
   List<ShoppingItem> _activeShoppingList = [];
   DateTime? _lastActivityAt;
@@ -46,6 +50,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
 
   static const String _kShoppingClearDateKey = 'shopping_clear_date_v1';
   static const String _kExampleInventorySeedKey = 'seed_example_inventory_v1';
+  static const String _kCategoryMemoryKey = 'category_memory_v1';
   Timer? _shoppingMidnightTimer;
   
   List<Map<String, dynamic>> _pendingUploads = [];
@@ -54,6 +59,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
 
   bool hasShownPetWarning = false;
   int _streakDays = 0;
+  Map<String, String> _categoryMemory = {};
 
   // Migration status
   MigrationPhase _migrationPhase = MigrationPhase.idle;
@@ -231,10 +237,12 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
     if (_inventoryChannel != null) _supabase.removeChannel(_inventoryChannel!);
     if (_shoppingChannel != null) _supabase.removeChannel(_shoppingChannel!);
     if (_impactChannel != null) _supabase.removeChannel(_impactChannel!);
+    if (_mealPlanChannel != null) _supabase.removeChannel(_mealPlanChannel!);
     if (_historyChannel != null) _supabase.removeChannel(_historyChannel!);
     _inventoryChannel = null;
     _shoppingChannel = null;
     _impactChannel = null;
+    _mealPlanChannel = null;
     _historyChannel = null;
   }
 
@@ -326,6 +334,8 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       _activeShoppingList = [];
       _shoppingHistory = [];
       _impactEvents = [];
+      _mealPlans = [];
+      _mealPlanIndex.clear();
       _pendingUploads = [];
     }
     _sessionCompleter = null;
@@ -427,6 +437,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
         _supabase.from('shopping_items').select('*, user_profiles(display_name, email)').eq('family_id', _currentFamilyId!).order('created_at', ascending: true),
         _supabase.from('shopping_history').select().eq('family_id', _currentFamilyId!).order('added_date', ascending: false),
         _supabase.from('impact_events').select().eq('family_id', _currentFamilyId!).order('created_at', ascending: false),
+        _supabase.from('meal_plans').select().eq('family_id', _currentFamilyId!).order('plan_date', ascending: true),
       ]);
 
       // Merge Inventory
@@ -435,7 +446,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       }).whereType<FoodItem>().toList();
 
       final pendingInventory = _pendingUploads
-          .where((e) => (e['meta_table'] == 'inventory_items' || e['meta_table'] == null))
+          .where((e) => (e['meta_table'] == 'inventory_items' || e['meta_table'] == null) && e['meta_delete'] != true)
           .map((e) {
              try { return FoodItem.fromJson(_injectFallbackName(e)); } catch(_) { return null; }
           })
@@ -452,7 +463,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       }).whereType<ShoppingItem>().toList();
 
       final pendingShopping = _pendingUploads
-          .where((e) => e['meta_table'] == 'shopping_items')
+          .where((e) => e['meta_table'] == 'shopping_items' && e['meta_delete'] != true)
           .map((e) {
              try { return ShoppingItem.fromJson(_injectFallbackName(e)); } catch (_) { return null; }
           })
@@ -464,6 +475,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
 
       _shoppingHistory = (results[2] as List).map((e) => ShoppingHistoryItem.fromJson(e)).toList();
       _impactEvents = (results[3] as List).map((e) => ImpactEvent.fromJson(e)).toList();
+      _mergeMealPlans((results[4] as List).map((e) => MealPlan.fromJson(e)).toList());
 
       _updateLatestActivityFromData();
       _calculateStreakFromLocalEvents();
@@ -522,6 +534,15 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
           table: 'impact_events',
           filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
           callback: (payload) => _handleImpactRealtime(payload),
+        ).subscribe();
+
+    _mealPlanChannel = _supabase.channel('public:meal_plans:$_currentFamilyId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'meal_plans',
+          filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'family_id', value: _currentFamilyId!),
+          callback: (payload) => _handleMealPlanRealtime(payload),
         ).subscribe();
   }
 
@@ -603,6 +624,25 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
   }
 
+  void _handleMealPlanRealtime(PostgresChangePayload payload) {
+    if (_currentFamilyId == null) return;
+    final newRec = payload.newRecord;
+    final oldRec = payload.oldRecord;
+
+    if (payload.eventType == PostgresChangeEvent.insert || payload.eventType == PostgresChangeEvent.update) {
+      final plan = MealPlan.fromJson(newRec);
+      _upsertMealPlanLocal(plan, notify: false);
+    } else if (payload.eventType == PostgresChangeEvent.delete) {
+      final id = oldRec['id']?.toString();
+      if (id != null) {
+        _mealPlans.removeWhere((e) => e.id == id);
+        _mealPlanIndex.removeWhere((_, value) => value.id == id);
+      }
+    }
+    _saveLocalCache();
+    notifyListeners();
+  }
+
   Map<String, dynamic> _injectFallbackName(Map<String, dynamic> json) {
     if (json['user_profiles'] != null) return json;
     final uid = json['user_id']?.toString();
@@ -625,6 +665,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
     json.remove('ownerName'); 
     json.remove('display_name');
     json.remove('meta_table'); 
+    json.remove('meta_delete');
 
     if (_currentFamilyId != null) json['family_id'] = _currentFamilyId;
     
@@ -647,20 +688,31 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       try {
         final tableName = itemWithMeta['meta_table'] ?? 'inventory_items';
         final itemJson = Map<String, dynamic>.from(itemWithMeta);
-        
-        itemJson['family_id'] = _currentFamilyId;
-        if (itemJson['user_id'] == null || itemJson['user_id'].toString().isEmpty) {
-          itemJson['user_id'] = _currentUserId;
+
+        if (itemJson['meta_delete'] == true) {
+          final id = itemJson['id']?.toString();
+          if (id == null) continue;
+          await _supabase
+              .from(tableName)
+              .delete()
+              .eq('id', id)
+              .eq('family_id', _currentFamilyId!)
+              .timeout(const Duration(seconds: 5));
+          successful.add(itemWithMeta);
+        } else {
+          itemJson['family_id'] = _currentFamilyId;
+          if (itemJson['user_id'] == null || itemJson['user_id'].toString().isEmpty) {
+            itemJson['user_id'] = _currentUserId;
+          }
+
+          final payload = _cleanJsonForDb(itemJson);
+          await _supabase.from(tableName).upsert(payload).timeout(const Duration(seconds: 5));
+          successful.add(itemWithMeta);
         }
-        
-        final payload = _cleanJsonForDb(itemJson);
-        await _supabase.from(tableName).upsert(payload).timeout(const Duration(seconds: 5));
-        successful.add(itemWithMeta);
       } catch (e) {
-        debugPrint("❌ Sync failed for item: $e");
+        debugPrint("???Sync failed for item: $e");
       }
     }
-
     if (successful.isNotEmpty) {
       _pendingUploads.removeWhere((pending) => successful.contains(pending));
       await _saveLocalCache();
@@ -683,8 +735,150 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
     await _saveLocalCache();
   }
 
+  Future<void> _queueOfflineDelete(String tableName, String id) async {
+    final payload = <String, dynamic>{
+      'id': id,
+      'meta_table': tableName,
+      'meta_delete': true,
+    };
+    final idx = _pendingUploads.indexWhere((e) => e['id'] == id && e['meta_table'] == tableName);
+    if (idx != -1) {
+      _pendingUploads[idx] = payload;
+    } else {
+      _pendingUploads.add(payload);
+    }
+    await _saveLocalCache();
+  }
+
   List<FoodItem> getActiveItems() => _items.where((i) => i.status == FoodStatus.good).toList();
   List<FoodItem> getExpiringItems(int days) => getActiveItems().where((i) => i.daysToExpiry <= days).toList();
+
+  String _mealKey(DateTime date, String slot) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y$m$d-$slot';
+  }
+
+  void _rebuildMealIndex() {
+    _mealPlanIndex.clear();
+    for (final plan in _mealPlans) {
+      _mealPlanIndex[_mealKey(plan.planDate, plan.slot)] = plan;
+    }
+  }
+
+  void _mergeMealPlans(List<MealPlan> serverPlans) {
+    final pendingDeletes = _pendingUploads
+        .where((e) => e['meta_table'] == 'meal_plans' && e['meta_delete'] == true)
+        .map((e) => e['id']?.toString())
+        .whereType<String>()
+        .toSet();
+
+    final pendingUpserts = _pendingUploads
+        .where((e) => e['meta_table'] == 'meal_plans' && e['meta_delete'] != true)
+        .map((e) {
+          try { return MealPlan.fromJson(e); } catch (_) { return null; }
+        })
+        .whereType<MealPlan>()
+        .toList();
+
+    final merged = <MealPlan>[];
+    for (final plan in serverPlans) {
+      if (pendingDeletes.contains(plan.id)) continue;
+      merged.add(plan);
+    }
+    for (final local in pendingUpserts) {
+      final idx = merged.indexWhere((p) => p.id == local.id);
+      if (idx == -1) {
+        merged.add(local);
+      } else {
+        merged[idx] = local.updatedAt.isAfter(merged[idx].updatedAt) ? local : merged[idx];
+      }
+    }
+    _mealPlans = merged;
+    _rebuildMealIndex();
+  }
+
+  void _upsertMealPlanLocal(MealPlan plan, {bool notify = true}) {
+    final idx = _mealPlans.indexWhere((e) => e.id == plan.id);
+    if (idx == -1) {
+      _mealPlans.add(plan);
+    } else {
+      _mealPlans[idx] = plan;
+    }
+    _mealPlanIndex[_mealKey(plan.planDate, plan.slot)] = plan;
+    if (notify) {
+      _saveLocalCache();
+      notifyListeners();
+    }
+  }
+
+  Future<void> upsertMealPlan({
+    required DateTime date,
+    required String slot,
+    required String mealName,
+    String? recipeName,
+    Set<String> itemIds = const {},
+    List<String> missingItems = const [],
+  }) async {
+    final existing = getMealPlan(date, slot);
+    final id = existing?.id ?? const Uuid().v4();
+    final plan = MealPlan(
+      id: id,
+      familyId: _currentFamilyId,
+      userId: _currentUserId ?? '',
+      planDate: DateTime(date.year, date.month, date.day),
+      slot: slot,
+      mealName: mealName,
+      recipeName: recipeName,
+      itemIds: itemIds,
+      missingItems: missingItems,
+      updatedAt: DateTime.now(),
+    );
+
+    _upsertMealPlanLocal(plan);
+
+    if (!_isLoggedIn) {
+      await _queueOfflineAction('meal_plans', plan.toLocalJson());
+      return;
+    }
+
+    try {
+      await _ensureFamily();
+      if (_currentFamilyId == null) throw Exception("Cannot sync: No family context");
+      final payload = _cleanJsonForDb(plan.toDbJson());
+      await _supabase.from('meal_plans').upsert(payload).timeout(const Duration(seconds: 5));
+    } catch (_) {
+      await _queueOfflineAction('meal_plans', plan.toLocalJson());
+    }
+  }
+
+  Future<void> deleteMealPlan(DateTime date, String slot) async {
+    final existing = getMealPlan(date, slot);
+    if (existing == null) return;
+    _mealPlans.removeWhere((e) => e.id == existing.id);
+    _mealPlanIndex.remove(_mealKey(date, slot));
+    notifyListeners();
+    await _saveLocalCache();
+
+    if (!_isLoggedIn) {
+      await _queueOfflineDelete('meal_plans', existing.id);
+      return;
+    }
+
+    try {
+      await _ensureFamily();
+      if (_currentFamilyId == null) throw Exception("Cannot sync: No family context");
+      await _supabase
+          .from('meal_plans')
+          .delete()
+          .eq('id', existing.id)
+          .eq('family_id', _currentFamilyId!)
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      await _queueOfflineDelete('meal_plans', existing.id);
+    }
+  }
 
   Future<void> removeExampleInventoryItems() async {
     final before = _items.length;
@@ -1118,6 +1312,20 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   List<ImpactEvent> get impactEvents => List.unmodifiable(_impactEvents);
+  List<MealPlan> get mealPlans => List.unmodifiable(_mealPlans);
+
+  MealPlan? getMealPlan(DateTime date, String slot) {
+    return _mealPlanIndex[_mealKey(date, slot)];
+  }
+
+  List<MealPlan> getMealPlansForRange(DateTime start, DateTime end) {
+    final startDate = DateTime(start.year, start.month, start.day);
+    final endDate = DateTime(end.year, end.month, end.day);
+    return _mealPlans.where((plan) {
+      final d = DateTime(plan.planDate.year, plan.planDate.month, plan.planDate.day);
+      return !d.isBefore(startDate) && d.isBefore(endDate);
+    }).toList();
+  }
   int getSavedCount() => _impactEvents.where((e) => e.type != ImpactType.trash).length;
   int getWastedCount() => _impactEvents.where((e) => e.type == ImpactType.trash).length;
 
@@ -1141,6 +1349,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.setString('cache_shopping', jsonEncode(_activeShoppingList.map((e) => e.toLocalJson(fid, uid)).toList()));
       await prefs.setString('cache_history', jsonEncode(_shoppingHistory.map((e) => e.toJson(fid, uid)).toList()));
       await prefs.setString('cache_impact', jsonEncode(_impactEvents.map((e) => e.toJson(fid, uid)).toList()));
+      await prefs.setString('cache_meal_plans', jsonEncode(_mealPlans.map((e) => e.toLocalJson()).toList()));
       await prefs.setString('pending_uploads', jsonEncode(_pendingUploads));
     } catch (_) {}
   }
@@ -1168,6 +1377,11 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       if (s4 != null) {
         _impactEvents = (jsonDecode(s4) as List).map((e) => ImpactEvent.fromJson(e)).toList();
         _calculateStreakFromLocalEvents();
+      }
+      final s5 = prefs.getString('cache_meal_plans');
+      if (s5 != null) {
+        _mealPlans = (jsonDecode(s5) as List).map((e) => MealPlan.fromJson(e)).toList();
+        _rebuildMealIndex();
       }
       _updateLatestActivityFromData();
       
@@ -1218,6 +1432,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
     hasShownPetWarning = prefs.getBool('petWarningShown') ?? false;
     _streakDays = prefs.getInt('streakDays') ?? 0;
     _isSharedUsage = prefs.getBool('is_shared_usage_v1') ?? true;
+    await _loadCategoryMemory(prefs);
     final lastSeen = prefs.getString('last_seen_activity_v1');
     if (lastSeen != null) {
       _lastSeenActivityAt = DateTime.tryParse(lastSeen);
@@ -1243,6 +1458,172 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
     if (updated != null && updated.isNotEmpty) {
       _migrationUpdatedAt = DateTime.tryParse(updated);
     }
+  }
+
+  Future<void> _loadCategoryMemory(SharedPreferences prefs) async {
+    try {
+      final raw = prefs.getString(_kCategoryMemoryKey);
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return;
+      _categoryMemory = decoded.map((key, value) => MapEntry(key, value.toString()));
+    } catch (_) {}
+  }
+
+  Future<void> _saveCategoryMemory() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_kCategoryMemoryKey, jsonEncode(_categoryMemory));
+    } catch (_) {}
+  }
+
+  String? inferCategoryForName(String name, {String? existingCategory}) {
+    final normalized = _normalizeName(name);
+    if (normalized.isNotEmpty) {
+      final remembered = _categoryMemory[normalized];
+      if (remembered != null && remembered.isNotEmpty) return remembered;
+
+      final fromShopping = _categoryFromShopping(normalized);
+      if (fromShopping != null) return fromShopping;
+
+      final fromKeywords = _categoryFromKeywords(normalized, name);
+      if (fromKeywords != null) return fromKeywords;
+    }
+    return _cleanCategoryKey(existingCategory);
+  }
+
+  bool isExplicitCategory(String? category) {
+    return _cleanCategoryKey(category) != null;
+  }
+
+  Future<void> rememberCategoryForName(String name, String categoryKey) async {
+    final normalized = _normalizeName(name);
+    if (normalized.isEmpty) return;
+    final cleaned = _cleanCategoryKey(categoryKey);
+    if (cleaned == null) return;
+    _categoryMemory[normalized] = cleaned;
+    await _saveCategoryMemory();
+  }
+
+  String _normalizeName(String name) {
+    var value = name.toLowerCase().trim();
+    value = value.replaceAll(RegExp(r'[\(\)\[\]\{\},.;:!@#\$%\^&\*\-\+\=_~/\\|]'), ' ');
+    value = value.replaceAll(RegExp(r'[^a-z0-9\u4e00-\u9fff\s]'), ' ');
+    final parts = value.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+
+    const stopWords = {
+      'kg', 'g', 'gram', 'grams', 'ml', 'l', 'liter', 'litre', 'oz', 'lb',
+      'pcs', 'pc', 'pack', 'pkg', 'box', 'bottle', 'bag', 'can', 'jar', 'ct', 'dozen',
+      'fresh', 'organic', 'low', 'fat', 'lowfat', 'nonfat', 'skim', 'whole',
+      'unsweetened', 'sweetened', 'light', 'extra', 'large', 'small', 'medium', 'mini',
+      'frozen', 'raw', 'cooked', 'cut', 'seedless', 'boneless', 'skinless',
+      '有机', '无糖', '低脂', '脱脂', '冷冻', '新鲜', '盒装', '袋装', '瓶装', '罐装',
+    };
+
+    final filtered = <String>[];
+    for (final part in parts) {
+      if (stopWords.contains(part)) continue;
+      if (RegExp(r'^\d+(\.\d+)?$').hasMatch(part)) continue;
+      filtered.add(part);
+    }
+
+    return filtered.join(' ');
+  }
+
+  String? _cleanCategoryKey(String? raw) {
+    final value = raw?.trim().toLowerCase();
+    if (value == null || value.isEmpty) return null;
+    if (value == 'manual' || value == 'general' || value == 'unknown') return null;
+    return value;
+  }
+
+  String? _categoryFromShopping(String normalizedName) {
+    for (final item in _activeShoppingList) {
+      final key = _normalizeName(item.name);
+      if (key == normalizedName) {
+        final cleaned = _cleanCategoryKey(item.category);
+        if (cleaned != null) return cleaned;
+      }
+    }
+    for (final item in _shoppingHistory) {
+      final key = _normalizeName(item.name);
+      if (key == normalizedName) {
+        final cleaned = _cleanCategoryKey(item.category);
+        if (cleaned != null) return cleaned;
+      }
+    }
+    return null;
+  }
+
+  String? _categoryFromKeywords(String normalized, String original) {
+    final n = normalized;
+    final o = original.toLowerCase();
+
+    if (_containsAny(n, o, [
+      'apple', 'banana', 'tomato', 'lettuce', 'spinach', 'vegetable', 'veg', 'carrot',
+      'onion', 'potato', 'pepper', 'cucumber', 'broccoli', 'mushroom', 'fruit',
+      '水果', '蔬菜', '青菜', '苹果', '香蕉', '番茄', '西红柿', '土豆', '胡萝卜', '洋葱', '黄瓜', '蘑菇', '生菜', '菠菜', '辣椒',
+    ])) return 'produce';
+
+    if (_containsAny(n, o, [
+      'milk', 'yogurt', 'cheese', 'butter', 'cream', 'egg',
+      '奶', '牛奶', '酸奶', '芝士', '奶酪', '黄油', '鸡蛋', '奶油',
+    ])) return 'dairy';
+
+    if (_containsAny(n, o, [
+      'beef', 'pork', 'chicken', 'turkey', 'sausage', 'ham', 'bacon', 'meat',
+      '牛肉', '猪肉', '鸡肉', '火鸡', '香肠', '培根', '肉',
+    ])) return 'meat';
+
+    if (_containsAny(n, o, [
+      'fish', 'salmon', 'shrimp', 'tuna', 'crab', 'seafood',
+      '鱼', '三文鱼', '虾', '金枪鱼', '螃蟹', '海鲜',
+    ])) return 'seafood';
+
+    if (_containsAny(n, o, [
+      'bread', 'cake', 'croissant', 'bun', 'bagel', 'pastry', 'flour',
+      '面包', '蛋糕', '可颂', '面粉', '馒头', '面点',
+    ])) return 'bakery';
+
+    if (_containsAny(n, o, [
+      'frozen', 'ice cream', 'dumpling', 'pizza',
+      '冰淇淋', '冷冻', '速冻', '饺子', '披萨',
+    ])) return 'frozen';
+
+    if (_containsAny(n, o, [
+      'water', 'juice', 'coffee', 'tea', 'beer', 'wine', 'soda', 'drink',
+      '水', '果汁', '咖啡', '茶', '啤酒', '饮料', '汽水', '葡萄酒',
+    ])) return 'beverage';
+
+    if (_containsAny(n, o, [
+      'rice', 'pasta', 'noodle', 'oil', 'sauce', 'salt', 'sugar', 'vinegar', 'soy', 'canned',
+      '米', '面条', '面', '油', '酱', '盐', '糖', '醋', '酱油', '罐头', '干货',
+    ])) return 'pantry';
+
+    if (_containsAny(n, o, [
+      'snack', 'chip', 'chocolate', 'cookie', 'candy', 'nuts', 'cracker',
+      '零食', '薯片', '巧克力', '饼干', '糖果', '坚果',
+    ])) return 'snacks';
+
+    if (_containsAny(n, o, [
+      'paper', 'tissue', 'soap', 'cleaner', 'detergent', 'toilet', 'trash',
+      '纸', '纸巾', '洗洁精', '清洁', '卫生', '垃圾袋',
+    ])) return 'household';
+
+    if (_containsAny(n, o, [
+      'cat', 'dog', 'pet', 'kibble',
+      '猫', '狗', '宠物', '狗粮', '猫粮', '饲料',
+    ])) return 'pet';
+
+    return null;
+  }
+
+  bool _containsAny(String normalized, String original, List<String> keywords) {
+    for (final keyword in keywords) {
+      if (keyword.isEmpty) continue;
+      if (normalized.contains(keyword) || original.contains(keyword)) return true;
+    }
+    return false;
   }
 
   Future<void> _saveMeta() async {
@@ -1556,6 +1937,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.remove('cache_shopping');
       await prefs.remove('cache_history');
       await prefs.remove('cache_impact');
+      await prefs.remove('cache_meal_plans');
       await prefs.remove('pending_uploads');
 
       await _initFamilySession();
@@ -1665,6 +2047,7 @@ class InventoryRepository extends ChangeNotifier with WidgetsBindingObserver {
       await prefs.remove('cache_shopping');
       await prefs.remove('cache_history');
       await prefs.remove('cache_impact');
+      await prefs.remove('cache_meal_plans');
       await prefs.remove('pending_uploads');
 
       _currentUserId = tempUid;

@@ -1,5 +1,6 @@
 // lib/screens/archive_page.dart
 import 'package:flutter/material.dart';
+import 'package:animations/animations.dart';
 
 import '../services/archive_service.dart';
 import 'archive_recipe_detail_page.dart';
@@ -59,16 +60,18 @@ class _ArchivePageState extends State<ArchivePage> {
                     separatorBuilder: (_, __) => const SizedBox(height: 10),
                     itemBuilder: (context, i) {
                       final r = _items[i];
-                      return _ArchiveTile(
-                        recipe: r,
-                        onTap: () async {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => ArchiveRecipeDetailPage(recipe: r),
-                            ),
-                          );
-                        },
+                      return OpenContainer(
+                        transitionType: ContainerTransitionType.fadeThrough,
+                        closedElevation: 0,
+                        openElevation: 0,
+                        closedColor: Colors.transparent,
+                        openColor: theme.scaffoldBackgroundColor,
+                        closedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                        openBuilder: (context, _) => ArchiveRecipeDetailPage(recipe: r),
+                        closedBuilder: (context, openContainer) => _ArchiveTile(
+                          recipe: r,
+                          onTap: openContainer,
+                        ),
                       );
                     },
                   ),

@@ -98,7 +98,6 @@ class InventoryHeroCard extends StatelessWidget {
                         color: Colors.white,
                         height: 1.0,
                         letterSpacing: -2,
-                        fontFamily: 'Roboto', // 推荐使用稍微机械感的字体
                       ),
                     ),
                   ],

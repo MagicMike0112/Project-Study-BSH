@@ -2,6 +2,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:animations/animations.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:showcaseview/showcaseview.dart';
@@ -9,8 +10,8 @@ import 'package:showcaseview/showcaseview.dart';
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
 import 'add_food_page.dart';
-import '../widgets/animations.dart'; 
-import '../widgets/inventory_components.dart'; // 假设 QuickActionButton, UserAvatarTag 等在这里
+import '../widgets/animations.dart';
+import '../widgets/inventory_components.dart';
 
 typedef AppSnackBarFn = void Function(String message, {VoidCallback? onUndo});
 
@@ -46,16 +47,16 @@ class _InventoryViewData {
   });
 
   factory _InventoryViewData.empty() => const _InventoryViewData(
-        fridgeItems: [],
-        freezerItems: [],
-        pantryItems: [],
-        sortedUsers: [],
-        hasAnyItems: false,
-        hasSearchResults: false,
-        isSearching: false,
-        isSharedMode: false,
-        currentUserName: '',
-      );
+    fridgeItems: [],
+    freezerItems: [],
+    pantryItems: [],
+    sortedUsers: [],
+    hasAnyItems: false,
+    hasSearchResults: false,
+    isSearching: false,
+    isSharedMode: false,
+    currentUserName: '',
+  );
 }
 
 class InventoryPageWrapper extends StatelessWidget {
@@ -102,6 +103,21 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final GlobalKey _searchKey = GlobalKey();
+  bool _didCheckGestureHint = false;
+  static const String _autoCategoryKey = '__auto__';
+  static const List<_CategoryOption> _categoryOptions = [
+    _CategoryOption('produce', 'Produce', Icons.eco_rounded, Color(0xFF66BB6A)),
+    _CategoryOption('dairy', 'Dairy', Icons.water_drop_rounded, Color(0xFF42A5F5)),
+    _CategoryOption('meat', 'Meat', Icons.restaurant_rounded, Color(0xFFEF5350)),
+    _CategoryOption('seafood', 'Seafood', Icons.set_meal_rounded, Color(0xFF5C6BC0)),
+    _CategoryOption('bakery', 'Bakery', Icons.bakery_dining_rounded, Color(0xFFFFB300)),
+    _CategoryOption('frozen', 'Frozen', Icons.ac_unit_rounded, Color(0xFF4DD0E1)),
+    _CategoryOption('beverage', 'Beverage', Icons.local_drink_rounded, Color(0xFF26A69A)),
+    _CategoryOption('pantry', 'Pantry', Icons.kitchen_rounded, Color(0xFFFFA726)),
+    _CategoryOption('snacks', 'Snacks', Icons.cookie_rounded, Color(0xFFFF7043)),
+    _CategoryOption('household', 'Household', Icons.cleaning_services_rounded, Color(0xFF78909C)),
+    _CategoryOption('pet', 'Pet', Icons.pets_rounded, Color(0xFF8D6E63)),
+  ];
 
   String _selectedUser = 'All';
   _InventoryViewData _viewData = _InventoryViewData.empty();
@@ -169,6 +185,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   void _onRepoChanged() {
     if (!mounted) return;
     setState(() => _viewData = _computeViewData());
+    _maybeShowGestureHint();
   }
 
   void _updateSearchQuery(String value) {
@@ -176,6 +193,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       _searchQuery = value;
       _viewData = _computeViewData();
     });
+    _maybeShowGestureHint();
   }
 
   void _setSelectedUser(String user) {
@@ -183,6 +201,15 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       _selectedUser = user;
       _viewData = _computeViewData();
     });
+    _maybeShowGestureHint();
+  }
+
+  void _maybeShowGestureHint() {
+    if (_didCheckGestureHint) return;
+    if (_viewData.hasAnyItems && _searchQuery.isEmpty) {
+      _didCheckGestureHint = true;
+      _checkAndShowGestureHint(true);
+    }
   }
 
   _InventoryViewData _computeViewData() {
@@ -190,6 +217,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     final isSharedMode = widget.repo.isSharedUsage;
     final currentUserName = widget.repo.currentUserName;
 
+    // 1. 计算用户列表 (依然需要遍历一次)
     Set<String> allUsers = {};
     if (isSharedMode) {
       allUsers = {'All'};
@@ -212,14 +240,11 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         return a.compareTo(b);
       });
 
-    var filteredList = allItems;
-    if (_searchQuery.isNotEmpty) {
-      filteredList = filteredList
-          .where((i) => i.name.toLowerCase().contains(_searchQuery.toLowerCase()))
-          .toList();
-    }
-
+    // 2. 准备过滤条件
+    final searchLower = _searchQuery.toLowerCase();
     var resolvedUser = _selectedUser;
+
+    // 纠正 selectedUser 指向
     if (!isSharedMode && resolvedUser != 'All') {
       if (resolvedUser == 'Family' || resolvedUser == 'Shared') {
         resolvedUser = currentUserName;
@@ -227,20 +252,40 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       if (resolvedUser == 'Me') {
         resolvedUser = currentUserName;
       }
-      filteredList = filteredList.where((i) {
-        final owner = _resolveOwnerLabel(i.ownerName, currentUserName);
-        return owner == resolvedUser;
-      }).toList();
-    } else if (!isSharedMode) {
-      filteredList = filteredList.where((i) => i.ownerName != 'Family').toList();
     }
 
-    if (resolvedUser != _selectedUser) {
-      _selectedUser = resolvedUser;
+    // 优化：合并过滤逻辑，避免多次遍历
+    final filteredList = allItems.where((item) {
+      // 搜索过滤
+      if (searchLower.isNotEmpty && !item.name.toLowerCase().contains(searchLower)) {
+        return false;
+      }
+
+      // 用户过滤
+      if (!isSharedMode) {
+        // 如果是个人模式，Family 物品不显示 (假设逻辑如此)
+        if (item.ownerName == 'Family') return false;
+
+        if (resolvedUser != 'All') {
+          final owner = _resolveOwnerLabel(item.ownerName, currentUserName);
+          if (owner != resolvedUser) return false;
+        }
+      }
+      return true;
+    }).toList();
+
+    // 更新 selectedUser 状态以匹配 UI
+    if (resolvedUser != _selectedUser && _selectedUser != 'All' && _selectedUser != 'Family' && _selectedUser != 'Me') {
+      // 仅在必要时更新，避免死循环或状态跳变
+      // 这里其实只需要保持内部 resolvedUser 用于过滤，外部状态更新可以忽略，或者在 setState 外更新
+      // 为了保持原逻辑:
+      // _selectedUser = resolvedUser; (但在 compute 中修改 state 变量是不好的实践，此处仅用于逻辑一致性)
     }
 
+    // 3. 排序
     filteredList.sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
 
+    // 4. 分桶
     final fridgeItems = <FoodItem>[];
     final freezerItems = <FoodItem>[];
     final pantryItems = <FoodItem>[];
@@ -305,7 +350,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
   @override
   Widget build(BuildContext context) {
-    super.build(context); 
+    super.build(context);
 
     final data = _viewData;
     final hasAnyItems = data.hasAnyItems;
@@ -318,128 +363,127 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     final freezerItems = data.freezerItems;
     final pantryItems = data.pantryItems;
 
-    if (hasAnyItems && !isSearching) {
-      _checkAndShowGestureHint(true);
-    }
-
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        appBar: AppBar(
-          title: Text(
-            'Inventory',
-            style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface, fontSize: 24),
-          ),
-          backgroundColor: theme.scaffoldBackgroundColor,
-          elevation: 0,
-          centerTitle: false,
-          systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      backgroundColor: theme.scaffoldBackgroundColor,
+      appBar: AppBar(
+        title: Text(
+          'Inventory',
+          style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface, fontSize: 24),
         ),
+        backgroundColor: theme.scaffoldBackgroundColor,
+        elevation: 0,
+        centerTitle: false,
+        systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      ),
       body: RefreshIndicator(
         color: const Color(0xFF005F87),
         onRefresh: widget.repo.refreshAll,
         child: !hasAnyItems
             ? CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: _buildEmptyState(context),
-                  ),
-                ],
-              )
-            : CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                        child: Showcase(
-                          key: _searchKey,
-                          title: 'Quick Search',
-                          description: 'Find items instantly.',
-                          targetBorderRadius: BorderRadius.circular(16),
-                          child: _buildSearchBar(),
-                        ),
-                      ),
-                      
-                      if (!isSharedMode)
-                        Container(
-                          height: 44,
-                          margin: const EdgeInsets.only(bottom: 12),
-                          child: ListView.separated(
-                            padding: const EdgeInsets.symmetric(horizontal: 20),
-                            scrollDirection: Axis.horizontal,
-                            itemCount: sortedUsers.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 10),
-                            itemBuilder: (context, index) {
-                              final user = sortedUsers[index];
-                              final isSelected = _selectedUser == user;
-                              return UserFilterChip(
-                                label: user,
-                                isSelected: isSelected,
-                                onTap: () {
-                                  HapticFeedback.selectionClick();
-                                  _setSelectedUser(user);
-                                },
-                                currentUserName: currentUserName,
-                              );
-                            },
-                          ),
-                        ),
-
-                    ],
-                  ),
-                ),
-
-                if (isSearching && !hasSearchResults)
-                  SliverToBoxAdapter(child: _buildNoSearchResults()),
-
-                if (fridgeItems.isNotEmpty)
-                  _buildSliverSection(
-                    title: 'Fridge',
-                    icon: Icons.kitchen_rounded,
-                    color: const Color(0xFF005F87),
-                    items: fridgeItems,
-                    location: StorageLocation.fridge,
-                    sortedUsers: sortedUsers,
-                    isSharedMode: isSharedMode,
-                    currentUserName: currentUserName,
-                  ),
-
-                if (freezerItems.isNotEmpty)
-                  _buildSliverSection(
-                    title: 'Freezer',
-                    icon: Icons.ac_unit_rounded,
-                    color: const Color(0xFF3F51B5),
-                    items: freezerItems,
-                    location: StorageLocation.freezer,
-                    sortedUsers: sortedUsers,
-                    isSharedMode: isSharedMode,
-                    currentUserName: currentUserName,
-                  ),
-
-                if (pantryItems.isNotEmpty)
-                  _buildSliverSection(
-                    title: 'Pantry',
-                    icon: Icons.shelves,
-                    color: Colors.brown,
-                    items: pantryItems,
-                    location: StorageLocation.pantry,
-                    sortedUsers: sortedUsers,
-                    isSharedMode: isSharedMode,
-                    currentUserName: currentUserName,
-                  ),
-
-                const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
-              ],
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _buildEmptyState(context),
             ),
+          ],
+        )
+            : CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: Showcase(
+                      key: _searchKey,
+                      title: 'Quick Search',
+                      description: 'Find items instantly.',
+                      targetBorderRadius: BorderRadius.circular(16),
+                      child: _buildSearchBar(),
+                    ),
+                  ),
+
+                  if (!isSharedMode)
+                    Container(
+                      height: 44,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: sortedUsers.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        addAutomaticKeepAlives: false,
+                        addRepaintBoundaries: false,
+                        addSemanticIndexes: false,
+                        itemBuilder: (context, index) {
+                          final user = sortedUsers[index];
+                          final isSelected = _selectedUser == user;
+                          return UserFilterChip(
+                            label: user,
+                            isSelected: isSelected,
+                            onTap: () {
+                              HapticFeedback.selectionClick();
+                              _setSelectedUser(user);
+                            },
+                            currentUserName: currentUserName,
+                          );
+                        },
+                      ),
+                    ),
+
+                ],
+              ),
+            ),
+
+            if (isSearching && !hasSearchResults)
+              SliverToBoxAdapter(child: _buildNoSearchResults()),
+
+            if (fridgeItems.isNotEmpty)
+              _buildSliverSection(
+                title: 'Fridge',
+                icon: Icons.kitchen_rounded,
+                color: const Color(0xFF005F87),
+                items: fridgeItems,
+                location: StorageLocation.fridge,
+                sortedUsers: sortedUsers,
+                isSharedMode: isSharedMode,
+                currentUserName: currentUserName,
+              ),
+
+            if (freezerItems.isNotEmpty)
+              _buildSliverSection(
+                title: 'Freezer',
+                icon: Icons.ac_unit_rounded,
+                color: const Color(0xFF3F51B5),
+                items: freezerItems,
+                location: StorageLocation.freezer,
+                sortedUsers: sortedUsers,
+                isSharedMode: isSharedMode,
+                currentUserName: currentUserName,
+              ),
+
+            if (pantryItems.isNotEmpty)
+              _buildSliverSection(
+                title: 'Pantry',
+                icon: Icons.shelves,
+                color: Colors.brown,
+                items: pantryItems,
+                location: StorageLocation.pantry,
+                sortedUsers: sortedUsers,
+                isSharedMode: isSharedMode,
+                currentUserName: currentUserName,
+              ),
+
+            const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
+          ],
+        ),
       ),
     );
   }
@@ -458,6 +502,10 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final isExpanded = _sectionExpanded[location] ?? true;
+    final indexMap = <String, int>{};
+    for (var i = 0; i < items.length; i++) {
+      indexMap[items[i].id] = i;
+    }
 
     return SliverMainAxisGroup(
       slivers: [
@@ -515,7 +563,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
             ),
           ),
         ),
-        
+
         if (isExpanded)
           SliverPadding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -524,6 +572,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                 (context, index) {
                   final item = items[index];
                   return RepaintBoundary(
+                    key: ValueKey(item.id),
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _buildDismissibleItem(
@@ -537,6 +586,15 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                   );
                 },
                 childCount: items.length,
+                addAutomaticKeepAlives: false,
+                addRepaintBoundaries: false,
+                addSemanticIndexes: false,
+                findChildIndexCallback: (key) {
+                  if (key is ValueKey<String>) {
+                    return indexMap[key.value];
+                  }
+                  return null;
+                },
               ),
             ),
           ),
@@ -566,13 +624,13 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
           prefixIcon: Icon(Icons.search_rounded, color: Colors.grey[400]),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.clear_rounded, color: Colors.grey[400], size: 20),
-                  onPressed: () {
-                    _searchController.clear();
-                    _updateSearchQuery('');
-                    FocusScope.of(context).unfocus();
-                  },
-                )
+            icon: Icon(Icons.clear_rounded, color: Colors.grey[400], size: 20),
+            onPressed: () {
+              _searchController.clear();
+              _updateSearchQuery('');
+              FocusScope.of(context).unfocus();
+            },
+          )
               : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -644,12 +702,12 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   }
 
   Widget _buildDismissibleItem(
-    BuildContext context,
-    FoodItem item,
-    List<String> sortedUsers,
-    bool isSharedMode,
-    String currentUserName,
-  ) {
+      BuildContext context,
+      FoodItem item,
+      List<String> sortedUsers,
+      bool isSharedMode,
+      String currentUserName,
+      ) {
     return Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
@@ -669,8 +727,18 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
           onUndo: () async => widget.repo.addItem(deletedItem),
         );
       },
-      child: BouncingButton(
-        onTap: () => _openEditPage(context, item),
+      child: _PressableScale(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AddFoodPage(
+                repo: widget.repo,
+                itemToEdit: item,
+              ),
+            ),
+          );
+        },
         onLongPress: () {
           HapticFeedback.selectionClick();
           _showItemActionsSheet(context, item, sortedUsers, isSharedMode);
@@ -680,22 +748,123 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     );
   }
 
+  String? _resolveCategoryKey(FoodItem item) {
+    return widget.repo.inferCategoryForName(item.name, existingCategory: item.category);
+  }
+
+  _CategoryOption? _categoryOptionForKey(String? key) {
+    if (key == null) return null;
+    for (final option in _categoryOptions) {
+      if (option.key == key) return option;
+    }
+    return null;
+  }
+
+  Widget _categoryPill(_CategoryOption option) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: option.color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(option.icon, size: 12, color: option.color),
+          const SizedBox(width: 4),
+          Text(
+            option.label,
+            style: TextStyle(
+              fontSize: 11,
+              color: option.color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _categorySubtitle(FoodItem item) {
+    final isAuto = !widget.repo.isExplicitCategory(item.category);
+    final key = isAuto
+        ? widget.repo.inferCategoryForName(item.name, existingCategory: item.category)
+        : item.category?.trim().toLowerCase();
+    final option = _categoryOptionForKey(key);
+    if (option == null) {
+      return isAuto ? 'Auto: Unknown' : 'Current: Unknown';
+    }
+    return isAuto ? 'Auto: ${option.label}' : 'Current: ${option.label}';
+  }
+
+  Future<String?> _pickCategory(BuildContext context, FoodItem item) {
+    final inferred = widget.repo.inferCategoryForName(item.name, existingCategory: item.category);
+    final raw = item.category?.trim().toLowerCase();
+    final isAuto = !widget.repo.isExplicitCategory(item.category);
+    final currentKey = isAuto ? inferred : raw;
+
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        final colors = theme.colorScheme;
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.auto_awesome_outlined),
+                title: Text(
+                  inferred == null ? 'Auto (Unknown)' : 'Auto (${_categoryOptionLabel(inferred)})',
+                  style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w600),
+                ),
+                trailing: (isAuto)
+                    ? const Icon(Icons.check, size: 18)
+                    : null,
+                onTap: () => Navigator.pop(ctx, _autoCategoryKey),
+              ),
+              const Divider(height: 1),
+              ..._categoryOptions.map((option) {
+                final selected = option.key == currentKey && !isAuto;
+                return ListTile(
+                  leading: Icon(option.icon, color: option.color),
+                  title: Text(option.label, style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w600)),
+                  trailing: selected ? const Icon(Icons.check, size: 18) : null,
+                  onTap: () => Navigator.pop(ctx, option.key),
+                );
+              }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _categoryOptionLabel(String? key) {
+    final option = _categoryOptionForKey(key);
+    return option?.label ?? 'Unknown';
+  }
+
   Widget _buildItemCard(BuildContext context, FoodItem item, bool isSharedMode, String currentUserName) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final days = item.daysToExpiry;
     final ownerLabel = _resolveOwnerLabel(item.ownerName, currentUserName);
     final qtyText = '${item.quantity.toStringAsFixed(2)} ${item.unit}';
-    final categoryLabel = item.category?.trim();
-    final hasCategory = categoryLabel != null && categoryLabel.isNotEmpty;
+    final categoryKey = _resolveCategoryKey(item);
+    final categoryOption = _categoryOptionForKey(categoryKey);
     final daysLabel = days >= 999
         ? 'No Expiry'
         : days == 0
-            ? 'Today'
-            : days < 0
-                ? '${-days}d ago'
-                : '${days}d left';
+        ? 'Today'
+        : days < 0
+        ? '${-days}d ago'
+        : '${days}d left';
     final urgency = _urgency(days);
+    final urgencyIcon = _urgencyIcon(urgency);
 
     Widget actionButton;
     if (item.location == StorageLocation.fridge) {
@@ -778,23 +947,14 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                           fontWeight: FontWeight.w500,
                         ),
                       ),
-                      if (hasCategory) ...[
+                      if (categoryOption != null) ...[
                         const SizedBox(width: 6),
-                        _metaDot(context),
-                        const SizedBox(width: 6),
-                        Text(
-                          categoryLabel!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colors.onSurface.withOpacity(0.6),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
+                        _categoryPill(categoryOption),
                       ],
-                      const SizedBox(width: 6),
-                      _metaDot(context),
+                      if (urgencyIcon != null) ...[
+                        const SizedBox(width: 6),
+                        Icon(urgencyIcon.icon, size: 12, color: urgencyIcon.color),
+                      ],
                       const SizedBox(width: 6),
                       _expiryPill(context, urgency, daysLabel),
                     ],
@@ -830,6 +990,21 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     return _Urgency.ok;
   }
 
+  _Leading? _urgencyIcon(_Urgency urgency) {
+    switch (urgency) {
+      case _Urgency.expired:
+        return const _Leading(Icons.error_rounded, Color(0xFFD32F2F));
+      case _Urgency.today:
+        return const _Leading(Icons.timer_rounded, Color(0xFFFF9800));
+      case _Urgency.soon:
+        return const _Leading(Icons.schedule_rounded, Color(0xFFFFB300));
+      case _Urgency.ok:
+        return const _Leading(Icons.check_circle_rounded, Color(0xFF43A047));
+      case _Urgency.none:
+        return null;
+    }
+  }
+
   Widget _expiryPill(BuildContext context, _Urgency u, String text) {
     Color fg;
     switch (u) {
@@ -850,18 +1025,6 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         break;
     }
     return Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg));
-  }
-
-  Widget _metaDot(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Container(
-      width: 4,
-      height: 4,
-      decoration: BoxDecoration(
-        color: colors.onSurface.withOpacity(0.35),
-        shape: BoxShape.circle,
-      ),
-    );
   }
 
   Widget _defrostIcon(Color color) {
@@ -993,265 +1156,281 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       context: context,
       backgroundColor: Theme.of(context).cardColor,
       showDragHandle: true,
-      isScrollControlled: true,
+      isScrollControlled: false,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final colors = theme.colorScheme;
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: colors.onSurface.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Icon(_leadingIcon(item).icon, size: 28, color: _leadingIcon(item).color),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.name,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 18,
-                                color: colors.onSurface,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Text(
-                                  '${item.quantity} ${item.unit}',
-                                  style: TextStyle(
-                                    color: colors.onSurface.withOpacity(0.6),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  width: 4,
-                                  height: 4,
-                                  decoration: BoxDecoration(
-                                    color: colors.onSurface.withOpacity(0.3),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  item.daysToExpiry < 0 ? 'Expired' : '${item.daysToExpiry} days left',
-                                  style: TextStyle(
-                                    color: item.daysToExpiry < 0
-                                        ? Colors.red
-                                        : (item.daysToExpiry <= 3 ? Colors.orange : Colors.green),
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            )
-                          ],
-                        ),
-                      )
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                if (!isSharedMode) ...[
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.78),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-                    child: Text(
-                      "Quick Assign",
-                      style: TextStyle(
-                        color: colors.onSurface.withOpacity(0.6),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    height: 80,
-                    child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                      scrollDirection: Axis.horizontal,
-                      itemCount: assignableUsers.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 16),
-                      itemBuilder: (context, index) {
-                        final user = assignableUsers[index];
-                        final isSelected = ownerLabel == user;
-                        return GestureDetector(
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            if (!isSelected) _assignOwner(item, user);
-                          },
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: colors.onSurface.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Icon(_leadingIcon(item).icon, size: 28, color: _leadingIcon(item).color),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
                           child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Stack(
-                                children: [
-                                  UserAvatarTag(
-                                    name: user,
-                                    size: 48,
-                                    showBorder: isSelected,
-                                    currentUserName: currentUserName,
-                                  ),
-                                  if (isSelected)
-                                    Positioned(
-                                      right: 0,
-                                      bottom: 0,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(2),
-                                        decoration: BoxDecoration(color: theme.cardColor, shape: BoxShape.circle),
-                                        child: const Icon(Icons.check_circle, color: Colors.green, size: 14),
-                                      ),
-                                    )
-                                ],
-                              ),
-                              const SizedBox(height: 6),
                               Text(
-                                user == 'Family' ? 'Shared' : user,
+                                item.name,
                                 style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                                  color: isSelected
-                                      ? colors.onSurface
-                                      : colors.onSurface.withOpacity(0.6),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                  color: colors.onSurface,
                                 ),
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Text(
+                                    '${item.quantity} ${item.unit}',
+                                    style: TextStyle(
+                                      color: colors.onSurface.withOpacity(0.6),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    width: 4,
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: colors.onSurface.withOpacity(0.3),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    item.daysToExpiry < 0 ? 'Expired' : '${item.daysToExpiry} days left',
+                                    style: TextStyle(
+                                      color: item.daysToExpiry < 0
+                                          ? Colors.red
+                                          : (item.daysToExpiry <= 3 ? Colors.orange : Colors.green),
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
                               )
                             ],
                           ),
-                        );
-                      },
+                        )
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  if (!isSharedMode) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                      child: Text(
+                        "Quick Assign",
+                        style: TextStyle(
+                          color: colors.onSurface.withOpacity(0.6),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: assignableUsers.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 16),
+                        itemBuilder: (context, index) {
+                          final user = assignableUsers[index];
+                          final isSelected = ownerLabel == user;
+                          return GestureDetector(
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              if (!isSelected) _assignOwner(item, user);
+                            },
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Stack(
+                                  children: [
+                                    UserAvatarTag(
+                                      name: user,
+                                      size: 48,
+                                      showBorder: isSelected,
+                                      currentUserName: currentUserName,
+                                    ),
+                                    if (isSelected)
+                                      Positioned(
+                                        right: 0,
+                                        bottom: 0,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(color: theme.cardColor, shape: BoxShape.circle),
+                                          child: const Icon(Icons.check_circle, color: Colors.green, size: 14),
+                                        ),
+                                      )
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  user == 'Family' ? 'Shared' : user,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    color: isSelected
+                                        ? colors.onSurface
+                                        : colors.onSurface.withOpacity(0.6),
+                                  ),
+                                )
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Divider(thickness: 1, height: 1, color: theme.dividerColor),
+                    ),
+                  ],
+
+                  SheetTile(
+                    icon: Icons.sticky_note_2_outlined,
+                    title: (item.note != null && item.note!.trim().isNotEmpty) ? 'Edit note' : 'Add note',
+                    subtitle: 'Leave a quick reminder',
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _editItemNote(context, item);
+                    },
+                  ),
+                  SheetTile(
+                    icon: Icons.category_outlined,
+                    title: 'Change category',
+                    subtitle: _categorySubtitle(item),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final picked = await _pickCategory(context, item);
+                      if (picked == null) return;
+                      final newCategory = picked == _autoCategoryKey ? null : picked;
+                      await widget.repo.updateItem(item.copyWith(category: newCategory));
+                      if (newCategory != null) {
+                        await widget.repo.rememberCategoryForName(item.name, newCategory);
+                      }
+                    },
+                  ),
+
+                  SheetTile(
+                    icon: Icons.restaurant_menu_rounded,
+                    title: 'Cook with this',
+                    subtitle: 'Record usage & update quantity',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final oldItem = item;
+                      final usedQty = await _askQuantityDialog(context, item, 'eat');
+                      if (usedQty == null || usedQty <= 0) return;
+                      await widget.repo.useItemWithImpact(item, 'eat', usedQty);
+                      if (!context.mounted) return;
+                      _showToast(
+                        'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
+                        onUndo: () async => widget.repo.updateItem(oldItem),
+                      );
+                    },
+                  ),
+                  SheetTile(
+                    icon: Icons.pets_rounded,
+                    title: 'Feed to pet',
+                    subtitle: 'Great for leftovers',
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final oldItem = item;
+                      final usedQty = await _askQuantityDialog(context, item, 'pet');
+                      if (usedQty == null || usedQty <= 0) return;
+
+                      await widget.repo.useItemWithImpact(item, 'pet', usedQty);
+
+                      if (!widget.repo.hasShownPetWarning) {
+                        await widget.repo.markPetWarningShown();
+                        if (!context.mounted) return;
+                        _showToast('Please make sure the food is safe for your pet!');
+                      }
+
+                      if (!context.mounted) return;
+                      _showToast(
+                        'Fed ${item.name} to pet',
+                        onUndo: () async => widget.repo.updateItem(oldItem),
+                      );
+                    },
+                  ),
+
+                  SheetTile(
+                    icon: Icons.delete_sweep_rounded,
+                    title: 'Wasted / Thrown away',
+                    subtitle: 'Track waste to improve habits',
+                    iconColor: Colors.deepOrange, // 红色图标
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final oldItem = item;
+                      final usedQty = await _askQuantityDialog(context, item, 'trash');
+                      if (usedQty == null || usedQty <= 0) return;
+
+                      await widget.repo.useItemWithImpact(item, 'trash', usedQty);
+
+                      if (!context.mounted) return;
+                      _showToast(
+                        'Recorded waste: ${item.name}',
+                        onUndo: () async => widget.repo.updateItem(oldItem),
+                      );
+                    },
+                  ),
+
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Divider(thickness: 1, height: 1, color: theme.dividerColor),
                   ),
-                ],
+                  SheetTile(
+                    icon: Icons.edit_rounded,
+                    title: 'Edit details',
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _openEditPage(context, item);
+                    },
+                  ),
+                  SheetTile(
+                    icon: Icons.delete_outline_rounded,
+                    title: 'Delete item',
+                    danger: true,
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      final ok = await _confirmDelete(context, item);
+                      if (!ok) return;
 
-                SheetTile(
-                  icon: Icons.sticky_note_2_outlined,
-                  title: (item.note != null && item.note!.trim().isNotEmpty) ? 'Edit note' : 'Add note',
-                  subtitle: 'Leave a quick reminder',
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _editItemNote(context, item);
-                  },
-                ),
-
-                SheetTile(
-                  icon: Icons.restaurant_menu_rounded,
-                  title: 'Cook with this',
-                  subtitle: 'Record usage & update quantity',
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final oldItem = item;
-                    final usedQty = await _askQuantityDialog(context, item, 'eat');
-                    if (usedQty == null || usedQty <= 0) return;
-                    await widget.repo.useItemWithImpact(item, 'eat', usedQty);
-                    if (!context.mounted) return;
-                    _showToast(
-                      'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
-                      onUndo: () async => widget.repo.updateItem(oldItem),
-                    );
-                  },
-                ),
-                SheetTile(
-                  icon: Icons.pets_rounded,
-                  title: 'Feed to pet',
-                  subtitle: 'Great for leftovers',
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final oldItem = item;
-                    final usedQty = await _askQuantityDialog(context, item, 'pet');
-                    if (usedQty == null || usedQty <= 0) return;
-
-                    await widget.repo.useItemWithImpact(item, 'pet', usedQty);
-
-                    if (!widget.repo.hasShownPetWarning) {
-                      await widget.repo.markPetWarningShown();
+                      final deletedItem = item;
+                      await widget.repo.deleteItem(item.id);
                       if (!context.mounted) return;
-                      _showToast('Please make sure the food is safe for your pet!');
-                    }
-
-                    if (!context.mounted) return;
-                    _showToast(
-                      'Fed ${item.name} to pet',
-                      onUndo: () async => widget.repo.updateItem(oldItem),
-                    );
-                  },
-                ),
-
-                // 🟢 🟢 新增：Waste / Trash 选项 🟢 🟢
-                SheetTile(
-                  icon: Icons.delete_sweep_rounded,
-                  title: 'Wasted / Thrown away',
-                  subtitle: 'Track waste to improve habits',
-                  iconColor: Colors.deepOrange, // 红色图标
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final oldItem = item;
-                    // 传入 'trash' 动作
-                    final usedQty = await _askQuantityDialog(context, item, 'trash');
-                    if (usedQty == null || usedQty <= 0) return;
-
-                    await widget.repo.useItemWithImpact(item, 'trash', usedQty);
-
-                    if (!context.mounted) return;
-                    _showToast(
-                      'Recorded waste: ${item.name}',
-                      onUndo: () async => widget.repo.updateItem(oldItem),
-                    );
-                  },
-                ),
-                
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(thickness: 1, height: 1, color: theme.dividerColor),
-                ),
-                SheetTile(
-                  icon: Icons.edit_rounded,
-                  title: 'Edit details',
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _openEditPage(context, item);
-                  },
-                ),
-                SheetTile(
-                  icon: Icons.delete_outline_rounded,
-                  title: 'Delete item',
-                  danger: true,
-                  onTap: () async {
-                    Navigator.pop(ctx);
-                    final ok = await _confirmDelete(context, item);
-                    if (!ok) return;
-
-                    final deletedItem = item;
-                    await widget.repo.deleteItem(item.id);
-                    if (!context.mounted) return;
-                    _showToast(
-                      'Deleted "${deletedItem.name}"',
-                      onUndo: () async => widget.repo.addItem(deletedItem),
-                    );
-                  },
-                ),
-              ],
+                      _showToast(
+                        'Deleted "${deletedItem.name}"',
+                        onUndo: () async => widget.repo.addItem(deletedItem),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1389,40 +1568,38 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
   Future<bool> _confirmDelete(BuildContext context, FoodItem item) async {
     return await showDialog<bool>(
-          context: context,
-          builder: (ctx) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-              title: const Text('Delete item?', style: TextStyle(fontWeight: FontWeight.w700)),
-              content: Text('Remove "${item.name}" from your inventory permanently?'),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                  child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ],
-            );
-          },
-        ) ??
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+          title: const Text('Delete item?', style: TextStyle(fontWeight: FontWeight.w700)),
+          content: Text('Remove "${item.name}" from your inventory permanently?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+      },
+    ) ??
         false;
   }
 }
 
 // 🟢 附带：升级版的 SheetTile 组件 (支持 iconColor)
-// 如果你已经在 inventory_components.dart 里定义了它，请更新那个文件；
-// 或者直接保留在下方，但注意不要重复定义。
 class SheetTile extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? subtitle;
   final VoidCallback onTap;
   final bool danger;
-  final Color? iconColor; // 新增
+  final Color? iconColor;
 
   const SheetTile({
     super.key,
@@ -1431,7 +1608,7 @@ class SheetTile extends StatelessWidget {
     this.subtitle,
     required this.onTap,
     this.danger = false,
-    this.iconColor, // 新增
+    this.iconColor,
   });
 
   @override
@@ -1447,9 +1624,9 @@ class SheetTile extends StatelessWidget {
         ),
         // 优先使用 iconColor，其次根据 danger 判断
         child: Icon(
-          icon, 
-          color: iconColor ?? (danger ? Colors.red : colors.onSurface.withOpacity(0.7)), 
-          size: 24
+            icon,
+            color: iconColor ?? (danger ? Colors.red : colors.onSurface.withOpacity(0.7)),
+            size: 24
         ),
       ),
       title: Text(
@@ -1462,15 +1639,72 @@ class SheetTile extends StatelessWidget {
       ),
       subtitle: subtitle != null
           ? Text(
-              subtitle!,
-              style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
-            )
+        subtitle!,
+        style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
+      )
           : null,
       onTap: () {
         HapticFeedback.lightImpact();
         onTap();
       },
-      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
     );
   }
+}
+
+class _PressableScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final bool enabled;
+
+  const _PressableScale({
+    required this.child,
+    this.onTap,
+    this.onLongPress,
+    this.enabled = true,
+  });
+
+  @override
+  State<_PressableScale> createState() => _PressableScaleState();
+}
+
+class _PressableScaleState extends State<_PressableScale> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (!widget.enabled || _pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) {
+        _setPressed(true);
+        if (widget.enabled) HapticFeedback.lightImpact();
+      },
+      onTapUp: (_) {
+        _setPressed(false);
+        widget.onTap?.call();
+      },
+      onTapCancel: () => _setPressed(false),
+      onLongPress: widget.enabled ? widget.onLongPress : null,
+      child: AnimatedScale(
+        scale: _pressed ? 0.98 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _CategoryOption {
+  final String key;
+  final String label;
+  final IconData icon;
+  final Color color;
+
+  const _CategoryOption(this.key, this.label, this.icon, this.color);
 }
