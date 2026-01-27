@@ -82,6 +82,10 @@ function getNutrientAmount(food, names) {
   return null;
 }
 
+function calcKcalFromMacros(proteinG, carbsG, fatG) {
+  return proteinG * 4 + carbsG * 4 + fatG * 9;
+}
+
 function toKcal(amount, unit) {
   if (!Number.isFinite(amount)) return 0;
   if (unit === "KCAL") return amount;
@@ -270,6 +274,9 @@ async function fetchFoodData(query) {
   if (!detail) return null;
 
   const energy = getNutrientAmount(detail, ["energy"]);
+  const protein = getNutrientAmount(detail, ["protein"]);
+  const fat = getNutrientAmount(detail, ["total lipid", "fat"]);
+  const carbs = getNutrientAmount(detail, ["carbohydrate"]);
   const sodium = getNutrientAmount(detail, ["sodium"]);
   const addedSugar = getNutrientAmount(detail, ["sugars, added", "added sugars"]);
   const satFat = getNutrientAmount(detail, ["fatty acids, total saturated", "saturated"]);
@@ -287,6 +294,9 @@ async function fetchFoodData(query) {
     dataType: detail.dataType || best.dataType || "",
     nutrients: {
       energyKcal: energy ? toKcal(energy.amount, energy.unit) : 0,
+      proteinG: protein ? toGrams(protein.amount, protein.unit) : 0,
+      fatG: fat ? toGrams(fat.amount, fat.unit) : 0,
+      carbsG: carbs ? toGrams(carbs.amount, carbs.unit) : 0,
       sodiumMg: sodium ? (sodium.unit === "MG" ? sodium.amount : toGrams(sodium.amount, sodium.unit) * 1000) : 0,
       addedSugarG: addedSugar ? toGrams(addedSugar.amount, addedSugar.unit) : 0,
       satFatG: satFat ? toGrams(satFat.amount, satFat.unit) : 0,
@@ -338,6 +348,9 @@ async function saveCache(rows) {
 
 function computeHeiScore(foods, counts) {
   let totalKcal = 0;
+  let proteinG = 0;
+  let fatG = 0;
+  let carbsG = 0;
   let totalFruitCups = 0;
   let wholeFruitCups = 0;
   let totalVegCups = 0;
@@ -357,9 +370,17 @@ function computeHeiScore(foods, counts) {
     const count = counts[food.query] || 1;
     const grams = 100 * count;
     const nutrients = food.payload?.nutrients || {};
-    const kcal = (nutrients.energyKcal || 0) * (grams / 100);
+    const kcalFromEnergy = (nutrients.energyKcal || 0) * (grams / 100);
+    const protein = (nutrients.proteinG || 0) * (grams / 100);
+    const fat = (nutrients.fatG || 0) * (grams / 100);
+    const carbs = (nutrients.carbsG || 0) * (grams / 100);
+    const kcalFromMacros = calcKcalFromMacros(protein, carbs, fat);
+    const kcal = kcalFromEnergy > 0 ? kcalFromEnergy : kcalFromMacros;
 
     totalKcal += kcal;
+    proteinG += protein;
+    fatG += fat;
+    carbsG += carbs;
     sodiumMg += (nutrients.sodiumMg || 0) * (grams / 100);
     addedSugarG += (nutrients.addedSugarG || 0) * (grams / 100);
     satFatG += (nutrients.satFatG || 0) * (grams / 100);
@@ -420,10 +441,22 @@ function computeHeiScore(foods, counts) {
   };
 
   const totalScore = Object.values(scores).reduce((sum, v) => sum + v, 0);
+  const macroKcal = calcKcalFromMacros(proteinG, carbsG, fatG);
+  const macroBase = macroKcal > 0 ? macroKcal : totalKcal;
+  const macroSplit = {
+    proteinKcalPct: macroBase > 0 ? (proteinG * 4 / macroBase) * 100 : 0,
+    carbsKcalPct: macroBase > 0 ? (carbsG * 4 / macroBase) * 100 : 0,
+    fatKcalPct: macroBase > 0 ? (fatG * 9 / macroBase) * 100 : 0,
+    proteinG,
+    carbsG,
+    fatG,
+    totalKcal: macroBase,
+  };
   return {
     score: Math.max(0, Math.min(100, totalScore)),
     totalKcal,
     scores,
+    macroSplit,
   };
 }
 
@@ -459,6 +492,7 @@ export default async function handler(req, res) {
     const cache = await loadCache(queries);
     const results = [];
     const toCache = [];
+    const dataTypeCounts = {};
 
     for (const q of queries) {
       const cached = cache.get(q);
@@ -470,19 +504,28 @@ export default async function handler(req, res) {
       if (payload) {
         results.push({ query: q, payload });
         toCache.push({ query: q, payload });
+        const t = payload.dataType || "Unknown";
+        dataTypeCounts[t] = (dataTypeCounts[t] || 0) + 1;
       } else {
         results.push({ query: q, payload: { name: q, nutrients: {} } });
+        dataTypeCounts.Unknown = (dataTypeCounts.Unknown || 0) + 1;
       }
     }
 
     await saveCache(toCache);
 
     const summary = computeHeiScore(results, counts);
+    const sourceLabelParts = Object.entries(dataTypeCounts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${k} (${v})`);
 
     return res.status(200).json({
       heiScore: summary.score,
       totalKcal: summary.totalKcal,
       componentScores: summary.scores,
+      macroSplit: summary.macroSplit,
+      dataSources: dataTypeCounts,
+      dataSourceLabel: sourceLabelParts.join(", "),
       items: results.map((r) => ({
         query: r.query,
         name: r.payload?.name || r.query,

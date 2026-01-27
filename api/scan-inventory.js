@@ -229,6 +229,7 @@ You are a strict JSON repair tool.
 Task:
 - Convert the following text into a VALID JSON object.
 - Output ONLY the JSON object (no markdown, no comments).
+- Ensure ALL text fields are in English; translate if needed.
 - Keep this schema exactly:
 {
   "purchaseDate": "YYYY-MM-DD" | null,
@@ -300,9 +301,12 @@ export default async function handler(req, res) {
 
     if (images.length === 0) return res.status(400).json({ error: "Missing imageBase64 / imageUrl" });
 
-    const instruction = `
+  const instruction = `
 You are an OCR+inventory assistant.
 Goal: Extract a clean inventory list from the image (mode="${mode}").
+Language:
+- ALL output text MUST be in English.
+- If the receipt text is in another language, translate names/categories to English.
 
 CRITICAL - NAME STANDARDIZATION:
 For every item detected, you MUST populate "genericName" with the **generic ingredient name only**.
