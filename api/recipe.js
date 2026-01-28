@@ -30,12 +30,145 @@ async function readBody(req) {
   });
 }
 
+// --------- Expiry prediction rules (USDA/UK FSA based) ----------
+const COOKED_KEYWORDS = [
+  "cooked",
+  "leftover",
+  "leftovers",
+  "roasted",
+  "grilled",
+  "fried",
+  "baked",
+  "steamed",
+  "boiled",
+  "stewed",
+  "smoked",
+];
+
+function normalizeExpiryName(raw) {
+  const lowered = String(raw || "").toLowerCase();
+  const cleaned = lowered
+    .replaceAll(/[_\-]/g, " ")
+    .replaceAll(/[^a-z0-9\s]/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
+  const tokens = cleaned ? cleaned.split(" ").filter(Boolean) : [];
+  return { cleaned, tokens };
+}
+
+function resolveLocationType(location) {
+  const loc = String(location || "").toLowerCase();
+  if (loc.includes("freezer")) return "freezer";
+  if (loc.includes("fridge") || loc.includes("refrigerator")) return "fridge";
+  if (loc.includes("pantry") || loc.includes("cupboard")) return "pantry";
+  return "unknown";
+}
+
+function buildExpiryContext(name, location) {
+  const normalized = normalizeExpiryName(name);
+  const tokenSet = new Set(normalized.tokens);
+  const has = (t) => tokenSet.has(t);
+  const hasAny = (arr) => arr.some((t) => tokenSet.has(t));
+  const hasAll = (arr) => arr.every((t) => tokenSet.has(t));
+  const isCooked = hasAny(COOKED_KEYWORDS);
+  return {
+    tokens: normalized.tokens,
+    has,
+    hasAny,
+    hasAll,
+    isCooked,
+    locationType: resolveLocationType(location),
+  };
+}
+
+const EXPIRY_RULES = [
+  {
+    id: "leftovers_rice",
+    match: (ctx) =>
+      ctx.has("rice") && ctx.hasAny(["cooked", "leftover", "leftovers", "fried"]),
+    fridgeDays: 1, // UK FSA: leftovers rice within 24 hours
+  },
+  {
+    id: "leftovers_general",
+    match: (ctx) => ctx.hasAny(["leftover", "leftovers"]) || ctx.isCooked,
+    fridgeDays: 2, // UK FSA: eat leftovers within 48 hours
+    freezerDays: 90, // USDA/FSIS: leftovers 2-3 months (quality)
+  },
+  {
+    id: "raw_poultry",
+    match: (ctx) =>
+      !ctx.isCooked && ctx.hasAny(["chicken", "turkey", "poultry"]),
+    fridgeDays: 2, // USDA/FSIS: 1-2 days
+    freezerDays: 270, // USDA/FSIS: 9 months
+  },
+  {
+    id: "ground_meat",
+    match: (ctx) =>
+      !ctx.isCooked &&
+      ctx.hasAny(["ground", "minced", "mince", "burger", "hamburger"]) &&
+      ctx.hasAny(["beef", "pork", "lamb", "veal", "turkey", "chicken"]),
+    fridgeDays: 2, // USDA/FSIS: 1-2 days
+    freezerDays: 120, // USDA/FSIS/FoodSafety.gov: 3-4 months
+  },
+  {
+    id: "fresh_red_meat",
+    match: (ctx) =>
+      !ctx.isCooked &&
+      ctx.hasAny(["beef", "pork", "lamb", "veal"]) &&
+      ctx.hasAny(["steak", "steaks", "chop", "chops", "roast", "roasts"]),
+    fridgeDays: 4, // USDA/FSIS: 3-5 days
+    freezerDays: 240, // USDA/FSIS: 6-12 months (conservative)
+  },
+  {
+    id: "fish_seafood",
+    match: (ctx) =>
+      !ctx.isCooked &&
+      ctx.hasAny([
+        "fish",
+        "seafood",
+        "salmon",
+        "tuna",
+        "cod",
+        "shrimp",
+        "prawn",
+        "crab",
+        "lobster",
+        "shellfish",
+      ]),
+    fridgeDays: 2, // FoodSafety.gov: 1-3 days for fin fish
+    freezerDays: 90, // FoodSafety.gov: 2-3 months for fatty fish
+  },
+  {
+    id: "eggs",
+    match: (ctx) => ctx.hasAny(["egg", "eggs"]),
+    fridgeDays: 28, // FoodSafety.gov: 3-5 weeks
+  },
+];
+
+function getRuleBasedDays(name, location) {
+  const ctx = buildExpiryContext(name, location);
+  if (ctx.locationType === "unknown") return null;
+  for (const rule of EXPIRY_RULES) {
+    if (!rule.match(ctx)) continue;
+    const days =
+      ctx.locationType === "freezer"
+        ? rule.freezerDays
+        : ctx.locationType === "fridge"
+        ? rule.fridgeDays
+        : rule.pantryDays;
+    if (Number.isFinite(days) && days > 0) return Math.round(days);
+  }
+  return null;
+}
+
+
 // ========= 分支 A：保质期预测 (Expiry Prediction - 优化版) =========
 async function handleExpiryPrediction(body, res) {
   const name = (body.name || "").toString().trim();
   const location = (body.location || "").toString().trim();
   const purchasedDate = (body.purchasedDate || "").toString().trim();
   const openDate = (body.openDate || "").toString().trim();
+  const bestBeforeDate = (body.bestBeforeDate || "").toString().trim();
 
   if (!name || !location || !purchasedDate) {
     return res.status(400).json({
@@ -61,6 +194,36 @@ async function handleExpiryPrediction(body, res) {
       baseDateLabel = "open date";
     }
   }
+  const bestBefore = bestBeforeDate ? new Date(bestBeforeDate) : null;
+  const bestBeforeValid = bestBefore && !isNaN(bestBefore.getTime());
+
+  const ruleDays = getRuleBasedDays(name, location);
+  if (Number.isFinite(ruleDays) && ruleDays > 0) {
+    let adjustedDays = ruleDays;
+    if (bestBeforeValid) {
+      const diffMs = bestBefore.getTime() - baseDate.getTime();
+      const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+      if (Number.isFinite(diffDays)) {
+        adjustedDays = Math.min(adjustedDays, Math.max(1, diffDays));
+      }
+    }
+
+    if (adjustedDays > 730) adjustedDays = 730;
+    if (adjustedDays < 1) adjustedDays = 1;
+
+    const predictedExpiry = new Date(
+      baseDate.getTime() + adjustedDays * 24 * 60 * 60 * 1000
+    );
+
+    return res.status(200).json({
+      predictedExpiry: predictedExpiry.toISOString(),
+      days: adjustedDays,
+      referenceDate: baseDate.toISOString(),
+      referenceType: baseDateLabel,
+      source: "rule",
+    });
+  }
+
 
   // 🟢 优化后的 Prompt：增加上下文消歧义和安全原则
   const prompt = `
@@ -118,16 +281,39 @@ Constraints:
   }
 
   let days = Number.parseInt(data.days, 10);
-  if (!Number.isFinite(days) || days <= 0) days = 7; // 默认保底
-  // 移除强制的 365 天上限，因为如果真的是干货（如判定为调料），确实可能超过一年，但在 Prompt 里已经做了鲜货的限制。
-  // 仍然保留一个合理的上限防止数据溢出
-  if (days > 730) days = 730; 
+  if (!Number.isFinite(days) || days <= 0) days = 7; // fallback
 
-  const predictedExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
+  const loc = location.toLowerCase();
+  let adjustedDays = days;
+  if (loc.includes("freezer")) {
+    adjustedDays = Math.round(days * 2.5);
+  } else if (loc.includes("pantry")) {
+    adjustedDays = Math.round(days * 1.3);
+  }
+
+  if (baseDateLabel === "open date") {
+    let openCap = 7;
+    if (loc.includes("freezer")) openCap = 30;
+    if (loc.includes("pantry")) openCap = 14;
+    adjustedDays = Math.min(adjustedDays, openCap);
+  }
+
+  if (bestBeforeValid) {
+    const diffMs = bestBefore.getTime() - baseDate.getTime();
+    const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+    if (Number.isFinite(diffDays)) {
+      adjustedDays = Math.min(adjustedDays, Math.max(1, diffDays));
+    }
+  }
+
+  if (adjustedDays > 730) adjustedDays = 730;
+  if (adjustedDays < 1) adjustedDays = 1;
+
+  const predictedExpiry = new Date(baseDate.getTime() + adjustedDays * 24 * 60 * 60 * 1000);
 
   return res.status(200).json({
     predictedExpiry: predictedExpiry.toISOString(),
-    days,
+    days: adjustedDays,
     referenceDate: baseDate.toISOString(),
     referenceType: baseDateLabel,
   });
