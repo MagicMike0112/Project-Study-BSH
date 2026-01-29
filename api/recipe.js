@@ -162,7 +162,7 @@ function getRuleBasedDays(name, location) {
 }
 
 
-// ========= 分支 A：保质期预测 (Expiry Prediction - 优化版) =========
+// ========= 分支 A：保质期预测 (Expiry Prediction - 深度优化版) =========
 async function handleExpiryPrediction(body, res) {
   const name = (body.name || "").toString().trim();
   const location = (body.location || "").toString().trim();
@@ -184,139 +184,162 @@ async function handleExpiryPrediction(body, res) {
     });
   }
 
+  // 确定计算的基准日期
+  // 如果有开封日期，我们从开封日期开始算“开封后保质期”
+  // 否则，我们从购买日期开始算“未开封保质期”
   let baseDate = purchased;
   let baseDateLabel = "purchase date";
+  const hasOpenDate = Boolean(openDate);
 
-  if (openDate) {
+  if (hasOpenDate) {
     const opened = new Date(openDate);
     if (!isNaN(opened.getTime())) {
       baseDate = opened;
       baseDateLabel = "open date";
     }
   }
-  const bestBefore = bestBeforeDate ? new Date(bestBeforeDate) : null;
-  const bestBeforeValid = bestBefore && !isNaN(bestBefore.getTime());
 
-  const ruleDays = getRuleBasedDays(name, location);
-  if (Number.isFinite(ruleDays) && ruleDays > 0) {
-    let adjustedDays = ruleDays;
-    if (bestBeforeValid) {
-      const diffMs = bestBefore.getTime() - baseDate.getTime();
-      const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-      if (Number.isFinite(diffDays)) {
-        adjustedDays = Math.min(adjustedDays, Math.max(1, diffDays));
+  // 优先使用硬编码规则 (Rule-Based)
+  // 注意：Rule-Based 主要针对未加工的生鲜，通常假设是从购买日开始算。
+  // 如果已经开封，且规则没有特别处理开封逻辑，我们最好跳过规则，让 LLM 处理更复杂的“开封后”逻辑。
+  if (!hasOpenDate) {
+    const ruleDays = getRuleBasedDays(name, location);
+    if (Number.isFinite(ruleDays) && ruleDays > 0) {
+      let adjustedDays = ruleDays;
+      const bestBefore = bestBeforeDate ? new Date(bestBeforeDate) : null;
+      if (bestBefore && !isNaN(bestBefore.getTime())) {
+        const diffMs = bestBefore.getTime() - baseDate.getTime();
+        const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+        if (Number.isFinite(diffDays)) {
+          // 如果 best before 比规则更短，取较短的
+          adjustedDays = Math.min(adjustedDays, Math.max(1, diffDays));
+        }
+      }
+
+      const predictedExpiry = new Date(
+        baseDate.getTime() + adjustedDays * 24 * 60 * 60 * 1000
+      );
+
+      return res.status(200).json({
+        predictedExpiry: predictedExpiry.toISOString(),
+        days: adjustedDays,
+        referenceDate: baseDate.toISOString(),
+        referenceType: baseDateLabel,
+        source: "rule",
+      });
+    }
+  }
+
+  // 🟢 深度优化后的 Prompt：完全依赖 LLM 进行上下文理解
+  const prompt = `
+You are a strict food safety expert (USDA/UK FSA standards).
+Estimate the SAFE REMAINING SHELF LIFE in DAYS for a specific food item.
+
+Input Data:
+- Product: "${name}"
+- Storage Location: "${location}"
+- Status: ${hasOpenDate ? `OPENED on ${openDate}` : "Sealed / Unopened"}
+- Purchase Date: "${purchasedDate}"
+
+CRITICAL ANALYSIS LOGIC:
+
+1. **CONTEXT DISAMBIGUATION (Location is Key)**:
+   - Identify the product form based on where it is stored.
+   - Example: "Milk" in Pantry -> UHT/Powder (Long life). "Milk" in Fridge -> Fresh (Short life).
+   - Example: "Pasta" in Fridge -> Cooked/Fresh (Short life). "Pasta" in Pantry -> Dried (Years).
+   - If ambiguous, assume the **Perishable/Fresh** version for safety.
+
+2. **OPENED vs UNOPENED**:
+   - If Status is **OPENED**: You MUST predict the "Use-By after opening" period.
+     - Example: Jar of Mayo (Unopened: 1 year, Opened: 2 months).
+     - Example: Carton of Soup (Unopened: 1 year, Opened: 3-4 days).
+   - If Status is **Sealed**: Predict the standard shelf life from the Purchase Date.
+
+3. **STORAGE IMPACT**:
+   - **Freezer**: Extends shelf life significantly (3-12 months for most items). If the item is frozen, ignore fridge rules.
+   - **Fridge**: Standard for perishables (Meat: 2-5 days, Veg: 5-14 days).
+   - **Pantry**: Only for shelf-stable items.
+
+4. **SAFETY FIRST**:
+   - Better to predict spoilage too early than too late.
+   - For fresh meat/fish in fridge: Max 2-3 days unless specified otherwise.
+   - For leftovers: Max 3-4 days.
+
+OUTPUT REQUIREMENT:
+Return ONLY a JSON object: { "days": <integer> }
+- "days" represents how many days the item is safe to consume counting FROM the **${baseDateLabel}**.
+`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are a precise JSON API. Always respond with valid JSON only.",
+        },
+        { role: "user", content: prompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.3, // 降低随机性，提高准确度
+    });
+
+    const raw = response.choices[0]?.message?.content ?? "";
+    let data;
+    try {
+      data = JSON.parse(raw);
+    } catch (e) {
+      console.error("expiry JSON parse error:", e, raw);
+      return res.status(500).json({ error: "LLM returned invalid JSON" });
+    }
+
+    let days = Number.parseInt(data.days, 10);
+    // Fallback logic in case LLM fails or returns weird numbers
+    if (!Number.isFinite(days) || days <= 0) days = 3; 
+
+    // 对极端的数值做限制（防止 LLM 幻觉产生 100 年）
+    if (days > 1000) days = 1000;
+
+    // 如果有 Best Before Date，且未开封，可以用来辅助修正（取较小值以策安全）
+    if (!hasOpenDate && bestBeforeDate) {
+      const bestBefore = new Date(bestBeforeDate);
+      if (!isNaN(bestBefore.getTime())) {
+        const diffMs = bestBefore.getTime() - baseDate.getTime();
+        const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+        if (Number.isFinite(diffDays) && diffDays > 0) {
+          // 如果 LLM 预测的比 best before 还要长很多，可能是不准确的，倾向于相信 best before
+          // 但如果是 Freezer，则忽略 Best Before
+          const isFreezer = location.toLowerCase().includes("freezer");
+          if (!isFreezer) {
+             days = Math.min(days, diffDays + 2); // 允许 Best Before 后宽限几天
+          }
+        }
       }
     }
 
-    if (adjustedDays > 730) adjustedDays = 730;
-    if (adjustedDays < 1) adjustedDays = 1;
-
     const predictedExpiry = new Date(
-      baseDate.getTime() + adjustedDays * 24 * 60 * 60 * 1000
+      baseDate.getTime() + days * 24 * 60 * 60 * 1000
     );
 
     return res.status(200).json({
       predictedExpiry: predictedExpiry.toISOString(),
-      days: adjustedDays,
+      days: days,
       referenceDate: baseDate.toISOString(),
       referenceType: baseDateLabel,
-      source: "rule",
+      source: "ai_v2",
+    });
+
+  } catch (err) {
+    console.error("AI Expiry Prediction Error", err);
+    // 降级策略
+    return res.status(200).json({
+        predictedExpiry: new Date(baseDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        days: 7,
+        referenceDate: baseDate.toISOString(),
+        referenceType: baseDateLabel,
+        source: "fallback",
     });
   }
-
-
-  // 🟢 优化后的 Prompt：增加上下文消歧义和安全原则
-  const prompt = `
-You are a strict food safety assistant.
-Your task is to ESTIMATE a safe remaining shelf life in DAYS for a food item.
-
-User Input:
-- Product Name: "${name}"
-- Storage Location: "${location}"
-- Purchase Date: "${purchasedDate}"
-- Open Date: "${openDate || "N/A"}"
-
-CRITICAL LOGIC FOR ACCURACY:
-1. **Disambiguation via Location (Context Awareness)**:
-   Many food names are ambiguous. You MUST check the 'Storage Location' to decide what the item is.
-   - Example: "Paprika" in **Fridge** = Fresh Bell Pepper (Max 1-2 weeks).
-   - Example: "Paprika" in **Pantry** = Dried Spice Powder (1-2 years).
-   - Example: "Milk" in **Fridge** = Fresh Milk (1 week). "Milk" in **Pantry** = UHT/Powder (Months).
-
-2. **Safety First Principle**:
-   - If the product could be either fresh (perishable) or dried (stable), and the location is unclear or ambiguous, **ALWAYS assume it is the FRESH/PERISHABLE version**.
-   - It is better to predict a shorter date (safety) than a longer one (risk of food poisoning).
-
-3. **Fresh Produce Rules**:
-   - Fresh vegetables/fruits in a fridge typically last **3 to 14 days**. NEVER predict months for fresh produce unless frozen.
-
-4. **Opened Status**:
-   - If 'Open Date' is provided, ignore the standard shelf life and use the "after opening" limit (e.g., jarred sauce lasts 3-5 days after opening, even if expiry is next year).
-
-Output format:
-Return ONLY a JSON object: { "days": <integer> }
-Constraints:
-- "days" is counted FROM the ${baseDateLabel}.
-`;
-
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini", 
-    messages: [
-      {
-        role: "system",
-        content: "You are a precise JSON API. Always respond with valid JSON only.",
-      },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const raw = response.choices[0]?.message?.content ?? "";
-  let data;
-  try {
-    data = JSON.parse(raw);
-  } catch (e) {
-    console.error("expiry JSON parse error:", e, raw);
-    return res.status(500).json({ error: "LLM returned invalid JSON" });
-  }
-
-  let days = Number.parseInt(data.days, 10);
-  if (!Number.isFinite(days) || days <= 0) days = 7; // fallback
-
-  const loc = location.toLowerCase();
-  let adjustedDays = days;
-  if (loc.includes("freezer")) {
-    adjustedDays = Math.round(days * 2.5);
-  } else if (loc.includes("pantry")) {
-    adjustedDays = Math.round(days * 1.3);
-  }
-
-  if (baseDateLabel === "open date") {
-    let openCap = 7;
-    if (loc.includes("freezer")) openCap = 30;
-    if (loc.includes("pantry")) openCap = 14;
-    adjustedDays = Math.min(adjustedDays, openCap);
-  }
-
-  if (bestBeforeValid) {
-    const diffMs = bestBefore.getTime() - baseDate.getTime();
-    const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-    if (Number.isFinite(diffDays)) {
-      adjustedDays = Math.min(adjustedDays, Math.max(1, diffDays));
-    }
-  }
-
-  if (adjustedDays > 730) adjustedDays = 730;
-  if (adjustedDays < 1) adjustedDays = 1;
-
-  const predictedExpiry = new Date(baseDate.getTime() + adjustedDays * 24 * 60 * 60 * 1000);
-
-  return res.status(200).json({
-    predictedExpiry: predictedExpiry.toISOString(),
-    days: adjustedDays,
-    referenceDate: baseDate.toISOString(),
-    referenceType: baseDateLabel,
-  });
 }
 
 function clampInt(n, min, max, fallback) {
