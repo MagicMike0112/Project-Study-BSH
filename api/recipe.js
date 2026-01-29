@@ -589,7 +589,7 @@ No markdown, no extra text.
   }
 }
 
-// ========= 分支 C：周报分析与智能分类 (Diet Analysis) =========
+// ========= 分支 C：周报分析与智能分类 (Diet Analysis ) =========
 async function handleDietAnalysis(body, res) {
   const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
   const studentMode = Boolean(body.studentMode);
@@ -615,9 +615,11 @@ async function handleDietAnalysis(body, res) {
     });
   }
 
-  // 去重以节省 Token，但保留原始列表可能对频率分析有用（这里选择发去重版）
+  // 数据预处理
   const uniqueItems = [...new Set(consumedItems)];
   const itemsStr = uniqueItems.join(", ");
+  
+  // 提取高频消耗品（Top 12）
   const sortedConsumption = consumptionCounts
     ? Object.entries(consumptionCounts)
         .filter(([name, count]) => typeof name === "string" && Number.isFinite(Number(count)))
@@ -625,99 +627,97 @@ async function handleDietAnalysis(body, res) {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 12)
     : [];
+    
   const consumptionBlock = sortedConsumption.length
-    ? `\nConsumption frequency (top items): ${sortedConsumption
+    ? `\nConsumption History (Frequency): ${sortedConsumption
         .map(([name, count]) => `${name} (${count}x)`)
         .join(", ")}\n`
-    : "\nConsumption frequency: Not provided.\n";
+    : "\nConsumption History: Not provided.\n";
 
-  const historyBlock = history
-    ? `
-Weekly comparison:
-This week summary: ${JSON.stringify(history.thisWeek || {})}
-Last week summary: ${JSON.stringify(history.lastWeek || {})}
-`
-    : "No history summary available.";
+  // 提取用户计划文本
+  const nextWeekPlanRaw = String(weekContext.nextWeek || "").trim();
+  const nextWeekPlanBlock = nextWeekPlanRaw 
+    ? `USER'S NEXT WEEK PLAN: "${nextWeekPlanRaw}"` 
+    : "USER'S NEXT WEEK PLAN: None/Unspecified";
 
-  const normalizePlanned = (list) =>
-    list
-      .map((m) => {
-        const date = String(m?.date || "");
-        const slot = String(m?.slot || "");
-        const mealName = String(m?.mealName || "");
-        const recipeName = String(m?.recipeName || "");
-        const itemIds = Array.isArray(m?.itemIds) ? m.itemIds : [];
-        return { date, slot, mealName, recipeName, itemIdsCount: itemIds.length };
-      })
-      .filter((m) => m.date || m.mealName || m.recipeName || m.slot);
+  const plannedNextWeekStructured = plannedMealsNextWeek
+    .map(m => m.mealName || m.recipeName)
+    .filter(Boolean)
+    .join(", ");
+  
+  const structuredPlanBlock = plannedNextWeekStructured
+    ? `Structured Meal Plan (Next Week): ${plannedNextWeekStructured}`
+    : "";
 
-  const plannedThisWeek = normalizePlanned(plannedMealsThisWeek);
-  const plannedNextWeek = normalizePlanned(plannedMealsNextWeek);
-
-  const plannedBlock = `
-Planned meals (this week):
-${plannedThisWeek.length ? JSON.stringify(plannedThisWeek) : "None"}
-
-Planned meals (next week):
-${plannedNextWeek.length ? JSON.stringify(plannedNextWeek) : "None"}
-`;
-
+  // 🟢 核心修改：Smart Restock Prompt
   const prompt = `
-You are a friendly, professional nutrition assistant${studentMode ? " for a busy student on a budget" : ""}.
-The user has consumed the following items this week: "${itemsStr}".
-${consumptionBlock}
-${historyBlock}
-${plannedBlock}
+You are a highly intelligent Personal Grocery Assistant${studentMode ? " for a budget-conscious student" : ""}.
 
-User's plan for planning restock:
-- This week: "${String(weekContext.thisWeek || "").trim()}"
-- Next week: "${String(weekContext.nextWeek || "").trim()}"
+DATA CONTEXT:
+1. **Items Consumed This Week**: "${itemsStr}"
+2. ${consumptionBlock}
+3. ${nextWeekPlanBlock}
+4. ${structuredPlanBlock}
 
-Your Tasks:
-1. Insight: Provide a concise, friendly 2-3 sentence assessment focused on THIS WEEK. If last week data exists, mention 1-2 meaningful changes (e.g., less veggies, more snacks).
-2. Suggestions: Suggest 3-5 ingredients to restock based on what they ACTUALLY consumed most, plus the user's plan for this/next week. Use the frequency list to prioritize staples they eat often, and add 1-2 complementary items to balance gaps (e.g., more veggies if diet is heavy in carbs). Keep reasons practical and encouraging.
-3. Next week meal help: If next week's planned meals are provided, add 1-2 brief adjustments (ingredients or swaps) to make those meals more balanced or realistic.
-4. Categorization (CRITICAL): Map EACH item in the input list to EXACTLY ONE of these categories for a pie chart:
-   [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, Condiments, Other].
-   
-   Examples:
-   - "Banana" -> "Fruits"
-   - "Onion" -> "Veggies"
-   - "Tofu" -> "Protein"
-   - "Milk" -> "Dairy"
-   - "Rice" -> "Carbs"
-   - "Coke" -> "Drinks"
+YOUR OBJECTIVES:
 
-Return ONLY JSON:
+---
+**TASK 1: INSIGHT (Analysis)**
+Provide a brief, friendly 2-sentence observation about their diet this week based on the "Consumed Items".
+- Did they eat a lot of one thing? Was it balanced?
+- Keep it encouraging.
+
+---
+**TASK 2: SMART RESTOCK SUGGESTIONS (The Core Task)**
+Suggest exactly 4-6 items to buy/restock. You MUST follow this priority order strictly:
+
+* **PRIORITY 1 (Highest): THE NEXT WEEK PLAN.**
+    * Look at the "USER'S NEXT WEEK PLAN" and "Structured Meal Plan".
+    * Deconstruct these plans into necessary raw ingredients.
+    * *Example:* If plan is "Making Sushi", you MUST suggest "Nori Sheets", "Sushi Rice", "Fish".
+    * *Reason:* "Essential for your Sushi plan."
+
+* **PRIORITY 2: REPLENISH STAPLES.**
+    * Look at "Consumption History". Identify items consumed frequently (2x or more) that likely ran out (e.g., Milk, Eggs, Bread, Oil).
+    * *Reason:* "You use this frequently."
+
+* **PRIORITY 3: NUTRITIONAL BALANCE.**
+    * If the plan is empty, suggest items to balance their recent diet (e.g., if they ate only carbs, suggest a versatile vegetable).
+
+* **Logic Check:** Do NOT suggest items they likely still have (e.g., a bag of flour bought once) unless the plan explicitly requires a lot of it. Focus on perishables and high-turnover items.
+
+---
+**TASK 3: CATEGORIZATION**
+Map consumed items to: [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, Condiments, Other].
+
+---
+**OUTPUT JSON FORMAT:**
 {
-  "insight": "Your analysis here.",
+  "insight": "...",
   "suggestions": [
-    { "name": "Broccoli", "category": "Veggies", "reason": "More fiber needed!" },
-    { "name": "Chicken", "category": "Protein", "reason": "Good protein source." }
+    { 
+      "name": "Item Name", 
+      "category": "Category", 
+      "reason": "Specific reason linking to Plan or History." 
+    }
   ],
-  "nextWeekAdvice": [
-    "Add a leafy green to your planned dinners to balance fiber.",
-    "Swap one lunch carb for a protein-forward option."
-  ],
-  "categorization": {
-    "Banana": "Fruits",
-    "Onion": "Veggies",
-    "Milk": "Dairy"
-  }
+  "nextWeekAdvice": [ "Short tip 1", "Short tip 2" ],
+  "categorization": { "ItemName": "Category" }
 }
 `;
 
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "You are a precise JSON API." },
-      { role: "user", content: prompt },
-    ],
-    response_format: { type: "json_object" },
-  });
-
-  const raw = response.choices[0]?.message?.content ?? "{}";
   try {
+    const response = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "You are a helpful JSON API." },
+        { role: "user", content: prompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.5, // 稍微提高一点创造性以拆解食谱
+    });
+
+    const raw = response.choices[0]?.message?.content ?? "{}";
     const data = JSON.parse(raw);
     return res.status(200).json(data);
   } catch (e) {
@@ -725,7 +725,6 @@ Return ONLY JSON:
     return res.status(500).json({ error: "Failed to parse AI response" });
   }
 }
-
 // ========= 主入口 (Main Handler) =========
 export default async function handler(req, res) {
   // ---- CORS ----
