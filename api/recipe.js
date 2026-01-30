@@ -162,7 +162,7 @@ function getRuleBasedDays(name, location) {
 }
 
 
-// ========= 分支 A：保质期预测 (Expiry Prediction - 深度优化版) =========
+// ========= 分支 A：保质期预测 (Expiry Prediction - 整合冷冻修正版) =========
 async function handleExpiryPrediction(body, res) {
   const name = (body.name || "").toString().trim();
   const location = (body.location || "").toString().trim();
@@ -184,9 +184,6 @@ async function handleExpiryPrediction(body, res) {
     });
   }
 
-  // 确定计算的基准日期
-  // 如果有开封日期，我们从开封日期开始算“开封后保质期”
-  // 否则，我们从购买日期开始算“未开封保质期”
   let baseDate = purchased;
   let baseDateLabel = "purchase date";
   const hasOpenDate = Boolean(openDate);
@@ -199,19 +196,20 @@ async function handleExpiryPrediction(body, res) {
     }
   }
 
-  // 优先使用硬编码规则 (Rule-Based)
-  // 注意：Rule-Based 主要针对未加工的生鲜，通常假设是从购买日开始算。
-  // 如果已经开封，且规则没有特别处理开封逻辑，我们最好跳过规则，让 LLM 处理更复杂的“开封后”逻辑。
+  // 1. 优先尝试规则匹配 (Rule-Based)
+  // 规则库已经包含了对 Freezer 的定义，所以如果命中规则，直接返回
   if (!hasOpenDate) {
     const ruleDays = getRuleBasedDays(name, location);
     if (Number.isFinite(ruleDays) && ruleDays > 0) {
       let adjustedDays = ruleDays;
       const bestBefore = bestBeforeDate ? new Date(bestBeforeDate) : null;
-      if (bestBefore && !isNaN(bestBefore.getTime())) {
+      // 注意：如果是冷冻，通常可以忽略 Best Before (因为冷冻暂停了腐败)
+      const isFreezerRule = location.toLowerCase().includes("freezer");
+      
+      if (!isFreezerRule && bestBefore && !isNaN(bestBefore.getTime())) {
         const diffMs = bestBefore.getTime() - baseDate.getTime();
         const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
         if (Number.isFinite(diffDays)) {
-          // 如果 best before 比规则更短，取较短的
           adjustedDays = Math.min(adjustedDays, Math.max(1, diffDays));
         }
       }
@@ -230,58 +228,41 @@ async function handleExpiryPrediction(body, res) {
     }
   }
 
-  // 🟢 深度优化后的 Prompt：完全依赖 LLM 进行上下文理解
+  // 2. AI 预测 (Prompt 针对 Freezer 进行了强化)
   const prompt = `
-You are a strict food safety expert (USDA/UK FSA standards).
-Estimate the SAFE REMAINING SHELF LIFE in DAYS for a specific food item.
+You are a strict food safety expert.
+Estimate the SAFE REMAINING SHELF LIFE in DAYS.
 
-Input Data:
+Input:
 - Product: "${name}"
-- Storage Location: "${location}"
-- Status: ${hasOpenDate ? `OPENED on ${openDate}` : "Sealed / Unopened"}
-- Purchase Date: "${purchasedDate}"
+- Location: "${location}"
+- Status: ${hasOpenDate ? "OPENED" : "Sealed"}
 
-CRITICAL ANALYSIS LOGIC:
+CRITICAL RULES:
+1. **CHECK LOCATION FIRST**:
+   - If Location is **FREEZER**: The shelf life implies **MONTHS** (90-365 days). Do NOT give fridge-life (3-5 days) for frozen items.
+   - If Location is **PANTRY**: Dry goods last months/years. Fresh produce lasts days.
+   - If Location is **FRIDGE**: Meat (2-4 days), Veggies (1-2 weeks).
 
-1. **CONTEXT DISAMBIGUATION (Location is Key)**:
-   - Identify the product form based on where it is stored.
-   - Example: "Milk" in Pantry -> UHT/Powder (Long life). "Milk" in Fridge -> Fresh (Short life).
-   - Example: "Pasta" in Fridge -> Cooked/Fresh (Short life). "Pasta" in Pantry -> Dried (Years).
-   - If ambiguous, assume the **Perishable/Fresh** version for safety.
+2. **OPENED vs SEALED**:
+   - Opened items in Fridge expire fast.
+   - Opened items in Freezer still last months (quality may drop, but safety is high).
 
-2. **OPENED vs UNOPENED**:
-   - If Status is **OPENED**: You MUST predict the "Use-By after opening" period.
-     - Example: Jar of Mayo (Unopened: 1 year, Opened: 2 months).
-     - Example: Carton of Soup (Unopened: 1 year, Opened: 3-4 days).
-   - If Status is **Sealed**: Predict the standard shelf life from the Purchase Date.
+3. **CONSERVATIVE ESTIMATE**:
+   - If unsure, pick the lower bound of safety.
 
-3. **STORAGE IMPACT**:
-   - **Freezer**: Extends shelf life significantly (3-12 months for most items). If the item is frozen, ignore fridge rules.
-   - **Fridge**: Standard for perishables (Meat: 2-5 days, Veg: 5-14 days).
-   - **Pantry**: Only for shelf-stable items.
-
-4. **SAFETY FIRST**:
-   - Better to predict spoilage too early than too late.
-   - For fresh meat/fish in fridge: Max 2-3 days unless specified otherwise.
-   - For leftovers: Max 3-4 days.
-
-OUTPUT REQUIREMENT:
-Return ONLY a JSON object: { "days": <integer> }
-- "days" represents how many days the item is safe to consume counting FROM the **${baseDateLabel}**.
+Output JSON: { "days": <integer> }
 `;
 
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: "You are a precise JSON API. Always respond with valid JSON only.",
-        },
+        { role: "system", content: "You are a JSON API. If Location is Freezer, output days > 30." },
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.3, // 降低随机性，提高准确度
+      temperature: 0.1, 
     });
 
     const raw = response.choices[0]?.message?.content ?? "";
@@ -289,49 +270,38 @@ Return ONLY a JSON object: { "days": <integer> }
     try {
       data = JSON.parse(raw);
     } catch (e) {
-      console.error("expiry JSON parse error:", e, raw);
-      return res.status(500).json({ error: "LLM returned invalid JSON" });
+      return res.status(500).json({ error: "LLM JSON Error" });
     }
 
     let days = Number.parseInt(data.days, 10);
-    // Fallback logic in case LLM fails or returns weird numbers
-    if (!Number.isFinite(days) || days <= 0) days = 3; 
+    if (!Number.isFinite(days) || days <= 0) days = 3;
 
-    // 对极端的数值做限制（防止 LLM 幻觉产生 100 年）
-    if (days > 1000) days = 1000;
+    // 🟢 关键功能：Freezer 强制修正逻辑 (Force Logic)
+    // 解决“移动到冷冻室日期没变”的问题
+    const locLower = location.toLowerCase();
+    const isFreezer = locLower.includes("freezer") || locLower.includes("ice");
 
-    // 如果有 Best Before Date，且未开封，可以用来辅助修正（取较小值以策安全）
-    if (!hasOpenDate && bestBeforeDate) {
-      const bestBefore = new Date(bestBeforeDate);
-      if (!isNaN(bestBefore.getTime())) {
-        const diffMs = bestBefore.getTime() - baseDate.getTime();
-        const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
-        if (Number.isFinite(diffDays) && diffDays > 0) {
-          // 如果 LLM 预测的比 best before 还要长很多，可能是不准确的，倾向于相信 best before
-          // 但如果是 Freezer，则忽略 Best Before
-          const isFreezer = location.toLowerCase().includes("freezer");
-          if (!isFreezer) {
-             days = Math.min(days, diffDays + 2); // 允许 Best Before 后宽限几天
-          }
-        }
+    if (isFreezer) {
+      // 如果是在冷冻室，且 AI 预测小于 30 天，说明 AI 误判，强制修正为至少 3 个月
+      if (days < 30) {
+        days = Math.max(90, days * 10); 
       }
-    }
+      // 设置上限防止过大
+      if (days > 730) days = 730;
+    } 
 
-    const predictedExpiry = new Date(
-      baseDate.getTime() + days * 24 * 60 * 60 * 1000
-    );
+    const predictedExpiry = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000);
 
     return res.status(200).json({
       predictedExpiry: predictedExpiry.toISOString(),
       days: days,
       referenceDate: baseDate.toISOString(),
       referenceType: baseDateLabel,
-      source: "ai_v2",
+      source: "ai_v3_fixed",
     });
 
   } catch (err) {
-    console.error("AI Expiry Prediction Error", err);
-    // 降级策略
+    console.error("Prediction Error", err);
     return res.status(200).json({
         predictedExpiry: new Date(baseDate.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         days: 7,
@@ -369,44 +339,7 @@ function normalizeTools(tools) {
   return out;
 }
 
-async function generateRecipeImage(title, ingredients) {
-  const model = process.env.OPENAI_IMAGE_MODEL || "gpt-image-1";
-  const rawSize = process.env.OPENAI_IMAGE_SIZE || "auto";
-  const size = rawSize === "512x512" ? "auto" : rawSize;
-  const rawQuality = process.env.OPENAI_IMAGE_QUALITY || "auto";
-  const quality = rawQuality === "standard" ? "auto" : rawQuality;
-  const prompt = `A clean, appetizing food photo of "${title}", soft natural light, top-down, minimal background. Ingredients: ${ingredients.join(", " )}.`;
-
-  try {
-    const resp = await client.images.generate({
-      model,
-      prompt,
-      size,
-      quality,
-    });
-
-    const b64 = resp?.data?.[0]?.b64_json;
-    if (b64) return `data:image/png;base64,${b64}`;
-
-    const url = resp?.data?.[0]?.url;
-    if (url) return url;
-
-    console.error("image gen empty", { title, version: IMAGE_GEN_VERSION });
-    return null;
-  } catch (err) {
-    const status = err?.status || err?.response?.status;
-    console.error("image gen failed", {
-      title,
-      status,
-      message: err?.message,
-      version: IMAGE_GEN_VERSION,
-    });
-    return null;
-  }
-}
-
-// ========= 分支 B：生成菜谱 (Recipe Generation) =========
-// 支持 Student Mode, Servings, Oven Plan
+// ========= 分支 B：生成菜谱 (Recipe Generation - 动态数量版) =========
 async function handleRecipeGeneration(body, res) {
   const ingredients = Array.isArray(body.ingredients) ? body.ingredients : [];
   const extraIngredients = Array.isArray(body.extraIngredients)
@@ -419,6 +352,11 @@ async function handleRecipeGeneration(body, res) {
   // 🟢 读取参数
   const studentMode = Boolean(body.studentMode);
   const servings = body.servings || 2; 
+
+  // 🟢 动态菜谱数量支持 (1-5)
+  let recipeCount = parseInt(body.recipeCount);
+  if (isNaN(recipeCount) || recipeCount < 1) recipeCount = 3;
+  if (recipeCount > 5) recipeCount = 5;
 
   const allList = [...ingredients, ...extraIngredients];
   if (allList.length === 0) {
@@ -441,7 +379,6 @@ User did not specify extra constraints.
 Keep recipes generic but realistic for a European home kitchen.
 `;
 
-  // 🟢 学生模式指令
   const studentBlock = studentMode
     ? `
 *** STUDENT MODE ACTIVATED ***
@@ -468,7 +405,7 @@ ${studentBlock}
 ${preferenceBlock}
 
 Your job:
-- Propose 3 different recipes.
+- Propose ${recipeCount} different recipes.
 - You do NOT need to use all ingredients in every recipe.
 - Prioritize perishable/expiring ingredients in at least one recipe.
 - Keep recipes realistic.
@@ -528,84 +465,42 @@ No markdown, no extra text.
 
   const recipes = Array.isArray(data.recipes) ? data.recipes : [];
 
-  // ---- 清洗数据 ----
   const cleaned = recipes.map((r, idx) => {
     const m = (r && typeof r === "object") ? r : {};
-
     const id = String(m.id || `r${idx + 1}`);
     const title = String(m.title || "Untitled");
-
     const timePill = String(m.timePill || m.timeLabel || "20 min"); 
     const toolPill = String(m.toolPill || "1 pan");
-
     const tools = normalizeTools(m.tools);
-
     const ovenPlanIn = (m.ovenPlan && typeof m.ovenPlan === "object") ? m.ovenPlan : {};
     const required = Boolean(ovenPlanIn.required);
-
     const tools2 = required && !tools.includes("oven") ? ["oven", ...tools] : tools;
-
     const tempC = required ? clampInt(ovenPlanIn.tempC, 60, 260, 200) : null;
-    const durationMin = required
-      ? clampInt(ovenPlanIn.durationMin, 1, 180, null)
-      : null;
-
-    const programKey = required
-      ? String(ovenPlanIn.programKey || "Cooking.Oven.Program.HeatingMode.PreHeating")
-      : null;
-
+    const durationMin = required ? clampInt(ovenPlanIn.durationMin, 1, 180, null) : null;
+    const programKey = required ? String(ovenPlanIn.programKey || "Cooking.Oven.Program.HeatingMode.PreHeating") : null;
     const expiringCount = clampInt(m.expiringCount, 0, 99, 0);
-
-    const ingredients = Array.isArray(m.ingredients)
-      ? m.ingredients.map((x) => String(x))
-      : [];
-
+    const ingredients = Array.isArray(m.ingredients) ? m.ingredients.map((x) => String(x)) : [];
     const steps = Array.isArray(m.steps) ? m.steps.map((x) => String(x)) : [];
-
     const description = typeof m.description === "string" ? m.description : "";
 
     return {
-      id,
-      title,
-      timePill,
-      toolPill,
-      tools: tools2,
-      ovenPlan: {
-        required,
-        tempC,
-        programKey,
-        durationMin,
-      },
-      expiringCount,
-      ingredients,
-      steps,
-      description,
+      id, title, timePill, toolPill, tools: tools2,
+      ovenPlan: { required, tempC, programKey, durationMin },
+      expiringCount, ingredients, steps, description,
     };
   });
 
-  const includeImages = false;
-  if (!includeImages) {
-    return res.status(200).json({ recipes: cleaned, imageGenVersion: IMAGE_GEN_VERSION });
-  }
+  return res.status(200).json({ recipes: cleaned, imageGenVersion: IMAGE_GEN_VERSION });
 }
 
-// ========= 分支 C：周报分析与智能分类 (Diet Analysis ) =========
+// ========= 分支 C：周报分析与智能分类 (Diet Analysis - 智能补货优先级版) =========
 async function handleDietAnalysis(body, res) {
   const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
   const studentMode = Boolean(body.studentMode);
   const history = body.history && typeof body.history === "object" ? body.history : null;
-  const weekContext =
-    body.weekContext && typeof body.weekContext === "object" ? body.weekContext : {};
-  const consumptionCounts =
-    body.consumptionCounts && typeof body.consumptionCounts === "object"
-      ? body.consumptionCounts
-      : null;
-  const plannedMealsThisWeek = Array.isArray(body.plannedMealsThisWeek)
-    ? body.plannedMealsThisWeek
-    : [];
-  const plannedMealsNextWeek = Array.isArray(body.plannedMealsNextWeek)
-    ? body.plannedMealsNextWeek
-    : [];
+  const weekContext = body.weekContext && typeof body.weekContext === "object" ? body.weekContext : {};
+  const consumptionCounts = body.consumptionCounts && typeof body.consumptionCounts === "object" ? body.consumptionCounts : null;
+  const plannedMealsNextWeek = Array.isArray(body.plannedMealsNextWeek) ? body.plannedMealsNextWeek : [];
 
   if (consumedItems.length === 0) {
     return res.status(200).json({
@@ -615,11 +510,9 @@ async function handleDietAnalysis(body, res) {
     });
   }
 
-  // 数据预处理
   const uniqueItems = [...new Set(consumedItems)];
   const itemsStr = uniqueItems.join(", ");
   
-  // 提取高频消耗品（Top 12）
   const sortedConsumption = consumptionCounts
     ? Object.entries(consumptionCounts)
         .filter(([name, count]) => typeof name === "string" && Number.isFinite(Number(count)))
@@ -634,7 +527,6 @@ async function handleDietAnalysis(body, res) {
         .join(", ")}\n`
     : "\nConsumption History: Not provided.\n";
 
-  // 提取用户计划文本
   const nextWeekPlanRaw = String(weekContext.nextWeek || "").trim();
   const nextWeekPlanBlock = nextWeekPlanRaw 
     ? `USER'S NEXT WEEK PLAN: "${nextWeekPlanRaw}"` 
@@ -649,7 +541,7 @@ async function handleDietAnalysis(body, res) {
     ? `Structured Meal Plan (Next Week): ${plannedNextWeekStructured}`
     : "";
 
-  // 🟢 核心修改：Smart Restock Prompt
+  // 🟢 智能补货 Prompt：优先级逻辑 (计划 > 历史 > 平衡)
   const prompt = `
 You are a highly intelligent Personal Grocery Assistant${studentMode ? " for a budget-conscious student" : ""}.
 
@@ -714,7 +606,7 @@ Map consumed items to: [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, 
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-      temperature: 0.5, // 稍微提高一点创造性以拆解食谱
+      temperature: 0.5,
     });
 
     const raw = response.choices[0]?.message?.content ?? "{}";
@@ -725,6 +617,7 @@ Map consumed items to: [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, 
     return res.status(500).json({ error: "Failed to parse AI response" });
   }
 }
+
 // ========= 主入口 (Main Handler) =========
 export default async function handler(req, res) {
   // ---- CORS ----
