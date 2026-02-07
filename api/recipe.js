@@ -165,6 +165,8 @@ function getRuleBasedDays(name, location) {
 // ========= 分支 A：保质期预测 (Expiry Prediction - 整合冷冻修正版) =========
 async function handleExpiryPrediction(body, res) {
   const name = (body.name || "").toString().trim();
+  // 🟢 接收 genericName
+  const genericName = (body.genericName || "").toString().trim(); 
   const location = (body.location || "").toString().trim();
   const purchasedDate = (body.purchasedDate || "").toString().trim();
   const openDate = (body.openDate || "").toString().trim();
@@ -197,9 +199,12 @@ async function handleExpiryPrediction(body, res) {
   }
 
   // 1. 优先尝试规则匹配 (Rule-Based)
-  // 规则库已经包含了对 Freezer 的定义，所以如果命中规则，直接返回
+  // 🟢 优化：将 specific name 和 generic name 拼接后去匹配规则
+  // 这样既能匹配到 "cooked" (in name) 也能匹配到 "rice" (in genericName)
   if (!hasOpenDate) {
-    const ruleDays = getRuleBasedDays(name, location);
+    const ruleSearchText = (genericName + " " + name).trim();
+    const ruleDays = getRuleBasedDays(ruleSearchText, location);
+    
     if (Number.isFinite(ruleDays) && ruleDays > 0) {
       let adjustedDays = ruleDays;
       const bestBefore = bestBeforeDate ? new Date(bestBeforeDate) : null;
@@ -228,27 +233,29 @@ async function handleExpiryPrediction(body, res) {
     }
   }
 
-  // 2. AI 预测 (Prompt 针对 Freezer 进行了强化)
+  // 2. AI 预测 (Prompt 针对 Freezer 进行了强化，并加入了 genericName)
   const prompt = `
 You are a strict food safety expert.
 Estimate the SAFE REMAINING SHELF LIFE in DAYS.
 
 Input:
-- Product: "${name}"
+- Product Name: "${name}"
+${genericName ? `- Ingredient Type: "${genericName}"` : ""}
 - Location: "${location}"
 - Status: ${hasOpenDate ? "OPENED" : "Sealed"}
 
 CRITICAL RULES:
-1. **CHECK LOCATION FIRST**:
+1. **USE INGREDIENT TYPE**: Use the "Ingredient Type" (if provided) to judge shelf life, as Brand Names can be misleading.
+2. **CHECK LOCATION FIRST**:
    - If Location is **FREEZER**: The shelf life implies **MONTHS** (90-365 days). Do NOT give fridge-life (3-5 days) for frozen items.
    - If Location is **PANTRY**: Dry goods last months/years. Fresh produce lasts days.
    - If Location is **FRIDGE**: Meat (2-4 days), Veggies (1-2 weeks).
 
-2. **OPENED vs SEALED**:
+3. **OPENED vs SEALED**:
    - Opened items in Fridge expire fast.
    - Opened items in Freezer still last months (quality may drop, but safety is high).
 
-3. **CONSERVATIVE ESTIMATE**:
+4. **CONSERVATIVE ESTIMATE**:
    - If unsure, pick the lower bound of safety.
 
 Output JSON: { "days": <integer> }
@@ -392,11 +399,13 @@ STRICT Rules for Student Mode:
 `
     : "";
 
+  // 🟢 优化 Prompt: 要求 AI 理解 ingredient 可能是具体的品牌名，但在生成步骤时使用通用名
   const prompt = `
 You are a cooking assistant that helps people reduce food waste.
 
 Available ingredients (today's pantry):
 ${all}
+*(Note: Some ingredients may be listed by Brand Name. Please interpret them as their generic food type.)*
 
 Cooking Context:
 - Target Servings: ${servings} people (Adjust quantities in description/steps conceptually).
@@ -409,6 +418,7 @@ Your job:
 - You do NOT need to use all ingredients in every recipe.
 - Prioritize perishable/expiring ingredients in at least one recipe.
 - Keep recipes realistic.
+- **IMPORTANT**: In the "ingredients" and "steps" fields, use GENERIC names (e.g., use "Milk", not "Horizon Organic Milk").
 
 IMPORTANT UI requirement:
 - We show two separate pills in the app:

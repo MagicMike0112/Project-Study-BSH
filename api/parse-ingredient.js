@@ -33,7 +33,7 @@ function setCors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 }
 
-// ---------- 提示词生成器 ----------
+// ---------- 提示词生成器 (已升级) ----------
 
 function getSystemPrompt(isListMode) {
   const commonRules = `
@@ -43,18 +43,24 @@ function getSystemPrompt(isListMode) {
    - If unit is "liters", use "L".
 3. **Storage Location**:
    - If user specifies (e.g. "put in freezer"), use that.
-   - If NOT specified, INFER based on the item type:
+   - If NOT specified, INFER based on the 'genericName':
      - Frozen items -> "freezer"
-     - Dry goods -> "pantry"
+     - Dry goods / Canned -> "pantry"
      - Fresh/Perishable -> "fridge"
-4. **Name**: Keep it clean (e.g., "Gala Apples" -> "Apple").
-5. **Expiry Prediction**: intelligently ESTIMATE a "predictedExpiry" date (ISO 8601 format: YYYY-MM-DD) based on the food type and today's date (assume today is ${new Date().toISOString().split('T')[0]}).
-   - Fresh Meat/Fish: +3 days
+4. **Name Extraction (CRITICAL)**:
+   - "name": The user's specific input (e.g. "Lays Chips", "Organic Milk").
+   - "genericName": The standardized ingredient type (e.g. "Potato Chips", "Milk"). 
+     - **NO** general terms like "Snack", "Food", "Groceries". Be specific.
+5. **Expiry Prediction**: intelligently ESTIMATE a "predictedExpiry" date (ISO 8601 format: YYYY-MM-DD) based on the 'genericName' and today's date (assume today is ${new Date().toISOString().split('T')[0]}).
+   - Raw Meat/Fish: +2 days
+   - Leftovers/Cooked: +3 days
+   - Berries/Soft Fruit: +4 days
    - Milk: +7 days
-   - Vegetables: +7 days
+   - Leafy Veg: +5 days
+   - Yogurt/Cheese: +14 days
    - Eggs: +30 days
-   - Frozen items: +180 days
-   - Pantry items: +365 days
+   - Frozen items: +90 days
+   - Pantry (Chips, Canned, Rice): +365 days
 `;
 
   if (isListMode) {
@@ -66,10 +72,11 @@ Parse user input into a LIST of structured food inventory items.
 {
   "items": [
     {
-      "name": string,
+      "name": string,         // Specific text user said
+      "genericName": string,  // Standardized category/ingredient name
       "quantity": number,
       "unit": string,
-      "storageLocation": string,
+      "storageLocation": "fridge" | "freezer" | "pantry",
       "predictedExpiry": string // YYYY-MM-DD
     }
   ]
@@ -79,14 +86,14 @@ Parse user input into a LIST of structured food inventory items.
 ${commonRules}
 
 **Examples:**
-- Input: "Bought 3 apples and 2 bottles of milk" 
+- Input: "Bought 3 packs of Lays and 2 bottles of organic milk" 
   -> { "items": [
-       {"name": "Apple", "quantity": 3, "unit": "pcs", "storageLocation": "fridge", "predictedExpiry": "2025-01-07"},
-       {"name": "Milk", "quantity": 2, "unit": "bottle", "storageLocation": "fridge", "predictedExpiry": "2025-01-07"}
-     ]}
+        {"name": "Lays", "genericName": "Potato Chips", "quantity": 3, "unit": "pack", "storageLocation": "pantry", "predictedExpiry": "2026-02-05"},
+        {"name": "Organic Milk", "genericName": "Milk", "quantity": 2, "unit": "bottle", "storageLocation": "fridge", "predictedExpiry": "2025-02-14"}
+      ]}
 `;
   } else {
-    // 单品模式 (保持兼容性)
+    // 单品模式
     return `
 You are a smart kitchen assistant.
 Parse user input into a SINGLE structured food inventory item.
@@ -94,9 +101,10 @@ Parse user input into a SINGLE structured food inventory item.
 **Output Schema (JSON Only):**
 {
   "name": string,
+  "genericName": string,
   "quantity": number,
   "unit": string,
-  "storageLocation": string,
+  "storageLocation": "fridge" | "freezer" | "pantry",
   "predictedExpiry": string // YYYY-MM-DD
 }
 

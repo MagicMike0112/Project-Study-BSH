@@ -65,26 +65,8 @@ function addDays(baseDate, days) {
 }
 
 function extractOutputText(resp) {
-  // 适配标准 OpenAI SDK 的 chat.completions 结构
   if (resp.choices && Array.isArray(resp.choices) && resp.choices[0]?.message?.content) {
     return resp.choices[0].message.content.trim();
-  }
-  
-  // 适配可能的旧代码或自定义结构
-  if (typeof resp?.output_text === "string" && resp.output_text.trim()) {
-    return resp.output_text.trim();
-  }
-  const out = resp?.output;
-  if (!Array.isArray(out)) return "";
-  for (const item of out) {
-    if (item?.type === "message" && Array.isArray(item?.content)) {
-      for (const c of item.content) {
-        if (c?.type === "output_text" && typeof c?.text === "string") {
-          const t = c.text.trim();
-          if (t) return t;
-        }
-      }
-    }
   }
   return "";
 }
@@ -134,47 +116,14 @@ function normalizeName(s) {
   return String(s ?? "").replace(/[\u0000-\u001F\u007F]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function stripPackagingWords(s) {
-  let t = String(s || "").trim();
-  if (!t) return t;
-  const patterns = [
-    /\b(pack|box|bag|bottle|can|cup|pcs|piece|pieces)\b/gi,
-    /\b(ml|l|g|kg)\b/gi,
-    /\b(x|×)\s*\d+\b/gi,
-  ];
-  for (const p of patterns) t = t.replace(p, " ");
-  return t.replace(/\s+/g, " ").trim();
-}
-
+// 检查是否是过于笼统的词，如果是，我们在后续逻辑中会倾向于替换它
 function looksTooGeneric(name) {
   const n = String(name || "").toLowerCase().trim();
   const genericSet = new Set([
-    "probiotic drink",
-    "yogurt drink",
-    "milk drink",
-    "soft drink",
-    "soda",
-    "juice",
-    "tea",
-    "water",
-    "snack",
-    "chips",
-    "cookie",
-    "biscuit",
-    "candy",
-    "chocolate",
-    "noodles",
+    "food", "item", "grocery", "groceries", "goods",
+    "snack", "snacks", "beverage", "drink", "product"
   ]);
-  return genericSet.has(n) || n.length <= 4;
-}
-
-function refineName(rawGeneric, rawSpecific) {
-  const generic = String(rawGeneric || "").trim();
-  const specific = stripPackagingWords(rawSpecific);
-
-  if (generic && !looksTooGeneric(generic)) return generic;
-  if (specific) return specific;
-  return generic;
+  return genericSet.has(n) || n.length < 2;
 }
 
 function normalizeUnit(s) {
@@ -183,6 +132,8 @@ function normalizeUnit(s) {
   if (u === "piece" || u === "pieces" || u === "pc") return "pcs";
   if (u === "liter" || u === "litre") return "l";
   if (u === "milliliter" || u === "millilitre") return "ml";
+  if (u === "gram" || u === "grams") return "g";
+  if (u === "kilogram" || u === "kilograms") return "kg";
   return u;
 }
 
@@ -202,8 +153,8 @@ function looksNonFood(name) {
 function mergeDuplicates(items) {
   const map = new Map();
   for (const it of items) {
-    // 这里 Key 不再包含具体品牌名，因为 item.name 已经是 genericName 了，这有助于更好地合并同类项
-    const key = `${it.name.toLowerCase()}|${it.unit}|${it.storageLocation}`;
+    // 使用具体名称+通用名作为 Key，确保不同品牌不被误合并，但完全相同的会被合并
+    const key = `${it.name.toLowerCase()}|${it.genericName.toLowerCase()}|${it.unit}|${it.storageLocation}`;
     if (!map.has(key)) {
       map.set(key, { ...it });
       continue;
@@ -227,10 +178,8 @@ async function repairJsonWithModel(rawText) {
   const repairPrompt = `
 You are a strict JSON repair tool.
 Task:
-- Convert the following text into a VALID JSON object.
-- Output ONLY the JSON object (no markdown, no comments).
-- Ensure ALL text fields are in English; translate if needed.
-- Keep this schema exactly:
+- Convert the text into VALID JSON.
+- Schema:
 {
   "purchaseDate": "YYYY-MM-DD" | null,
   "items": [
@@ -248,14 +197,11 @@ Task:
 }
 Rules:
 - No trailing commas.
-- Remove any non-JSON text.
-- If any item field is missing, fill conservatively.
+- Remove non-JSON text.
 `.trim();
 
-  // 注意：这里改回了标准的 client.chat.completions.create，因为 client.responses.create 不是标准 SDK 方法
-  // 如果你使用的是特殊 SDK 版本，请改回原样
   const resp = await client.chat.completions.create({
-    model: "gpt-4o-mini", // 推荐使用 gpt-4o-mini 替代 gpt-4.1-mini
+    model: "gpt-4o-mini",
     messages: [
       { role: "system", content: repairPrompt },
       { role: "user", content: `TEXT_TO_REPAIR:\n${String(rawText ?? "").slice(0, 20000)}` },
@@ -301,57 +247,55 @@ export default async function handler(req, res) {
 
     if (images.length === 0) return res.status(400).json({ error: "Missing imageBase64 / imageUrl" });
 
+  // ---------------- PROMPT OPTIMIZATION ----------------
   const instruction = `
-You are an OCR+inventory assistant.
-Goal: Extract a clean inventory list from the image (mode="${mode}").
-Language:
-- ALL output text MUST be in English.
-- If the receipt text is in another language, translate names/categories to English.
+You are an advanced Inventory & Receipt Scanner AI.
+Goal: Extract inventory items from the image (mode="${mode}").
+Output Language: English ONLY. Translate if needed.
 
-CRITICAL - NAME STANDARDIZATION:
-For every item detected, you MUST populate "genericName" with the **generic ingredient name only**.
-- REMOVE all brand names (e.g., "Haitian", "Heinz", "Nestle").
-- REMOVE packaging types if irrelevant (e.g. "Pack of", "Bag").
-- KEEP the core food identity.
+*** CRITICAL NAME EXTRACTION RULES ***
+For each item, you MUST extract TWO fields:
+1. "name": The SPECIFIC product name/brand exactly as seen (e.g., "Lays Classic", "Oreo Strawberry", "Heinz Ketchup").
+2. "genericName": The GENERAL BUT SPECIFIC food type (e.g., "Potato Chips", "Sandwich Biscuit", "Tomato Ketchup").
+
+*** FORBIDDEN GENERIC TERMS ***
+Do NOT use lazy, high-level categories for "genericName".
+- BAD: "Snack", "Food", "Item", "Drink", "Groceries", "Vegetable".
+- GOOD: "Potato Chips", "Chocolate Bar", "Soda", "Orange Juice", "Spinach".
 
 Examples:
-- "Haitian Light Soy Sauce" -> genericName: "Soy Sauce"
-- "Organic Baby Spinach" -> genericName: "Spinach"
-- "Coca Cola Zero Sugar" -> genericName: "Cola"
-- "Lay's Potato Chips" -> genericName: "Potato Chips"
-- "Kellogg's Corn Flakes" -> genericName: "Corn Flakes"
+- Input: "Doritos Nacho Cheese"
+  -> name: "Doritos Nacho Cheese", genericName: "Tortilla Chips" (NOT "Snack")
+- Input: "Tropicana Orange"
+  -> name: "Tropicana Orange", genericName: "Orange Juice" (NOT "Drink")
+- Input: "Ritz Crackers"
+  -> name: "Ritz Crackers", genericName: "Crackers" (NOT "Biscuit" or "Snack")
 
-IMPORTANT:
-- ONLY include edible FOOD and DRINK items.
-- EXCLUDE household/non-food items (tissues, cleaning products, Pfand/deposit).
+Filtering:
+- EXCLUDE non-food items (tissue, soap, bags, deposit/pfand).
+- INCLUDE edible food and drinks.
 
-Accuracy rules:
-1) Frozen items MUST be "freezer".
-2) Dry shelf-stable items SHOULD be "pantry".
-3) Fresh meat/fish/dairy SHOULD be "fridge".
-4) If uncertain, choose the SAFER storage: frozen -> freezer; shelf-stable -> pantry; else -> fridge.
+Storage Rules:
+- Frozen items -> "freezer"
+- Dry/shelf-stable -> "pantry"
+- Meat/Dairy/Fresh Veg -> "fridge"
 
-Output JSON ONLY with this exact shape:
+Output JSON Structure:
 {
   "purchaseDate": "YYYY-MM-DD" | null,
   "items": [
     {
-      "name": string,         // The full text as seen on receipt/image (for reference)
-      "genericName": string,  // THE CLEAN, BRAND-FREE INGREDIENT NAME
+      "name": string,         // Specific Name (Brand + Product)
+      "genericName": string,  // Specific Category Name (No brands, no "Snack")
       "quantity": number,
       "unit": string,
       "storageLocation": "fridge" | "freezer" | "pantry",
       "shelfLifeDays": integer,
-      "category": string,
+      "category": string,     // High level category (e.g. "Snacks", "Dairy")
       "confidence": number
     }
   ]
 }
-
-Constraints:
-- Return ONLY valid JSON. No markdown or commentary.
-- shelfLifeDays must be conservative (Max 365).
-- HARD LIMIT: output at most 40 items.
 `.trim();
 
     const messages = [
@@ -365,9 +309,8 @@ Constraints:
       messages[0].content.push({ type: "image_url", image_url: { url: url } });
     }
 
-    // 使用标准的 chat.completions.create
     const resp = await client.chat.completions.create({
-      model: "gpt-4o-mini", // 推荐使用最新的 mini 模型
+      model: "gpt-4o-mini",
       messages: messages,
       temperature: 0,
       response_format: { type: "json_object" },
@@ -396,14 +339,26 @@ Constraints:
     const itemsIn = Array.isArray(data?.items) ? data.items : [];
     let fixedItems = itemsIn
       .map((it) => {
-        // 核心修改：优先使用 genericName (不带商标的名称) 作为最终的 name
-        const rawGeneric = normalizeName(it?.genericName);
-        const rawSpecific = normalizeName(it?.name);
-        
-        // 如果 AI 提取了通用名，就用通用名；否则回退到原始名称
-        const finalName = refineName(rawGeneric, rawSpecific);
+        // 提取名称
+        const specificName = normalizeName(it?.name);
+        let genericName = normalizeName(it?.genericName);
 
-        if (!finalName || looksNonFood(finalName)) return null;
+        // 如果 AI 还是返回了 "Snack" 这种词，或者是空的，尝试用 specificName 兜底（去掉品牌词逻辑太复杂，前端展示时用户可以改）
+        if (!genericName || looksTooGeneric(genericName)) {
+           // 如果 genericName 太泛，但 specificName 也是泛指（比如小票上就写着 "SNACK"），那也没办法
+           // 否则，暂且用 specificName 充当 genericName，或者保持空让前端处理
+           genericName = genericName || specificName;
+        }
+
+        // 最终检查：如果连 specificName 都没有，就跳过
+        if (!specificName && !genericName) return null;
+        
+        // 最终 name 字段使用 AI 识别的具体名称
+        const finalName = specificName || genericName; 
+        // 最终 genericName 字段
+        const finalGeneric = genericName;
+
+        if (looksNonFood(finalName)) return null;
 
         const quantity = typeof it?.quantity === "number" && Number.isFinite(it.quantity) ? it.quantity : 1;
         const shelfLifeDays = clampInt(it?.shelfLifeDays, 1, 365, 7);
@@ -411,8 +366,8 @@ Constraints:
         if (predictedExpiryDate < purchaseDateOut) predictedExpiryDate = purchaseDateOut;
 
         return {
-          name: finalName, // 这里现在只包含无商标的食材名
-          // genericName: rawGeneric, // 可选：如果前端不需要展示原始识别名，可以不返回
+          name: finalName,           // 具体名称 (Lays Classic)
+          genericName: finalGeneric, // 通用名称 (Potato Chips)
           quantity,
           unit: normalizeUnit(it?.unit),
           storageLocation: normalizeStorageLocation(it?.storageLocation),
