@@ -101,10 +101,33 @@ function sanitizeSingle(payload) {
   return item;
 }
 
+function pickItemArray(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== "object") return [];
+
+  const directKeys = ["items", "inventoryList", "list", "ingredients", "ingredientList"];
+  for (const key of directKeys) {
+    if (Array.isArray(payload[key])) return payload[key];
+  }
+
+  const nested = payload.data;
+  if (nested && typeof nested === "object") {
+    for (const key of directKeys) {
+      if (Array.isArray(nested[key])) return nested[key];
+    }
+  }
+
+  return [];
+}
+
 function sanitizeList(payload) {
-  const arr = Array.isArray(payload?.items) ? payload.items : [];
+  const arr = pickItemArray(payload);
   const items = arr.map(sanitizeItem).filter(Boolean);
-  return { items };
+  return {
+    items,
+    // compatibility field for older/frontends expecting this key
+    inventoryList: items,
+  };
 }
 
 function getSystemPrompt(isListMode) {
