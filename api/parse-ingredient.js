@@ -1,6 +1,7 @@
 // api/parse-ingredient.js
 import OpenAI from "openai";
 import { applyCors, handleOptions } from "./_lib/cors.js";
+import { languageName, resolveLocale, t } from "./_lib/i18n.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -130,14 +131,16 @@ function sanitizeList(payload) {
   };
 }
 
-function getSystemPrompt(isListMode) {
+function getSystemPrompt(isListMode, locale) {
   const today = new Date().toISOString().slice(0, 10);
+  const outputLanguage = languageName(locale);
   const commonRules = `
 1. Quantity defaults to 1 when missing.
 2. Unit must be one of: ["pcs", "kg", "g", "L", "ml", "pack", "box", "cup"].
 3. Storage location must be one of: "fridge" | "freezer" | "pantry".
 4. Keep "name" as user-facing item text and "genericName" as normalized ingredient type.
 5. Predict "predictedExpiry" using YYYY-MM-DD format and today's date (${today}).
+6. Keep any human-facing text in ${outputLanguage}.
 `;
 
   if (isListMode) {
@@ -187,14 +190,15 @@ function withTimeout(promise, timeoutMs) {
 export default async function handler(req, res) {
   applyCors(req, res);
   if (handleOptions(req, res)) return;
+  const locale = resolveLocale(req, req.body);
 
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: t(locale, "methodNotAllowed") });
   }
 
   try {
     if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+      return res.status(500).json({ error: t(locale, "missingOpenAiKey") });
     }
 
     const body = await readBody(req);
@@ -202,14 +206,14 @@ export default async function handler(req, res) {
     const expectList = body?.expectList === true;
 
     if (!text || text.length < 2) {
-      return res.status(400).json({ error: "Text is too short" });
+      return res.status(400).json({ error: t(locale, "textTooShort") });
     }
 
     const response = await withTimeout(
       client.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: getSystemPrompt(expectList) },
+          { role: "system", content: getSystemPrompt(expectList, locale) },
           { role: "user", content: text },
         ],
         response_format: { type: "json_object" },
@@ -221,14 +225,14 @@ export default async function handler(req, res) {
 
     const content = response.choices?.[0]?.message?.content;
     if (!content) {
-      return res.status(502).json({ error: "No response from AI" });
+      return res.status(502).json({ error: t(locale, "noResponseFromAi") });
     }
 
     let parsed;
     try {
       parsed = JSON.parse(content);
     } catch {
-      return res.status(502).json({ error: "Failed to parse AI response" });
+      return res.status(502).json({ error: t(locale, "failedToParseAiResponse") });
     }
 
     if (expectList) {
@@ -238,11 +242,11 @@ export default async function handler(req, res) {
 
     const single = sanitizeSingle(parsed);
     if (!single) {
-      return res.status(422).json({ error: "No valid item parsed" });
+      return res.status(422).json({ error: t(locale, "noValidItemParsed") });
     }
     return res.status(200).json(single);
   } catch (err) {
-    const message = err?.message || "Internal server error";
+    const message = err?.message || t(locale, "internalServerError");
     const status = message.includes("timeout") ? 504 : 500;
     console.error("parse-ingredient API error:", err);
     return res.status(status).json({ error: message });

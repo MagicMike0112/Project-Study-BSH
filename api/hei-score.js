@@ -1,5 +1,6 @@
 // api/hei-score.js
 import { supabaseAdmin } from "./_lib/hc.js";
+import { resolveLocale, t } from "./_lib/i18n.js";
 
 const ALLOWED_ORIGIN = "https://bshpwa.vercel.app";
 const FDC_BASE = "https://api.nal.usda.gov/fdc/v1";
@@ -461,12 +462,13 @@ function computeHeiScore(foods, counts) {
 }
 
 export default async function handler(req, res) {
+  const locale = resolveLocale(req, req.body);
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, X-App-Locale");
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(405).json({ error: t(locale, "methodNotAllowed") });
 
   try {
     const body = await readBody(req);
@@ -534,6 +536,6 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error("hei-score error:", err);
-    return res.status(500).json({ error: "Failed to compute HEI score" });
+    return res.status(500).json({ error: t(locale, "failedComputeHei") });
   }
 }

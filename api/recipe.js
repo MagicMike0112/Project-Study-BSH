@@ -1,5 +1,6 @@
 // api/recipe.js
 import OpenAI from "openai";
+import { languageName, resolveLocale, t } from "./_lib/i18n.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -163,7 +164,7 @@ function getRuleBasedDays(name, location) {
 
 
 // ========= 分支 A：保质期预测 (Expiry Prediction - 整合冷冻修正版) =========
-async function handleExpiryPrediction(body, res) {
+async function handleExpiryPrediction(body, res, locale) {
   const name = (body.name || "").toString().trim();
   // 🟢 接收 genericName
   const genericName = (body.genericName || "").toString().trim(); 
@@ -174,15 +175,14 @@ async function handleExpiryPrediction(body, res) {
 
   if (!name || !location || !purchasedDate) {
     return res.status(400).json({
-      error:
-        "Missing required fields. name, location, purchasedDate are required.",
+      error: t(locale, "missingRequiredFields"),
     });
   }
 
   const purchased = new Date(purchasedDate);
   if (isNaN(purchased.getTime())) {
     return res.status(400).json({
-      error: "Invalid purchasedDate format. Must be ISO string.",
+      error: t(locale, "invalidPurchasedDate"),
     });
   }
 
@@ -277,7 +277,7 @@ Output JSON: { "days": <integer> }
     try {
       data = JSON.parse(raw);
     } catch (e) {
-      return res.status(500).json({ error: "LLM JSON Error" });
+      return res.status(500).json({ error: t(locale, "llmJsonError") });
     }
 
     let days = Number.parseInt(data.days, 10);
@@ -347,7 +347,7 @@ function normalizeTools(tools) {
 }
 
 // ========= 分支 B：生成菜谱 (Recipe Generation - 动态数量版) =========
-async function handleRecipeGeneration(body, res) {
+async function handleRecipeGeneration(body, res, locale) {
   const ingredients = Array.isArray(body.ingredients) ? body.ingredients : [];
   const extraIngredients = Array.isArray(body.extraIngredients)
     ? body.extraIngredients
@@ -367,8 +367,9 @@ async function handleRecipeGeneration(body, res) {
 
   const allList = [...ingredients, ...extraIngredients];
   if (allList.length === 0) {
-    return res.status(400).json({ error: "No ingredients provided" });
+    return res.status(400).json({ error: t(locale, "noIngredientsProvided") });
   }
+  const outputLanguage = languageName(locale);
 
   const all = allList.join(", ");
 
@@ -418,6 +419,7 @@ Your job:
 - You do NOT need to use all ingredients in every recipe.
 - Prioritize perishable/expiring ingredients in at least one recipe.
 - Keep recipes realistic.
+- Use ${outputLanguage} for human-facing text fields (title, description, ingredients, steps, pills).
 - **IMPORTANT**: In the "ingredients" and "steps" fields, use GENERIC names (e.g., use "Milk", not "Horizon Organic Milk").
 
 IMPORTANT UI requirement:
@@ -470,7 +472,7 @@ No markdown, no extra text.
     data = JSON.parse(raw);
   } catch (e) {
     console.error("JSON parse error:", e, raw);
-    return res.status(500).json({ error: "LLM returned invalid JSON" });
+    return res.status(500).json({ error: t(locale, "modelReturnedInvalidJson") });
   }
 
   const recipes = Array.isArray(data.recipes) ? data.recipes : [];
@@ -504,7 +506,7 @@ No markdown, no extra text.
 }
 
 // ========= 分支 C：周报分析与智能分类 (Diet Analysis - 智能补货优先级版) =========
-async function handleDietAnalysis(body, res) {
+async function handleDietAnalysis(body, res, locale) {
   const consumedItems = Array.isArray(body.consumed) ? body.consumed : [];
   const studentMode = Boolean(body.studentMode);
   const history = body.history && typeof body.history === "object" ? body.history : null;
@@ -513,12 +515,19 @@ async function handleDietAnalysis(body, res) {
   const plannedMealsNextWeek = Array.isArray(body.plannedMealsNextWeek) ? body.plannedMealsNextWeek : [];
 
   if (consumedItems.length === 0) {
+    const fallbackInsight =
+      locale === "zh"
+        ? "你这周还没有记录用餐，开做第一顿，AI 建议就会出现。"
+        : locale === "de"
+        ? "Du hast diese Woche noch keine Mahlzeiten erfasst. Starte mit dem Kochen, dann kommen KI-Einblicke."
+        : "It seems you haven't logged any meals this week. Start cooking to get AI insights!";
     return res.status(200).json({
-      insight: "It seems you haven't logged any meals this week. Start cooking to get AI insights!",
+      insight: fallbackInsight,
       suggestions: [],
       categorization: {} 
     });
   }
+  const outputLanguage = languageName(locale);
 
   const uniqueItems = [...new Set(consumedItems)];
   const itemsStr = uniqueItems.join(", ");
@@ -568,6 +577,7 @@ YOUR OBJECTIVES:
 Provide a brief, friendly 2-sentence observation about their diet this week based on the "Consumed Items".
 - Did they eat a lot of one thing? Was it balanced?
 - Keep it encouraging.
+- Write this in ${outputLanguage}.
 
 ---
 **TASK 2: SMART RESTOCK SUGGESTIONS (The Core Task)**
@@ -587,6 +597,8 @@ Suggest exactly 4-6 items to buy/restock. You MUST follow this priority order st
     * If the plan is empty, suggest items to balance their recent diet (e.g., if they ate only carbs, suggest a versatile vegetable).
 
 * **Logic Check:** Do NOT suggest items they likely still have (e.g., a bag of flour bought once) unless the plan explicitly requires a lot of it. Focus on perishables and high-turnover items.
+- Keep "name" and "reason" in ${outputLanguage}. Keep "category" in English from this set:
+  [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, Condiments, Other].
 
 ---
 **TASK 3: CATEGORIZATION**
@@ -624,7 +636,7 @@ Map consumed items to: [Veggies, Fruits, Protein, Dairy, Carbs, Snacks, Drinks, 
     return res.status(200).json(data);
   } catch (e) {
     console.error("AI Parse Error", e);
-    return res.status(500).json({ error: "Failed to parse AI response" });
+    return res.status(500).json({ error: t(locale, "failedToParseAiResponse") });
   }
 }
 
@@ -633,17 +645,20 @@ export default async function handler(req, res) {
   // ---- CORS ----
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, X-App-Locale");
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: t(resolveLocale(req, {}), "methodNotAllowed") });
+  }
 
   try {
     const body = await readBody(req);
+    const locale = resolveLocale(req, body);
 
     // 🟢 路由分发
     if (body.action === 'analyze_diet') {
-      return await handleDietAnalysis(body, res);
+      return await handleDietAnalysis(body, res, locale);
     }
     
     // 检查是否是保质期预测请求
@@ -653,13 +668,13 @@ export default async function handler(req, res) {
       typeof body?.purchasedDate !== "undefined";
 
     if (hasExpiryPayload) {
-      return await handleExpiryPrediction(body, res);
+      return await handleExpiryPrediction(body, res, locale);
     }
 
     // 默认：生成菜谱
-    return await handleRecipeGeneration(body, res);
+    return await handleRecipeGeneration(body, res, locale);
   } catch (err) {
     console.error("API error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    return res.status(500).json({ error: t(resolveLocale(req, {}), "internalServerError") });
   }
 }

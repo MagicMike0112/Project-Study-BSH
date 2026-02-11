@@ -1,5 +1,6 @@
 // api/scan-inventory.js
 import OpenAI from "openai";
+import { languageName, resolveLocale, t } from "./_lib/i18n.js";
 
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -215,15 +216,16 @@ Rules:
 
 // ---------- handler ----------
 export default async function handler(req, res) {
+  const locale = resolveLocale(req, req.body);
   res.setHeader("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept-Language, X-App-Locale");
 
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  if (req.method !== "POST") return res.status(405).json({ error: t(locale, "methodNotAllowed") });
 
   try {
-    if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: "Missing OPENAI_API_KEY" });
+    if (!process.env.OPENAI_API_KEY) return res.status(500).json({ error: t(locale, "missingOpenAiKey") });
 
     const body = await readBody(req);
     const modeRaw = (body.mode || "receipt").toString().trim().toLowerCase();
@@ -245,13 +247,14 @@ export default async function handler(req, res) {
       }
     }
 
-    if (images.length === 0) return res.status(400).json({ error: "Missing imageBase64 / imageUrl" });
+    if (images.length === 0) return res.status(400).json({ error: t(locale, "missingImagePayload") });
+    const outputLanguage = languageName(locale);
 
   // ---------------- PROMPT OPTIMIZATION ----------------
   const instruction = `
 You are an advanced Inventory & Receipt Scanner AI.
 Goal: Extract inventory items from the image (mode="${mode}").
-Output Language: English ONLY. Translate if needed.
+Output Language: ${outputLanguage}.
 
 *** CRITICAL NAME EXTRACTION RULES ***
 For each item, you MUST extract TWO fields:
@@ -318,7 +321,7 @@ Output JSON Structure:
     });
 
     let raw = extractOutputText(resp);
-    if (!raw) return res.status(500).json({ error: "No text output from model" });
+    if (!raw) return res.status(500).json({ error: t(locale, "noTextOutputFromModel") });
 
     let parsed = safeJsonParse(raw);
     if (!parsed.ok) {
@@ -329,7 +332,7 @@ Output JSON Structure:
       }
     }
 
-    if (!parsed.ok) return res.status(500).json({ error: "Model returned invalid JSON" });
+    if (!parsed.ok) return res.status(500).json({ error: t(locale, "modelReturnedInvalidJson") });
 
     const data = parsed.data;
     const todayOut = new Date();
@@ -389,6 +392,6 @@ Output JSON Structure:
     });
   } catch (err) {
     console.error("scan-inventory API error:", err);
-    return res.status(500).json({ error: err?.message || "Internal server error" });
+    return res.status(500).json({ error: err?.message || t(locale, "internalServerError") });
   }
 }

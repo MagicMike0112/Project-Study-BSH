@@ -1,14 +1,17 @@
 // api/shop-by-recipe.js
 import OpenAI from "openai";
 import { applyCors, handleOptions } from "./_lib/cors.js";
+import { languageName, resolveLocale, t } from "./_lib/i18n.js";
 const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 export default async function handler(req, res) {
   applyCors(req, res);
   if (handleOptions(req, res)) return;
-  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+  const locale = resolveLocale(req, req.body);
+  if (req.method !== "POST") return res.status(405).json({ error: t(locale, "methodNotAllowed") });
 
   const { text, imagesBase64, currentInventory } = req.body;
+  const outputLanguage = languageName(locale);
 
   const systemPrompt = `
 You are a culinary assistant. Your goal is to convert recipes into a structured shopping list and a structured recipe.
@@ -27,6 +30,7 @@ Instructions:
 3. Assign a category: "Vegetables", "Meat", "Dairy", "Pantry", "Grains", or "Other".
 4. Generate a clear recipe using the provided text and any visible steps in images.
 5. Infer appliances (e.g., ["oven", "stove", "microwave"]) and ovenTempC if mentioned.
+6. Human-facing text fields (reason, title, description, ingredients, steps) must be in ${outputLanguage}.
 
 Output Format (JSON ONLY):
 {
@@ -76,6 +80,6 @@ Output Format (JSON ONLY):
 
     res.status(200).json(JSON.parse(response.choices[0].message.content));
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || t(locale, "internalServerError") });
   }
 }
