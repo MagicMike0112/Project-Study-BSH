@@ -28,9 +28,10 @@ Instructions:
 1. Identify all necessary ingredients and seasonings.
 2. For each ingredient, determine if it's likely already in the 'currentInventory'.
 3. Assign a category: "Vegetables", "Meat", "Dairy", "Pantry", "Grains", or "Other".
-4. Generate a clear recipe using the provided text and any visible steps in images.
-5. Infer appliances (e.g., ["oven", "stove", "microwave"]) and ovenTempC if mentioned.
-6. Human-facing text fields (reason, title, description, ingredients, steps) must be in ${outputLanguage}.
+4. For each item, add "isSeasoning" (boolean): true for seasonings/condiments/spices/oils/sauces, false otherwise.
+5. Generate a clear recipe using the provided text and any visible steps in images.
+6. Infer appliances (e.g., ["oven", "stove", "microwave"]) and ovenTempC if mentioned.
+7. Human-facing text fields (reason, title, description, ingredients, steps) must be in ${outputLanguage}.
 
 Output Format (JSON ONLY):
 {
@@ -38,6 +39,7 @@ Output Format (JSON ONLY):
     { 
       "name": "Ingredient Name", 
       "category": "Category",
+      "isSeasoning": boolean,
       "inStock": boolean,
       "reason": string // e.g., "Found 'Haitian Light Soy Sauce' in inventory"
     }
@@ -53,6 +55,64 @@ Output Format (JSON ONLY):
   }
 }
 `.trim();
+
+  const seasoningHint = [
+    "salt",
+    "sugar",
+    "pepper",
+    "soy",
+    "vinegar",
+    "sauce",
+    "oil",
+    "sesame",
+    "chili",
+    "paprika",
+    "cumin",
+    "oregano",
+    "basil",
+    "spice",
+    "seasoning",
+    "garlic powder",
+    "onion powder",
+    "mustard",
+    "ketchup",
+    "mayonnaise",
+    "酱",
+    "盐",
+    "糖",
+    "油",
+    "醋",
+    "胡椒",
+    "香料",
+    "调味",
+    "gewuerz",
+    "gewürz",
+    "soße",
+    "sosse",
+  ];
+
+  function inferSeasoningFromText(name = "", category = "") {
+    const n = String(name).toLowerCase();
+    const c = String(category).toLowerCase();
+    if (c.includes("season") || c.includes("spice") || c.includes("condiment")) return true;
+    return seasoningHint.some((k) => n.includes(k));
+  }
+
+  function normalizeItems(items) {
+    if (!Array.isArray(items)) return [];
+    return items
+      .map((x) => ({
+        name: String(x?.name || "").trim(),
+        category: String(x?.category || "Other").trim(),
+        inStock: Boolean(x?.inStock),
+        reason: String(x?.reason || ""),
+        isSeasoning:
+          typeof x?.isSeasoning === "boolean"
+            ? x.isSeasoning
+            : inferSeasoningFromText(x?.name, x?.category),
+      }))
+      .filter((x) => x.name.length > 0);
+  }
 
   try {
     const userContent = [
@@ -78,7 +138,9 @@ Output Format (JSON ONLY):
       response_format: { type: "json_object" },
     });
 
-    res.status(200).json(JSON.parse(response.choices[0].message.content));
+    const parsed = JSON.parse(response.choices[0].message.content);
+    parsed.items = normalizeItems(parsed.items);
+    res.status(200).json(parsed);
   } catch (err) {
     res.status(500).json({ error: err.message || t(locale, "internalServerError") });
   }
