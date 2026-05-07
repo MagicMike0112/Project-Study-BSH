@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import '../utils/app_haptics.dart';
 import 'package:flutter/services.dart';
 import '../models/meal_plan.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/food_item.dart';
-import '../models/shopping_item.dart';
 import '../repositories/inventory_repository.dart';
-import 'select_ingredients_page.dart';
+import './select_ingredients_page.dart';
+import '../l10n/app_localizations.dart';
 
 class CookingCalendarPage extends StatefulWidget {
   final InventoryRepository repo;
@@ -20,6 +21,9 @@ class CookingCalendarPage extends StatefulWidget {
 class _CookingCalendarPageState extends State<CookingCalendarPage> {
   late DateTime _weekStart;
   late DateTime _selectedDate;
+  static const Color _plannerPrimary = Color(0xFF135BEC);
+  static const Color _plannerSurfaceDark = Color(0xFF1A2130);
+  static const Color _plannerBackgroundDark = Color(0xFF101622);
 
   final List<_MealSlot> _dailySlots = const [
     _MealSlot.breakfast,
@@ -49,7 +53,7 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
   void _onWeekChanged(DateTime newStart) {
     setState(() {
       _weekStart = newStart;
-      // 切换周时，优先选中今天，否则选中周一
+      // NOTE: legacy comment cleaned.
       final now = DateTime.now();
       if (now.isAfter(_weekStart) && now.isBefore(_weekStart.add(const Duration(days: 7)))) {
         _selectedDate = now;
@@ -60,6 +64,7 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
   }
 
   Future<void> _editMeal(DateTime date, _MealSlot slot) async {
+    final l10n = AppLocalizations.of(context);
     final existing = widget.repo.getMealPlan(date, slot.name);
     
     final nameController = TextEditingController(text: existing?.mealName ?? '');
@@ -67,9 +72,9 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
     final selectedItemIds = {...?existing?.itemIds};
     String? selectedRecipe = existing?.recipeName;
 
-    // 获取库存前10项
-    final inventoryItems = widget.repo.getActiveItems();
+    // NOTE: legacy comment cleaned.
     String inventoryQuery = '';
+    final inventoryItems = widget.repo.getActiveItems();
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -78,8 +83,9 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
       builder: (ctx) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            // 键盘弹起时避免遮挡
-            final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+            // NOTE: legacy comment cleaned.
+            final primary = Theme.of(context).colorScheme.primary;
+            final bottomInset = MediaQuery.of(ctx).viewInsets.bottom;
             return Padding(
               padding: EdgeInsets.only(bottom: bottomInset),
               child: Container(
@@ -95,16 +101,17 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                     children: [
                       Row(
                         children: [
-                          Icon(_slotIcon(slot), color: const Color(0xFF005F87)),
+                          Icon(_slotIcon(slot), color: primary),
                           const SizedBox(width: 8),
                           Text(
-                            'Plan ${_slotLabel(slot)}',
+                            (l10n?.cookingPlanSlot(_slotLabel(context, slot)) ??
+                                'Plan ${_slotLabel(context, slot)}'),
                             style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
                           ),
                           const Spacer(),
                            Text(
                             "${date.month}/${date.day}",
-                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5), fontWeight: FontWeight.bold),
+                            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5), fontWeight: FontWeight.bold),
                           ),
                         ],
                       ),
@@ -114,8 +121,8 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                         controller: nameController,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: InputDecoration(
-                          labelText: 'Meal name',
-                          hintText: 'e.g. Lemon Chicken Bowl',
+                          labelText: l10n?.cookingMealNameLabel ?? 'Meal name',
+                          hintText: l10n?.cookingMealNameHint ?? 'e.g. Lemon Chicken Bowl',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                           filled: true,
                           fillColor: Theme.of(context).colorScheme.surface,
@@ -123,7 +130,7 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                       ),
                       const SizedBox(height: 20),
 
-                      Text('Quick pick from recipes', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(l10n?.cookingQuickPickRecipes ?? 'Quick pick from recipes', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
@@ -147,11 +154,11 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                           ),
                           ActionChip(
                             avatar: const Icon(Icons.bookmark_border, size: 16),
-                            label: const Text('Browse All'),
+                            label: Text(l10n?.cookingBrowseAll ?? 'Browse All'),
                             onPressed: () {
-                               // 2. 修正类名：如果这里报错，请确认 archive_page.dart 里的类名是 ArchivePage 还是 RecipeArchivePage
-                               // 这里我改为更通用的 ArchivePage (根据文件名推测)
-                               // 如果你的类名是 RecipeArchivePage，请手动改回
+                               // NOTE: legacy comment cleaned.
+                               // NOTE: legacy comment cleaned.
+                               // NOTE: legacy comment cleaned.
                                Navigator.push(
                                   context,
                                   MaterialPageRoute(builder: (_) => RecipeArchivePage(repo: widget.repo)),
@@ -163,11 +170,11 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                       const SizedBox(height: 20),
 
                       if (inventoryItems.isNotEmpty) ...[
-                        Text('Use from inventory', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                        Text(l10n?.cookingUseFromInventory ?? 'Use from inventory', style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
                         const SizedBox(height: 8),
                         TextField(
                           decoration: InputDecoration(
-                            hintText: 'Search inventory',
+                            hintText: l10n?.inventorySearchHint ?? 'Search inventory',
                             prefixIcon: const Icon(Icons.search_rounded),
                             isDense: true,
                             filled: true,
@@ -198,8 +205,8 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                       TextField(
                         controller: missingController,
                         decoration: InputDecoration(
-                          labelText: 'Missing items (add to shopping list)',
-                          hintText: 'e.g. garlic, scallions',
+                          labelText: l10n?.cookingMissingItemsLabel ?? 'Missing items (add to shopping list)',
+                          hintText: l10n?.cookingMissingItemsHint ?? 'e.g. garlic, scallions',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                           prefixIcon: const Icon(Icons.add_shopping_cart_rounded),
                         ),
@@ -215,7 +222,7 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                                 padding: const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
-                              child: const Text('Cancel'),
+                              child: Text(l10n?.cancel ?? 'Cancel'),
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -223,11 +230,11 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
                             child: FilledButton(
                               onPressed: () => Navigator.pop(context, true),
                               style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFF005F87),
+                                backgroundColor: primary,
                                 padding: const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
-                              child: const Text('Save Plan'),
+                              child: Text(l10n?.cookingSavePlan ?? 'Save Plan'),
                             ),
                           ),
                         ],
@@ -252,13 +259,13 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
 
     if (missingItems.isNotEmpty) {
       for (final name in missingItems) {
-        // 3. 修复参数：补全了 ShoppingItem 可能缺少的参数 (如 isChecked)
+        // NOTE: legacy comment cleaned.
         await widget.repo.saveShoppingItem(
           ShoppingItem(
             id: const Uuid().v4(),
             name: name,
             category: 'general',
-            isChecked: false, // 补全参数
+            isChecked: false, // NOTE: legacy comment cleaned.
           ),
         );
       }
@@ -271,7 +278,9 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
       await widget.repo.upsertMealPlan(
         date: date,
         slot: slot.name,
-        mealName: finalName.isEmpty ? (selectedRecipe ?? 'Untitled meal') : finalName,
+        mealName: finalName.isEmpty
+            ? (selectedRecipe ?? (l10n?.cookingUntitledMeal ?? 'Untitled meal'))
+            : finalName,
         recipeName: selectedRecipe,
         itemIds: selectedItemIds,
         missingItems: missingItems,
@@ -280,7 +289,9 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
     if (missingItems.isNotEmpty && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Added ${missingItems.length} items to shopping list.'),
+          content: Text(
+              l10n?.cookingAddedItemsToShopping(missingItems.length) ??
+                  'Added ${missingItems.length} items to shopping list.'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -292,22 +303,28 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
     return AnimatedBuilder(
       animation: widget.repo,
       builder: (context, child) {
+        final l10n = AppLocalizations.of(context);
         final theme = Theme.of(context);
         final colors = theme.colorScheme;
         final isDark = theme.brightness == Brightness.dark;
+        final surface = isDark ? _plannerSurfaceDark : Colors.white;
+        final background = isDark ? _plannerBackgroundDark : const Color(0xFFF6F6F8);
 
         return Scaffold(
-          backgroundColor: theme.scaffoldBackgroundColor,
+          backgroundColor: background,
           appBar: AppBar(
-            title: Text('Meal Planner', style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface)),
-            backgroundColor: theme.scaffoldBackgroundColor,
+            title: Text(
+              l10n?.cookingMealPlannerTitle ?? 'Meal Planner',
+              style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface, fontSize: 26),
+            ),
+            backgroundColor: background,
             elevation: 0,
             centerTitle: false,
             systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
             actions: [
               IconButton(
                 icon: const Icon(Icons.today_rounded),
-                tooltip: "Jump to today",
+                tooltip: l10n?.cookingJumpToToday ?? 'Jump to today',
                 onPressed: () {
                    setState(() {
                      final now = DateTime.now();
@@ -318,48 +335,70 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
               ),
             ],
           ),
-          body: Column(
-            children: [
-              _HorizontalWeekCalendar(
-                weekStart: _weekStart,
-                selectedDate: _selectedDate,
-                onDaySelected: _onDaySelected,
-                onWeekChanged: _onWeekChanged,
+          body: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: _HeaderSection(
+                  background: background,
+                  child: _HorizontalWeekCalendar(
+                    weekStart: _weekStart,
+                    selectedDate: _selectedDate,
+                    onDaySelected: _onDaySelected,
+                    onWeekChanged: _onWeekChanged,
+                  ),
+                ),
               ),
-              
-              const SizedBox(height: 16),
-              const Divider(height: 1),
-
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 100),
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Text(
                           _formatDateTitle(_selectedDate),
-                          style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: colors.onSurface),
+                          style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: colors.onSurface),
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _getRelativeDay(_selectedDate),
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: colors.onSurface.withOpacity(0.5)),
+                      ),
+                      if (_getRelativeDay(_selectedDate).isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE6F8F0),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            _getRelativeDay(_selectedDate).toUpperCase(),
+                            style: const TextStyle(
+                              color: Color(0xFF0F9D58),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.6,
+                            ),
+                          ),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    
-                    ..._dailySlots.map((slot) {
-                       final meal = widget.repo.getMealPlan(_selectedDate, slot.name);
-                       return _MinimalMealCard(
-                         slot: slot,
-                         meal: meal,
-                         onTap: () => _editMeal(_selectedDate, slot),
-                       );
-                    }),
-                  ],
+                    ],
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final slot = _dailySlots[index];
+                      final meal = widget.repo.getMealPlan(_selectedDate, slot.name);
+                      return _MealPlannerCard(
+                        slot: slot,
+                        meal: meal,
+                        surface: surface,
+                        primary: _plannerPrimary,
+                        isDark: isDark,
+                        onTap: () => _editMeal(_selectedDate, slot),
+                      );
+                    },
+                    childCount: _dailySlots.length,
+                  ),
                 ),
               ),
             ],
@@ -370,9 +409,9 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
   }
   
   String _formatDateTitle(DateTime d) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    return "${days[d.weekday - 1]}, ${months[d.month - 1]} ${d.day}";
+    final material = MaterialLocalizations.of(context);
+    final full = material.formatFullDate(d);
+    return '${full[0].toUpperCase()}${full.substring(1)}';
   }
 
   String _getRelativeDay(DateTime d) {
@@ -394,6 +433,7 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
     Set<String> selectedItemIds,
     void Function(VoidCallback) setModalState,
   ) {
+    final l10n = AppLocalizations.of(context);
     final filtered = query.isEmpty
         ? items
         : items.where((item) => item.name.toLowerCase().contains(query)).toList();
@@ -402,8 +442,8 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Text(
-            'No matches',
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
+            l10n?.cookingNoMatches ?? 'No matches',
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.5)),
           ),
         ),
       ];
@@ -463,25 +503,27 @@ class _CookingCalendarPageState extends State<CookingCalendarPage> {
   }
 
   Widget _inventoryGroupHeader(StorageLocation location) {
+    final l10n = AppLocalizations.of(context);
     IconData icon;
     String label;
     switch (location) {
       case StorageLocation.fridge:
         icon = Icons.kitchen_rounded;
-        label = 'Fridge';
+        label = l10n?.foodLocationFridge ?? 'Fridge';
         break;
       case StorageLocation.freezer:
         icon = Icons.ac_unit_rounded;
-        label = 'Freezer';
+        label = l10n?.foodLocationFreezer ?? 'Freezer';
         break;
       case StorageLocation.pantry:
         icon = Icons.shelves;
-        label = 'Pantry';
+        label = l10n?.foodLocationPantry ?? 'Pantry';
         break;
     }
+    final primary = Theme.of(context).colorScheme.primary;
     return Row(
       children: [
-        Icon(icon, size: 14, color: const Color(0xFF005F87)),
+        Icon(icon, size: 14, color: primary),
         const SizedBox(width: 6),
         Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
       ],
@@ -497,7 +539,7 @@ Color _expiryDotColor(FoodItem item) {
   return const Color(0xFF43A047);
 }
 
-// ----------------- 子组件 (无需修改) -----------------
+// NOTE: legacy comment cleaned.
 
 class _HorizontalWeekCalendar extends StatelessWidget {
   final DateTime weekStart;
@@ -517,8 +559,10 @@ class _HorizontalWeekCalendar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    const primary = _CookingCalendarPageState._plannerPrimary;
     final days = List.generate(7, (i) => weekStart.add(Duration(days: i)));
     final today = DateTime.now();
+    final isDark = theme.brightness == Brightness.dark;
 
     return Column(
       children: [
@@ -530,23 +574,23 @@ class _HorizontalWeekCalendar extends StatelessWidget {
               IconButton(
                 onPressed: () => onWeekChanged(weekStart.subtract(const Duration(days: 7))),
                 icon: const Icon(Icons.chevron_left_rounded),
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
               Text(
                 "${days.first.month}/${days.first.day} - ${days.last.month}/${days.last.day}",
-                style: TextStyle(fontWeight: FontWeight.w700, color: theme.colorScheme.onSurface.withOpacity(0.7)),
+                style: TextStyle(fontWeight: FontWeight.w700, color: theme.colorScheme.onSurface.withValues(alpha: 0.7)),
               ),
               IconButton(
                 onPressed: () => onWeekChanged(weekStart.add(const Duration(days: 7))),
                 icon: const Icon(Icons.chevron_right_rounded),
-                color: theme.colorScheme.onSurface.withOpacity(0.6),
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
               ),
             ],
           ),
         ),
         
         SizedBox(
-          height: 80,
+          height: 92,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -556,28 +600,32 @@ class _HorizontalWeekCalendar extends StatelessWidget {
               final date = days[index];
               final isSelected = _isSameDay(date, selectedDate);
               final isToday = _isSameDay(date, today);
-              final dayLabel = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][date.weekday - 1];
+              final dayLabel = MaterialLocalizations.of(context)
+                  .narrowWeekdays[date.weekday % 7];
 
               return GestureDetector(
                 onTap: () {
-                   HapticFeedback.selectionClick();
+                   AppHaptics.selection();
                    onDaySelected(date);
                 },
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
-                  width: 56,
+                  width: 68,
+                  height: isSelected ? 88 : 82,
                   decoration: BoxDecoration(
-                    color: isSelected 
-                        ? const Color(0xFF005F87) 
-                        : (isToday ? const Color(0xFF005F87).withOpacity(0.08) : theme.cardColor),
-                    borderRadius: BorderRadius.circular(16),
+                    color: isSelected
+                        ? primary
+                        : (isDark ? _CookingCalendarPageState._plannerSurfaceDark : Colors.white),
+                    borderRadius: BorderRadius.circular(24),
                     border: Border.all(
-                      color: isSelected ? Colors.transparent : (isToday ? const Color(0xFF005F87).withOpacity(0.3) : theme.dividerColor),
-                      width: isToday ? 1.5 : 1,
+                      color: isSelected
+                          ? Colors.transparent
+                          : (isToday ? primary.withValues(alpha: 0.25) : Colors.transparent),
+                      width: 1.2,
                     ),
-                    boxShadow: isSelected 
-                        ? [BoxShadow(color: const Color(0xFF005F87).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))] 
-                        : [],
+                    boxShadow: isSelected
+                        ? [BoxShadow(color: primary.withValues(alpha: 0.35), blurRadius: 12, offset: const Offset(0, 6))]
+                        : [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -587,18 +635,31 @@ class _HorizontalWeekCalendar extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
-                          color: isSelected ? Colors.white.withOpacity(0.9) : theme.colorScheme.onSurface.withOpacity(0.5),
+                          color: isSelected
+                              ? Colors.white.withValues(alpha: 0.85)
+                              : theme.colorScheme.onSurface.withValues(alpha: 0.45),
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         "${date.day}",
                         style: TextStyle(
-                          fontSize: 17,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: isSelected ? Colors.white : theme.colorScheme.onSurface,
                         ),
                       ),
+                      if (isSelected || isToday) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: isSelected ? Colors.white : primary,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -611,118 +672,203 @@ class _HorizontalWeekCalendar extends StatelessWidget {
   }
 }
 
-class _MinimalMealCard extends StatelessWidget {
+class _MealPlannerCard extends StatelessWidget {
   final _MealSlot slot;
   final MealPlan? meal;
   final VoidCallback onTap;
+  final Color surface;
+  final Color primary;
+  final bool isDark;
 
-  const _MinimalMealCard({
+  const _MealPlannerCard({
     required this.slot,
     required this.meal,
     required this.onTap,
+    required this.surface,
+    required this.primary,
+    required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final isPlanned = meal != null;
-    final slotName = _slotLabel(slot);
+    final slotName = _slotLabel(context, slot);
+    final slotColor = _slotAccent(slot);
+    final pill = _statusPill(context, meal);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 20),
       child: InkWell(
         onTap: () {
-            HapticFeedback.lightImpact();
+            AppHaptics.selection();
             onTap();
         },
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(28),
         child: Ink(
-          height: 88, 
+          height: isPlanned ? 128 : 104,
           decoration: BoxDecoration(
-            color: isPlanned ? theme.cardColor : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            border: isPlanned ? null : Border.all(color: theme.dividerColor.withOpacity(0.6), width: 1.5),
-            boxShadow: isPlanned 
-                ? [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))] 
+            color: isPlanned ? surface : Colors.transparent,
+            borderRadius: BorderRadius.circular(28),
+            border: isPlanned ? null : Border.all(color: theme.dividerColor.withValues(alpha: 0.6), width: 1.6),
+            boxShadow: isPlanned
+                ? [BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06), blurRadius: 18, offset: const Offset(0, 8))]
                 : [],
           ),
           child: Row(
             children: [
-              if (isPlanned)
-                  Container(
-                    width: 6,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF005F87), 
-                      borderRadius: BorderRadius.horizontal(left: Radius.circular(20)),
-                    ),
-                  )
-              else 
-                  const SizedBox(width: 6),
-
-              const SizedBox(width: 16),
-              
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isPlanned ? const Color(0xFF005F87).withOpacity(0.1) : theme.dividerColor.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _slotIcon(slot),
-                  color: isPlanned ? const Color(0xFF005F87) : theme.iconTheme.color?.withOpacity(0.3),
-                  size: 20,
-                ),
-              ),
-              
-              const SizedBox(width: 16),
-              
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      slotName.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.0,
-                        color: theme.colorScheme.onSurface.withOpacity(0.4),
+                    if (isPlanned) ...[
+                      Row(
+                        children: [
+                          Icon(_slotIcon(slot), color: slotColor, size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            slotName.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.0,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                            ),
+                          ),
+                          const Spacer(),
+                          Icon(Icons.more_horiz, color: theme.colorScheme.onSurface.withValues(alpha: 0.3)),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      isPlanned ? meal!.mealName : "Tap to plan",
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: isPlanned ? FontWeight.w600 : FontWeight.w500,
-                        color: isPlanned 
-                            ? theme.colorScheme.onSurface 
-                            : theme.colorScheme.onSurface.withOpacity(0.3),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: slotColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(18),
+                              ),
+                              child: Icon(_slotIcon(slot), color: slotColor, size: 26),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  meal!.mealName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    color: theme.colorScheme.onSurface,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                pill,
+                              ],
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    if (isPlanned && meal!.missingItems.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                         "+ ${meal!.missingItems.length} items to buy",
-                         style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w500),
+                    ] else ...[
+                      Row(
+                        children: [
+                          Icon(_slotIcon(slot), color: slotColor, size: 18),
+                          const SizedBox(width: 6),
+                          Text(
+                            slotName.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.0,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.45),
+                            ),
+                          ),
+                        ],
                       ),
-                    ]
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              color: theme.dividerColor.withValues(alpha: 0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(Icons.add, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            (l10n?.cookingPlanSlot(slotName.toLowerCase()) ??
+                                "Plan ${slotName.toLowerCase()}"),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
-              ),
-              
-              Padding(
-                padding: const EdgeInsets.only(right: 20),
-                child: isPlanned 
-                    ? const Icon(Icons.edit_rounded, size: 18, color: Colors.grey)
-                    : Icon(Icons.add_circle_outline_rounded, color: theme.disabledColor),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _statusPill(BuildContext context, MealPlan? meal) {
+    final l10n = AppLocalizations.of(context);
+    if (meal == null) return const SizedBox.shrink();
+    if (meal.missingItems.isNotEmpty) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF4E5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.shopping_basket_rounded, size: 14, color: Color(0xFFF57C00)),
+            const SizedBox(width: 6),
+            Text(
+              l10n?.cookingMissingItemsCount(meal.missingItems.length) ??
+                  'Missing ${meal.missingItems.length} items',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFFF57C00)),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6F8F0),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.kitchen_rounded, size: 14, color: Color(0xFF0F9D58)),
+          const SizedBox(width: 6),
+          Text(
+            l10n?.cookingAllItemsInFridge ?? 'All items in fridge',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF0F9D58)),
+          ),
+        ],
       ),
     );
   }
@@ -737,15 +883,45 @@ class _RecipeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FilterChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onTap(),
-      checkmarkColor: Colors.white,
-      selectedColor: const Color(0xFF005F87),
-      labelStyle: TextStyle(
-          color: selected ? Colors.white : Theme.of(context).colorScheme.onSurface,
-          fontWeight: selected ? FontWeight.bold : FontWeight.normal,
+    final primary = Theme.of(context).colorScheme.primary;
+    final textColor = selected
+        ? Colors.white
+        : Theme.of(context).colorScheme.onSurface;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(999),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected
+                ? primary.withValues(alpha: 0.9)
+                : Theme.of(context).dividerColor.withValues(alpha: 0.7),
+          ),
+          boxShadow: selected
+              ? [
+                  BoxShadow(
+                    color: primary.withValues(alpha: 0.24),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: AnimatedDefaultTextStyle(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOut,
+          style: TextStyle(
+            color: textColor,
+            fontWeight: selected ? FontWeight.bold : FontWeight.w600,
+            fontSize: 13,
+          ),
+          child: Text(label),
+        ),
       ),
     );
   }
@@ -753,11 +929,15 @@ class _RecipeChip extends StatelessWidget {
 
 enum _MealSlot { breakfast, lunch, dinner }
 
-String _slotLabel(_MealSlot slot) {
+String _slotLabel(BuildContext context, _MealSlot slot) {
+  final l10n = AppLocalizations.of(context);
   switch (slot) {
-    case _MealSlot.breakfast: return 'Breakfast';
-    case _MealSlot.lunch: return 'Lunch';
-    case _MealSlot.dinner: return 'Dinner';
+    case _MealSlot.breakfast:
+      return l10n?.cookingSlotBreakfast ?? 'Breakfast';
+    case _MealSlot.lunch:
+      return l10n?.cookingSlotLunch ?? 'Lunch';
+    case _MealSlot.dinner:
+      return l10n?.cookingSlotDinner ?? 'Dinner';
   }
 }
 
@@ -768,3 +948,36 @@ IconData _slotIcon(_MealSlot slot) {
     case _MealSlot.dinner: return Icons.local_dining_rounded;
   }
 }
+
+Color _slotAccent(_MealSlot slot) {
+  switch (slot) {
+    case _MealSlot.breakfast:
+      return const Color(0xFFF59E0B);
+    case _MealSlot.lunch:
+      return const Color(0xFFFBBF24);
+    case _MealSlot.dinner:
+      return const Color(0xFF6366F1);
+  }
+}
+
+class _HeaderSection extends StatelessWidget {
+  final Color background;
+  final Widget child;
+
+  const _HeaderSection({required this.background, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: background,
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: child,
+    );
+  }
+}
+
+
+
+
+
+

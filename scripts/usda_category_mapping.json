@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-01-22T21:36:55.277Z",
+  "appCategories": [
+    "produce",
+    "dairy",
+    "meat",
+    "seafood",
+    "bakery",
+    "frozen",
+    "beverage",
+    "pantry",
+    "snacks",
+    "household",
+    "pet",
+    "other"
+  ],
+  "totalCategories": 1,
+  "categories": [
+    {
+      "foodCategory": "Unknown",
+      "count": 1000,
+      "dataTypes": {
+        "Experimental": 8,
+        "Survey (FNDDS)": 310,
+        "SR Legacy": 638,
+        "Foundation": 44
+      },
+      "suggestedCategory": "other"
+    }
+  ]
+}

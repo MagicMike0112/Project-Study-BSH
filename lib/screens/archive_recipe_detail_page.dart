@@ -23,10 +23,10 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final bg = theme.scaffoldBackgroundColor;
     final neutralPillColor = isDark
-        ? Colors.white.withOpacity(0.08)
-        : Colors.black.withOpacity(0.06);
-    final neutralTextColor = scheme.onSurface.withOpacity(0.8);
-    final neutralIconColor = scheme.onSurface.withOpacity(0.7);
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.black.withValues(alpha: 0.06);
+    final neutralTextColor = scheme.onSurface.withValues(alpha: 0.8);
+    final neutralIconColor = scheme.onSurface.withValues(alpha: 0.7);
 
     return Scaffold(
       backgroundColor: bg,
@@ -50,8 +50,8 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    scheme.primaryContainer.withOpacity(0.55),
-                    scheme.secondaryContainer.withOpacity(0.35),
+                    scheme.primaryContainer.withValues(alpha: 0.55),
+                    scheme.secondaryContainer.withValues(alpha: 0.35),
                   ],
                 ),
               ),
@@ -87,7 +87,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
               _Pill(
                 icon: Icons.recycling,
                 text: '${recipe.expiringCount} expiring items',
-                color: scheme.primary.withOpacity(0.12),
+                color: scheme.primary.withValues(alpha: 0.12),
                 textColor: scheme.primary,
                 iconColor: scheme.primary,
               ),
@@ -107,7 +107,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
               icon: Icons.info_outline,
               child: Text(
                 recipe.description!,
-                style: TextStyle(color: scheme.onSurface.withOpacity(0.7), height: 1.25),
+                style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.7), height: 1.25),
               ),
             ),
             const SizedBox(height: 12),
@@ -136,7 +136,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                           Expanded(
                             child: Text(
                               ing,
-                              style: TextStyle(color: scheme.onSurface.withOpacity(0.8)),
+                              style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.8)),
                             ),
                           ),
                         ],
@@ -156,7 +156,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                   margin: const EdgeInsets.only(bottom: 10),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: isDark ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.03),
+                    color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
@@ -166,7 +166,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                         width: 26,
                         height: 26,
                         decoration: BoxDecoration(
-                          color: scheme.primary.withOpacity(0.12),
+                          color: scheme.primary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(9),
                         ),
                         alignment: Alignment.center,
@@ -184,7 +184,7 @@ class ArchiveRecipeDetailPage extends StatelessWidget {
                           e.value,
                           style: TextStyle(
                             height: 1.25,
-                            color: scheme.onSurface.withOpacity(0.8),
+                            color: scheme.onSurface.withValues(alpha: 0.8),
                           ),
                         ),
                       ),
@@ -267,7 +267,7 @@ class _InfoCard extends StatelessWidget {
         border: Border.all(color: theme.dividerColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
             blurRadius: 12,
             offset: const Offset(0, 8),
           ),
@@ -278,7 +278,7 @@ class _InfoCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 18, color: scheme.onSurface.withOpacity(0.7)),
+              Icon(icon, size: 18, color: scheme.onSurface.withValues(alpha: 0.7)),
               const SizedBox(width: 8),
               Text(
                 title,
@@ -297,3 +297,5 @@ class _InfoCard extends StatelessWidget {
     );
   }
 }
+
+

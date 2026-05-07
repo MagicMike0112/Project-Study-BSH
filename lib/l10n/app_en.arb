@@ -1,0 +1,1157 @@
+﻿{
+    "@@locale":  "en",
+    "appTitle":  "BSH Smart Food Buddy",
+    "navToday":  "Today",
+    "todayGreetingMorning":  "Good morning",
+    "todayGreetingNoon":  "Good afternoon",
+    "todayGreetingEvening":  "Good evening",
+    "navInventory":  "Inventory",
+    "navShopping":  "Shopping",
+    "navImpact":  "Impact",
+    "undo":  "Oops, undo!",
+    "prefLanguageTitle":  "Language",
+    "prefLanguageSubtitle":  "Switch app language",
+    "languageSystem":  "Follow system",
+    "languageEnglish":  "English",
+    "languageChinese":  "Chinese",
+    "languageGerman":  "German",
+    "themeTitle":  "Theme",
+    "themeFollowSystem":  "Follow system",
+    "themeLight":  "Light",
+    "themeDark":  "Dark",
+    "accountTitle":  "Account",
+    "accountSectionHousehold":  "Household",
+    "accountSectionMyHome":  "My Home",
+    "accountSectionIntegrations":  "Integrations",
+    "accountSectionPreferences":  "Preferences",
+    "accountSectionAbout":  "About",
+    "accountNotificationsTitle":  "Notifications",
+    "accountNotificationsSubtitle":  "Expiry alerts \u0026 reminders",
+    "notificationPermissionBlocked":  "Notification permission is blocked in system settings.",
+    "notificationMealReminderMessage":  "Some of your ingredients are expiring soon. Check Smart Food Home.",
+    "notificationSavedFutureApply":  "Saved. New reminder time will apply to future notifications.",
+    "notificationEnablePermissionFirst":  "Please enable notification permission first.",
+    "notificationTestMessage":  "This is a test expiry reminder from Smart Food Home.",
+    "notificationTestSent":  "Test notification sent.",
+    "notificationThreeDayExpiryTitle":  "3-day expiry alerts",
+    "notificationThreeDayExpiryDesc":  "One-time reminder when an item is 3 days from expiry.",
+    "notificationMealTimeTitle":  "Meal-time reminders",
+    "notificationMealTimeDesc":  "Two daily reminders at your lunch and dinner time.",
+    "notificationPermissionAllowed":  "System notification permission: allowed",
+    "notificationPermissionBlockedStatus":  "System notification permission: blocked",
+    "notificationStatusCombined":  "Meal reminders: {mealStatus} | 3-day alerts: {threeDayStatus}",
+    "@notificationStatusCombined":  {
+                                        "placeholders":  {
+                                                             "mealStatus":  {
+
+                                                                            },
+                                                             "threeDayStatus":  {
+
+                                                                                }
+                                                         }
+                                    },
+    "notificationStatusScheduled":  "scheduled",
+    "notificationStatusOff":  "off",
+    "notificationMealTimesTitle":  "Meal times",
+    "notificationMealTimesHint":  "We\u0027ll notify you about expiring items at these times.",
+    "notificationLunchLabel":  "Usual lunch time",
+    "notificationDefaultLunchTime":  "11:30 (default)",
+    "notificationDinnerLabel":  "Usual dinner time",
+    "notificationDefaultDinnerTime":  "17:30 (default)",
+    "notificationResetDefaults":  "Reset to defaults",
+    "notificationSendTestNow":  "Send test now",
+    "familyLoadMembersFailed":  "Failed to load members: {error}",
+    "@familyLoadMembersFailed":  {
+                                     "placeholders":  {
+                                                          "error":  {
+
+                                                                    }
+                                                      }
+                                 },
+    "familyErrorTitle":  "Error",
+    "familyGenerateCodeFailed":  "Failed to generate code:\n\n{error}",
+    "@familyGenerateCodeFailed":  {
+                                      "placeholders":  {
+                                                           "error":  {
+
+                                                                     }
+                                                       }
+                                  },
+    "familyOk":  "OK",
+    "familyJoinTitle":  "Join Family",
+    "familyJoinDesc":  "Enter the 6-digit invitation code shared by a family member.",
+    "familyInviteCodeLabel":  "Invite Code",
+    "familyJoinAction":  "Join",
+    "familyJoinedSuccess":  "Joined family successfully!",
+    "familyInvalidOrExpiredCode":  "Invalid or expired code.",
+    "familyErrorMessage":  "Error: {error}",
+    "@familyErrorMessage":  {
+                                "placeholders":  {
+                                                     "error":  {
+
+                                                               }
+                                                 }
+                            },
+    "familyLeaveTitle":  "Leave Family?",
+    "familyLeaveDesc":  "You will no longer see shared inventory and shopping lists. You will return to your own private home.",
+    "familyLeaveAction":  "Leave",
+    "familyLeftSuccess":  "Left family. Switched to private mode.",
+    "familyLeaveFailed":  "Failed to leave family.",
+    "familyInviteMemberTitle":  "Invite Member",
+    "familyInviteMemberDesc":  "Share this code with your family member.\nThey can use it to join your home.",
+    "familyInviteExpiresIn2Days":  "Expires in 2 days",
+    "familyDone":  "Done",
+    "familyUpdateNameTitle":  "Update your name",
+    "familyDisplayNameHint":  "Enter your display name",
+    "familyNameUpdated":  "Name updated.",
+    "familyNameUpdateFailed":  "Failed to update name.",
+    "familyMyFamilyTitle":  "My Family",
+    "familyMembersTitle":  "Members",
+    "familyNoMembersFound":  "No members found.",
+    "familyInviteNewMember":  "Invite New Member",
+    "familyJoinAnotherFamily":  "Join Another Family",
+    "familyLeaveThisFamily":  "Leave This Family",
+    "familyInventoryShoppingSynced":  "Inventory and Shopping List Synced",
+    "familyYourDisplayName":  "Your display name",
+    "familyEdit":  "Edit",
+    "familyMigrationFailed":  "Migration failed",
+    "familyMigratingData":  "Migrating your data",
+    "familyKeepAppOpen":  "Please keep the app open.",
+    "familyMigrationAttempt":  "Attempt {attempt} / {total}",
+    "@familyMigrationAttempt":  {
+                                    "placeholders":  {
+                                                         "attempt":  {
+
+                                                                     },
+                                                         "total":  {
+
+                                                                   }
+                                                     }
+                                },
+    "familyInventoryMode":  "Inventory Mode",
+    "familySharedFridgeTitle":  "Shared Fridge",
+    "familySharedFridgeDesc":  "All members manage inventory together.",
+    "familySeparateFridgesTitle":  "Separate Fridges",
+    "familySeparateFridgesDesc":  "Items are strictly assigned to owners.",
+    "familyUnknownMember":  "Unknown",
+    "familyUnknownInitial":  "U",
+    "accountNightModeTitle":  "Night Mode",
+    "accountStudentModeTitle":  "Student Mode",
+    "accountStudentModeSubtitle":  "Budget-friendly recipes \u0026 tips",
+    "accountLoyaltyCardsTitle":  "Loyalty Cards",
+    "accountLoyaltyCardsSubtitle":  "Connect PAYBACK (Coming soon)",
+    "accountPrivacyPolicyTitle":  "Privacy Policy",
+    "accountVersionTitle":  "Version",
+    "accountSignOut":  "Sign Out",
+    "accountHelloUser":  "Hello, {name}",
+    "@accountHelloUser":  {
+                              "placeholders":  {
+                                                   "name":  {
+
+                                                            }
+                                               }
+                          },
+    "accountGuestTitle":  "Guest Account",
+    "accountSignInHint":  "Sign in to sync your data",
+    "accountLogIn":  "Log In",
+    "accountHomeConnectLinked":  "Home Connect Linked!",
+    "accountConnectionFailed":  "Connection Failed",
+    "accountDisconnected":  "Disconnected",
+    "accountSimulatorAppliances":  "Simulator Appliances",
+    "accountNoAppliancesFound":  "No appliances found",
+    "accountUnknown":  "Unknown",
+    "accountIdCopied":  "ID Copied",
+    "accountApplianceId":  "ID: {id}",
+    "@accountApplianceId":  {
+                                "placeholders":  {
+                                                     "id":  {
+
+                                                            }
+                                                 }
+                            },
+    "accountHomeConnectTitle":  "Home Connect",
+    "accountRefreshStatus":  "Refresh Status",
+    "accountViewAppliances":  "View Appliances",
+    "accountDisconnect":  "Disconnect",
+    "accountConnecting":  "Connecting...",
+    "accountActiveSynced":  "Active \u0026 Synced",
+    "accountTapToConnect":  "Tap to connect",
+    "leaderboardTitle":  "Leaderboard",
+    "leaderboardScopeWorld":  "World",
+    "leaderboardGlobalTitle":  "Global",
+    "leaderboardGlobalSubtitle":  "Top performers worldwide",
+    "leaderboardYourRank":  "Your Rank",
+    "leaderboardNoDataYet":  "No data yet",
+    "leaderboardRankInScope":  "#{rank} in {scope}",
+    "@leaderboardRankInScope":  {
+                                    "placeholders":  {
+                                                         "rank":  {
+
+                                                                  },
+                                                         "scope":  {
+
+                                                                   }
+                                                     }
+                                },
+    "leaderboardLoadFailedTitle":  "Failed to load leaderboard",
+    "retry":  "Retry",
+    "leaderboardPointsKgCo2":  "{value} kg CO2",
+    "@leaderboardPointsKgCo2":  {
+                                    "placeholders":  {
+                                                         "value":  {
+
+                                                                   }
+                                                     }
+                                },
+    "leaderboardAddFriendTitle":  "Add Friend",
+    "leaderboardFriendEmailLabel":  "Friend email",
+    "leaderboardFriendEmailHint":  "name@email.com",
+    "cancel":  "Cancel",
+    "add":  "Add",
+    "leaderboardNoUserForEmail":  "No user found for that email.",
+    "leaderboardInvalidUserId":  "Invalid user id for that email.",
+    "leaderboardCannotAddYourself":  "You cannot add yourself.",
+    "leaderboardFriendAdded":  "Friend added.",
+    "leaderboardAddFriendFailed":  "Add friend failed: {error}",
+    "@leaderboardAddFriendFailed":  {
+                                        "placeholders":  {
+                                                             "error":  {
+
+                                                                       }
+                                                         }
+                                    },
+    "pullToRefreshHint":  "Pull to refresh",
+    "pullToRefreshRelease":  "Release to refresh",
+    "foodLocationFridge":  "Fridge",
+    "foodLocationFreezer":  "Freezer",
+    "foodLocationPantry":  "Pantry",
+    "foodExpiredDaysAgo":  "Expired {days}d ago",
+    "@foodExpiredDaysAgo":  {
+                                "placeholders":  {
+                                                     "days":  {
+
+                                                              }
+                                                 }
+                            },
+    "foodDaysLeft":  "{days} days left",
+    "@foodDaysLeft":  {
+                          "placeholders":  {
+                                               "days":  {
+
+                                                        }
+                                           }
+                      },
+    "foodActionCookEat":  "Cook / Eat",
+    "foodActionFeedPets":  "Feed Pets",
+    "foodActionDiscard":  "Discard",
+    "foodPetsHappy":  "Little Shi \u0026 Little Yuan are happy!",
+    "todayRecipeArchiveTooltip":  "Recipe Archive",
+    "todayAiChefTitle":  "AI Chef",
+    "todayAiChefDescription":  "Use current ingredients to generate recipes.",
+    "todayExpiringSoonTitle":  "Expiring Soon",
+    "todayExpiringSoonDescription":  "Quickly cook, feed pets, or discard items.",
+    "todayPetSafetyWarning":  "Please ensure the food is safe for your pet!",
+    "todayWhatCanICook":  "What can I\ncook today?",
+    "todayBasedOnItems":  "Based on {count} items in your fridge.",
+    "@todayBasedOnItems":  {
+                               "placeholders":  {
+                                                    "count":  {
+                                                                  "type":  "int"
+                                                              }
+                                                }
+                           },
+    "todayGenerate":  "Generate",
+    "todayPlanWeekTitle":  "Plan Your Week!",
+    "todayPlanWeekSubtitle":  "Tap to plan meals.",
+    "todayViewAll":  "View All",
+    "todayExpired":  "Expired",
+    "todayExpiryToday":  "Today",
+    "todayOneDayLeft":  "1 day left",
+    "todayAllClearTitle":  "All Clear!",
+    "todayAllClearSubtitle":  "Your fridge is fresh and organized.",
+    "todayUndoCooked":  "Cooked \"{name}\"",
+    "@todayUndoCooked":  {
+                             "placeholders":  {
+                                                  "name":  {
+
+                                                           }
+                                              }
+                         },
+    "todayUndoFedPet":  "Fed \"{name}\" to pet",
+    "@todayUndoFedPet":  {
+                             "placeholders":  {
+                                                  "name":  {
+
+                                                           }
+                                              }
+                         },
+    "todayUndoDiscarded":  "Discarded \"{name}\"",
+    "@todayUndoDiscarded":  {
+                                "placeholders":  {
+                                                     "name":  {
+
+                                                              }
+                                                 }
+                            },
+    "todayUndoUpdated":  "Updated \"{name}\"",
+    "@todayUndoUpdated":  {
+                              "placeholders":  {
+                                                   "name":  {
+
+                                                            }
+                                               }
+                          },
+    "commonSave":  "Save",
+    "inventorySyncChangesLabel":  "Sync changes to cloud",
+    "inventoryCloudSyncStatusLabel":  "Cloud sync status",
+    "inventorySyncRetryHint":  "Tap to retry syncing pending changes",
+    "inventorySyncAllSavedHint":  "Tap to confirm all changes are saved",
+    "inventorySyncingChanges":  "Syncing changes...",
+    "inventoryAllChangesSaved":  "All changes saved",
+    "inventorySyncingChangesToCloud":  "Syncing changes to cloud...",
+    "inventoryAllSavedToCloud":  "All changes saved to cloud.",
+    "inventoryQuickSearchTitle":  "Quick Search",
+    "inventoryQuickSearchDescription":  "Find any item by name in seconds.",
+    "inventorySearchHint":  "Search items...",
+    "inventoryNoItemsFound":  "No items found",
+    "inventoryEmptyTitle":  "Your inventory is empty",
+    "inventoryEmptySubtitle":  "Tap the + button to add items.",
+    "inventoryLongPressTitle":  "Long Press Menu",
+    "inventoryLongPressDescription":  "Press and hold an item to edit, use quantity, move, or delete.",
+    "inventorySwipeDeleteTitle":  "Swipe Left to Delete",
+    "inventorySwipeDeleteDescription":  "Swipe an item to the left to delete it. You can undo right after.",
+    "inventoryItemNoteTitle":  "Item note",
+    "inventoryItemNoteHint":  "Add a short note...",
+    "inventoryEditNote":  "Edit note",
+    "inventoryAddNote":  "Add note",
+    "inventorySharedLabel":  "Shared",
+    "inventoryNoteReminderSubtitle":  "Leave a quick reminder",
+    "inventoryChangeCategory":  "Change category",
+    "inventoryRecordUsageUpdateQty":  "Record usage and update quantity",
+    "inventoryGreatForLeftovers":  "Great for leftovers",
+    "inventoryTrackWasteImproveHabits":  "Track waste to improve habits",
+    "inventoryCookedToast":  "Cooked {qty} of {name}",
+    "@inventoryCookedToast":  {
+                                  "placeholders":  {
+                                                       "qty":  {
+
+                                                               },
+                                                       "name":  {
+
+                                                                }
+                                                   }
+                              },
+    "inventoryFedToPetToast":  "Fed {name} to pet",
+    "@inventoryFedToPetToast":  {
+                                    "placeholders":  {
+                                                         "name":  {
+
+                                                                  }
+                                                     }
+                                },
+    "inventoryRecordedWasteToast":  "Recorded waste: {name}",
+    "@inventoryRecordedWasteToast":  {
+                                         "placeholders":  {
+                                                              "name":  {
+
+                                                                       }
+                                                          }
+                                     },
+    "inventoryDeletedToast":  "Deleted \"{name}\"",
+    "@inventoryDeletedToast":  {
+                                   "placeholders":  {
+                                                        "name":  {
+
+                                                                 }
+                                                    }
+                               },
+    "inventoryCookWithThis":  "Cook with this",
+    "inventoryFeedToPet":  "Feed to pet",
+    "inventoryWastedThrownAway":  "Wasted / Thrown away",
+    "inventoryEditDetails":  "Edit details",
+    "inventoryDeleteItem":  "Delete item",
+    "inventoryDeleteItemQuestion":  "Delete item?",
+    "inventoryDeletePermanentQuestion":  "Remove \"{name}\" from your inventory permanently?",
+    "@inventoryDeletePermanentQuestion":  {
+                                              "placeholders":  {
+                                                                   "name":  {
+
+                                                                            }
+                                                               }
+                                          },
+    "inventoryDeleteAction":  "Delete",
+    "inventoryDetailQuantity":  "Quantity",
+    "inventoryDetailAdded":  "Added",
+    "inventoryDetailStorageLocation":  "Storage Location",
+    "inventoryDetailNotes":  "Notes",
+    "inventoryDetailStatusExpired":  "Expired",
+    "inventoryDetailStatusExpiresToday":  "Expires today",
+    "inventoryDetailStatusExpiring":  "Expiring",
+    "inventoryDetailStatusFresh":  "Fresh",
+    "inventoryDetailAddedToday":  "Added today",
+    "inventoryDetailAddedOneDayAgo":  "Added 1 day ago",
+    "inventoryDetailAddedDaysAgo":  "Added {days} days ago",
+    "@inventoryDetailAddedDaysAgo":  {
+                                         "placeholders":  {
+                                                              "days":  {
+
+                                                                       }
+                                                          }
+                                     },
+    "inventoryDetailDaysLeftLabel":  "DAYS\nLEFT",
+    "inventoryDetailEditDetailsSubtitle":  "Update item details and expiry",
+    "inventorySheetUpdating":  "Updating: {name}",
+    "@inventorySheetUpdating":  {
+                                    "placeholders":  {
+                                                         "name":  {
+
+                                                                  }
+                                                     }
+                                },
+    "inventoryActionType":  "Action Type",
+    "inventoryActionCooked":  "Cooked",
+    "inventoryActionPetFeed":  "Pet Feed",
+    "inventoryActionWaste":  "Waste",
+    "inventoryQuickAssign":  "Quick Assign",
+    "inventoryEditFamily":  "Edit Family",
+    "inventoryYouLabel":  "You",
+    "inventoryConfirmUpdate":  "Confirm Update",
+    "inventoryQuantityUsed":  "Quantity Used",
+    "inventoryRemainingQty":  "Remaining: {value}{unit}",
+    "@inventoryRemainingQty":  {
+                                   "placeholders":  {
+                                                        "value":  {
+
+                                                                  },
+                                                        "unit":  {
+
+                                                                 }
+                                                    }
+                               },
+    "inventorySemanticsQuantityUsed":  "Quantity used",
+    "inventorySemanticsUsageHint":  "Drag left or right to adjust usage",
+    "inventorySemanticsAdjustUsedAmount":  "Adjust used amount",
+    "shoppingTemporaryListTooltip":  "Temporary List",
+    "shoppingFridgeCameraTitle":  "Fridge Camera",
+    "shoppingFridgeCameraDescription":  "Scan your fridge to speed up planning.",
+    "shoppingPurchaseHistoryTitle":  "Purchase History",
+    "shoppingPurchaseHistoryDescription":  "Review bought items and add them back.",
+    "shoppingCompletedLabel":  "COMPLETED",
+    "shoppingAiSmartAddTitle":  "AI Smart Add",
+    "shoppingAiSmartAddDescription":  "Add ingredients from a recipe.",
+    "shoppingAiSmartAddHint":  "Import ingredients from recipe text",
+    "shoppingQuickAddTitle":  "Quick Add",
+    "shoppingQuickAddDescription":  "Add one item instantly.",
+    "shoppingQuickAddSemanticsLabel":  "Quick add item",
+    "shoppingInputHint":  "Add item here",
+    "shoppingRecipeImportTitle":  "Recipe Import",
+    "shoppingRecipeSignInRequiredAction":  "Please sign in to use AI Recipe Scan.",
+    "shoppingRecipeSignInAction":  "SIGN IN",
+    "shoppingRecipeProvideInput":  "Please provide a recipe name, text, or image.",
+    "shoppingRecipeAnalysisFailed":  "Analysis failed: {error}",
+    "@shoppingRecipeAnalysisFailed":  {
+                                          "placeholders":  {
+                                                               "error":  {
+
+                                                                         }
+                                                           }
+                                      },
+    "shoppingRecipeAddedItems":  "Added {count} items to shopping list",
+    "@shoppingRecipeAddedItems":  {
+                                      "placeholders":  {
+                                                           "count":  {
+
+                                                                     }
+                                                       }
+                                  },
+    "shoppingRecipeInputHint":  "Enter dish name or paste recipe...",
+    "shoppingRecipeIngredientsSection": "Ingredients",
+    "shoppingRecipeSeasoningsSection": "Seasonings",
+    "shoppingRecipeCamera":  "Camera",
+    "shoppingRecipeAlbum":  "Album",
+    "shoppingRecipeAnalyzing":  "Analyzing...",
+    "shoppingRecipeGetListButton":  "Get Shopping list",
+    "shoppingRecipeAiThinking":  "AI is thinking...",
+    "shoppingRecipeResultsPlaceholder":  "Your results will appear here",
+    "shoppingRecipeInStockReason":  "In stock: {reason}",
+    "@shoppingRecipeInStockReason":  {
+                                         "placeholders":  {
+                                                              "reason":  {
+
+                                                                         }
+                                                          }
+                                     },
+    "shoppingRecipeCategoryLabel":  "Category: {category}",
+    "@shoppingRecipeCategoryLabel":  {
+                                         "placeholders":  {
+                                                              "category":  {
+
+                                                                           }
+                                                          }
+                                     },
+    "shoppingRecipeAddSelectedToList":  "Add {count} Items to List",
+    "@shoppingRecipeAddSelectedToList":  {
+                                             "placeholders":  {
+                                                                  "count":  {
+
+                                                                            }
+                                                              }
+                                         },
+    "shoppingRecipeSignInRequiredTitle":  "Sign in Required",
+    "shoppingRecipeSignInRequiredSubtitle":  "Please sign in to sync with your inventory and use AI recipe analysis.",
+    "shoppingRecipeSignInNow":  "Sign In Now",
+    "shoppingEmptyTitle":  "Your list is empty",
+    "shoppingEmptySubtitle":  "Add items manually or use recipe import.",
+    "shoppingDeletedToast":  "Deleted \"{name}\"",
+    "@shoppingDeletedToast":  {
+                                  "placeholders":  {
+                                                       "name":  {
+
+                                                                }
+                                                   }
+                              },
+    "shoppingUndoAction":  "Undo",
+    "impactTitle":  "Your Impact",
+    "impactTimeRangeTitle":  "Time Range",
+    "impactTimeRangeDescription":  "Switch between week, month, and year views.",
+    "impactSummaryTitle":  "Impact Summary",
+    "impactSummaryDescription":  "See money saved and items rescued here.",
+    "impactKgAvoided":  "{value}kg avoided",
+    "@impactKgAvoided":  {
+                             "placeholders":  {
+                                                  "value":  {
+
+                                                            }
+                                              }
+                         },
+    "impactLevelTitle":  "Level",
+    "impactStreakTitle":  "Streak",
+    "impactDaysActive":  "Days active",
+    "impactActiveBadge":  "Active",
+    "impactWeeklyReportTitle":  "Weekly Report",
+    "impactWeeklyReportDescription":  "Open your AI weekly summary and insights.",
+    "impactWeeklyReviewSubtitle":  "Review your progress from last week",
+    "weeklyAddedToShoppingList":  "Added to shopping list.",
+    "weeklyHeiExplainedTitle":  "HEI-2015 Explained",
+    "weeklyHeiExplainedIntro":  "The Healthy Eating Index (HEI-2015) is a 0-100 score that measures how well a diet aligns with the Dietary Guidelines for Americans.",
+    "weeklyHeiHowComputeTitle":  "How we compute it",
+    "weeklyHeiHowComputeBody":  "We estimate HEI components using USDA FoodData Central nutrients and your logged foods. Components include:",
+    "weeklyHeiComponentsList":  "- Fruits (total and whole)\n- Vegetables (total and greens/beans)\n- Whole grains\n- Dairy\n- Total protein and seafood/plant protein\n- Fatty acids ratio\n- Moderation: refined grains, sodium, added sugars, saturated fat",
+    "weeklyHeiMorePoints":  "More points = better balance. We normalize per 1,000 kcal where applicable and use HEI-2015 scoring standards.",
+    "weeklyGotIt":  "Got it",
+    "weeklyHeiLabelExcellent":  "Excellent",
+    "weeklyHeiLabelGood":  "Good",
+    "weeklyHeiLabelFair":  "Fair",
+    "weeklyHeiLabelNeedsWork":  "Needs Work",
+    "weeklyMacrosNotEnoughData":  "Not enough data to calculate macros.",
+    "weeklyMacroProtein":  "Protein",
+    "weeklyMacroCarbs":  "Carbs",
+    "weeklyMacroFat":  "Fat",
+    "weeklyDataSource":  "Data source: {source}",
+    "@weeklyDataSource":  {
+                              "placeholders":  {
+                                                   "source":  {
+
+                                                              }
+                                               }
+                          },
+    "weeklyPrev":  "Prev",
+    "weeklyNext":  "Next",
+    "impactChooseMascot":  "Choose your mascot",
+    "impactMascotNameTitle":  "Mascot name",
+    "impactMascotNameHint":  "Give it a name",
+    "impactMascotCat":  "Cat",
+    "impactMascotDog":  "Dog",
+    "impactMascotHamster":  "Hamster",
+    "impactMascotGuineaPig":  "Guinea Pig",
+    "impactFedToMascot":  "Fed to {name}",
+    "@impactFedToMascot":  {
+                               "placeholders":  {
+                                                    "name":  {
+
+                                                             }
+                                                }
+                           },
+    "impactItemFallback":  "Item",
+    "impactFridgeMasterTitle":  "Fridge Master!",
+    "impactSavedItemsStreak":  "Saved {savedCount} items - {streak} day streak",
+    "@impactSavedItemsStreak":  {
+                                    "placeholders":  {
+                                                         "savedCount":  {
+
+                                                                        },
+                                                         "streak":  {
+
+                                                                    }
+                                                     }
+                                },
+    "impactTotalSavingsLabel":  "TOTAL SAVINGS",
+    "impactNextRankLabel":  "Next Rank: Zero Waste Hero",
+    "impactBasedOnSavedItems":  "Based on {count} items saved",
+    "@impactBasedOnSavedItems":  {
+                                     "placeholders":  {
+                                                          "count":  {
+
+                                                                    }
+                                                      }
+                                 },
+    "impactOnTrackYearly":  "On track to save {amount} / year",
+    "@impactOnTrackYearly":  {
+                                 "placeholders":  {
+                                                      "amount":  {
+
+                                                                 }
+                                                  }
+                             },
+    "impactCommunityQuestTitle":  "Community Quest",
+    "impactNewBadge":  "New!",
+    "impactYouSavedCo2ThisWeek":  "You saved {value}kg CO2 this week!",
+    "@impactYouSavedCo2ThisWeek":  {
+                                       "placeholders":  {
+                                                            "value":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "impactViewLeaderboard":  "View Leaderboard",
+    "impactTopSaversTitle":  "Top Savers",
+    "impactSeeAll":  "See all",
+    "impactMostSavedLabel":  "Most Saved",
+    "impactRecentActionsTitle":  "Recent Actions",
+    "impactFamilyLabel":  "Family",
+    "impactActionCooked":  "Cooked",
+    "impactActionFedToPet":  "Fed to pet",
+    "impactActionWasted":  "Wasted",
+    "impactTapForDietInsights":  "Tap to view your diet insights",
+    "impactEnjoyedLeftovers":  "Enjoyed {weight}kg of leftovers",
+    "@impactEnjoyedLeftovers":  {
+                                    "placeholders":  {
+                                                         "weight":  {
+
+                                                                    }
+                                                     }
+                                },
+    "impactNoDataTitle":  "No data yet",
+    "impactNoDataSubtitle":  "Start saving food to see your impact!",
+    "impactRangeWeek":  "Week",
+    "impactRangeMonth":  "Month",
+    "impactRangeYear":  "Year",
+    "addFoodVoiceTapToStart":  "Tap mic to start",
+    "addFoodDateNotSet":  "Not set",
+    "addFoodTextTooShort":  "Text too short, please provide more info.",
+    "addFoodRecognizedItems":  "Recognized {count} item(s).",
+    "@addFoodRecognizedItems":  {
+                                    "placeholders":  {
+                                                         "count":  {
+                                                                       "type":  "int"
+                                                                   }
+                                                     }
+                                },
+    "addFoodAiParserUnavailable":  "AI parser unavailable, used local parser.",
+    "addFoodAiUnexpectedResponse":  "Unexpected AI response, used local parser.",
+    "addFoodFormFilledFromVoice":  "Form filled from voice.",
+    "addFoodAiReturnedEmpty":  "AI parser returned empty, used local parser.",
+    "addFoodNetworkParseFailed":  "Network parse failed, used local parser.",
+    "addFoodAiParseFailed":  "AI parse failed: {error}",
+    "@addFoodAiParseFailed":  {
+                                  "placeholders":  {
+                                                       "error":  {
+
+                                                                 }
+                                                   }
+                              },
+    "addFoodEnterNameFirst":  "Please enter the food name first",
+    "addFoodExpirySetTo":  "Expiry set to {date}",
+    "@addFoodExpirySetTo":  {
+                                "placeholders":  {
+                                                     "date":  {
+
+                                                              }
+                                                 }
+                            },
+    "addFoodMaxFourImages":  "Max 4 images allowed. Selecting first 4.",
+    "addFoodNoItemsDetected":  "No items detected in images.",
+    "addFoodScanFailed":  "Scan failed: {error}",
+    "@addFoodScanFailed":  {
+                               "placeholders":  {
+                                                    "error":  {
+
+                                                              }
+                                                }
+                           },
+    "addFoodVoiceError":  "Voice error: {error}",
+    "@addFoodVoiceError":  {
+                               "placeholders":  {
+                                                    "error":  {
+
+                                                              }
+                                                }
+                           },
+    "addFoodSpeechNotAvailable":  "Speech not available on this device",
+    "addFoodSpeechNotSupported":  "Speech recognition not supported on this device.",
+    "addFoodSpeechInitFailed":  "Speech init failed: {code}",
+    "@addFoodSpeechInitFailed":  {
+                                     "placeholders":  {
+                                                          "code":  {
+
+                                                                   }
+                                                      }
+                                 },
+    "addFoodSpeechInitUnable":  "Unable to initialize speech recognition.",
+    "addFoodOpeningXiaomiSpeech":  "Opening Xiaomi speech...",
+    "addFoodVoiceGotIt":  "Got it! Tap Analyze \u0026 Fill.",
+    "addFoodVoiceCanceled":  "Voice canceled. Tap mic to retry.",
+    "addFoodMicBlocked":  "Mic blocked. Enable in Settings.",
+    "addFoodMicDenied":  "Mic permission denied.",
+    "addFoodListeningNow":  "I\u0027m listening...",
+    "addFoodAddItemTitle":  "Add Item",
+    "addFoodEditItemTitle":  "Edit Item",
+    "addFoodHelpButton":  "Help",
+    "addFoodTabManual":  "Manual",
+    "addFoodTabScan":  "Scan",
+    "addFoodTabVoice":  "Voice",
+    "addFoodBasicInfoTitle":  "Basic Info",
+    "addFoodNameLabel":  "Name",
+    "addFoodRequired":  "Required",
+    "addFoodQuantityLabel":  "Quantity",
+    "addFoodUnitLabel":  "Unit",
+    "addFoodMinStockWarningLabel":  "Min Stock Warning (Optional)",
+    "addFoodMinStockHint":  "e.g. 2 (Notify when below)",
+    "addFoodMinStockHelper":  "Leave empty for no warnings",
+    "addFoodStorageLocationTitle":  "Storage Location",
+    "addFoodCategoriesTitle":  "Categories",
+    "addFoodDatesTitle":  "Dates",
+    "addFoodPurchaseDate":  "Purchase Date",
+    "addFoodOpenDate":  "Open Date",
+    "addFoodBestBefore":  "Best Before",
+    "addFoodSaveToInventory":  "Save to Inventory",
+    "addFoodScanReceipt":  "Scan Receipt",
+    "addFoodSnapFridge":  "Snap Fridge",
+    "addFoodTakePhoto":  "Take Photo",
+    "addFoodUseCameraToScan":  "Use camera to scan",
+    "addFoodUploadMax4":  "Upload (Max 4)",
+    "addFoodChooseMultipleFromGallery":  "Choose multiple from gallery",
+    "addFoodAiExtractReceiptItems":  "AI will extract items from your receipt(s).",
+    "addFoodAiIdentifyFridgeItems":  "AI will identify items in your fridge or pantry.",
+    "addFoodAutoLabel":  "Auto",
+    "addFoodXiaomiSpeechMode":  "Xiaomi speech mode",
+    "addFoodEngineReady":  "Engine ready - {locale}",
+    "@addFoodEngineReady":  {
+                                "placeholders":  {
+                                                     "locale":  {
+
+                                                                }
+                                                 }
+                            },
+    "addFoodPreparingEngine":  "Preparing speech engine...",
+    "addFoodVoiceTrySaying":  "Try saying: \"3 apples, milk, and 1kg of rice\"",
+    "addFoodTranscriptHint":  "Transcript will appear here...",
+    "addFoodClear":  "Clear",
+    "addFoodAnalyzing":  "Analyzing...",
+    "addFoodAnalyzeAndFill":  "Analyze \u0026 Fill",
+    "addFoodAiExpiryPrediction":  "AI Expiry Prediction",
+    "addFoodAutoMagic":  "Auto magic",
+    "addFoodThinking":  "Thinking...",
+    "addFoodPredictedExpiry":  "Predicted Expiry",
+    "addFoodManualDateOverride":  "Manual date will override this",
+    "addFoodAutoApplied":  "Auto applied",
+    "addFoodAiSuggestHint":  "Let AI suggest based on food type and storage.",
+    "addFoodErrorPrefix":  "Error:",
+    "addFoodAutoMagicPrediction":  "Auto Magic Prediction",
+    "addFoodScanningReceipts":  "Scanning Receipts...",
+    "addFoodProcessing":  "Processing",
+    "addFoodItemsTitle":  "Items",
+    "addFoodAddCountItems":  "Add {count} Items",
+    "@addFoodAddCountItems":  {
+                                  "placeholders":  {
+                                                       "count":  {
+                                                                     "type":  "int"
+                                                                 }
+                                                   }
+                              },
+    "addFoodAddedItems":  "Added {count} items",
+    "@addFoodAddedItems":  {
+                               "placeholders":  {
+                                                    "count":  {
+                                                                  "type":  "int"
+                                                              }
+                                                }
+                           },
+    "addFoodHelpTitle":  "Add Item Help",
+    "addFoodHelpManualTitle":  "Manual",
+    "addFoodHelpManualPoint1":  "Enter name, quantity, and storage location.",
+    "addFoodHelpManualPoint2":  "Set Best Before if you know the package date.",
+    "addFoodHelpManualPoint3":  "Use note for size/brand reminders.",
+    "addFoodHelpScanTitle":  "Scan",
+    "addFoodHelpScanPoint1":  "Use clear photos with good lighting.",
+    "addFoodHelpScanPoint2":  "For receipts, keep text fully visible.",
+    "addFoodHelpScanPoint3":  "Review detected items before saving.",
+    "addFoodHelpVoiceTitle":  "Voice",
+    "addFoodHelpVoicePoint1":  "Say item + quantity + unit, e.g. \"Milk two liters\".",
+    "addFoodHelpVoicePoint2":  "Pause briefly between multiple items.",
+    "addFoodHelpVoicePoint3":  "Edit fields before saving if needed.",
+    "addFoodHelpTip":  "Tip: If expiry is unknown, use AI prediction and adjust manually if needed.",
+    "selectIngredientsKitchenTitle":  "Your Kitchen",
+    "selectIngredientsSelectedCount":  "{count} items selected for cooking",
+    "@selectIngredientsSelectedCount":  {
+                                            "placeholders":  {
+                                                                 "count":  {
+                                                                               "type":  "int"
+                                                                           }
+                                                             }
+                                        },
+    "selectIngredientsNoItemsSubtitle":  "Try a different filter or add new items.",
+    "selectIngredientsExtrasPrompts":  "Extras \u0026 Prompts",
+    "selectIngredientsAddExtraHint":  "Add extra ingredients...",
+    "selectIngredientsSpecialRequestHint":  "Any specific cravings or dietary restrictions?",
+    "selectIngredientsPageTitle":  "Select Ingredients",
+    "selectIngredientsReset":  "Reset",
+    "selectIngredientsFilterAll":  "All Items",
+    "selectIngredientsFilterExpiring":  "Expiring",
+    "selectIngredientsFilterVeggie":  "Veggie",
+    "selectIngredientsFilterMeat":  "Meat",
+    "selectIngredientsFilterDairy":  "Dairy",
+    "selectIngredientsExpiringLabel":  "Expiring",
+    "selectIngredientsSoonLabel":  "Soon",
+    "selectIngredientsFreshLabel":  "Fresh",
+    "selectIngredientsQuantityLeft":  "{value} {unit} left",
+    "@selectIngredientsQuantityLeft":  {
+                                           "placeholders":  {
+                                                                "value":  {
+
+                                                                          },
+                                                                "unit":  {
+
+                                                                         }
+                                                            }
+                                       },
+    "selectIngredientsPeopleShort":  "Ppl",
+    "cookingPlanSlot":  "Plan {slot}",
+    "@cookingPlanSlot":  {
+                             "placeholders":  {
+                                                  "slot":  {
+
+                                                           }
+                                              }
+                         },
+    "cookingMealNameLabel":  "Meal name",
+    "cookingMealNameHint":  "e.g. Lemon Chicken Bowl",
+    "cookingQuickPickRecipes":  "Quick pick from recipes",
+    "cookingBrowseAll":  "Browse All",
+    "cookingUseFromInventory":  "Use from inventory",
+    "cookingMissingItemsLabel":  "Missing items (add to shopping list)",
+    "cookingMissingItemsHint":  "e.g. garlic, scallions",
+    "cookingSavePlan":  "Save Plan",
+    "cookingUntitledMeal":  "Untitled meal",
+    "cookingAddedItemsToShopping":  "Added {count} items to shopping list.",
+    "@cookingAddedItemsToShopping":  {
+                                         "placeholders":  {
+                                                              "count":  {
+                                                                            "type":  "int"
+                                                                        }
+                                                          }
+                                     },
+    "cookingMealPlannerTitle":  "Meal Planner",
+    "cookingJumpToToday":  "Jump to today",
+    "cookingNoMatches":  "No matches",
+    "cookingMissingItemsCount":  "Missing {count} items",
+    "@cookingMissingItemsCount":  {
+                                      "placeholders":  {
+                                                           "count":  {
+                                                                         "type":  "int"
+                                                                     }
+                                                       }
+                                  },
+    "cookingAllItemsInFridge":  "All items in fridge",
+    "cookingSlotBreakfast":  "Breakfast",
+    "cookingSlotLunch":  "Lunch",
+    "cookingSlotDinner":  "Dinner",
+    "shoppingGuestCreateTempTitle":  "Create temporary list",
+    "shoppingGuestCreateTempSubtitle":  "Share with guests without requiring login.",
+    "shoppingGuestMyListsTitle":  "My guest lists",
+    "shoppingGuestMyListsSubtitle":  "Manage existing temporary lists.",
+    "shoppingGuestDialogTitle":  "Create Temporary List",
+    "shoppingGuestTitleHint":  "e.g. Dinner Party",
+    "shoppingGuestExpiresIn":  "Expires in",
+    "shoppingGuestExpire24h":  "24 hours",
+    "shoppingGuestExpire3d":  "3 days",
+    "shoppingGuestExpire7d":  "7 days",
+    "shoppingGuestAttachMineTitle":  "Attach to my account",
+    "shoppingGuestAttachMineSubtitle":  "Only your account can edit owner settings.",
+    "shoppingGuestCreateAction":  "Create",
+    "shoppingShareLinkTitle":  "Share this link",
+    "shoppingLinkCopied":  "Link copied.",
+    "shoppingCopyLink":  "Copy Link",
+    "shoppingOpenList":  "Open List",
+    "shoppingMoveCheckedSemLabel":  "Move checked items",
+    "shoppingMoveCheckedSemHint":  "Move {count} checked items to inventory",
+    "shoppingMoveCheckedToFridge":  "Moved {count} item(s) to fridge",
+    "shoppingEditingItem":  "Editing item",
+    "shoppingRenameItemHint":  "Rename item",
+    "recipeArchiveClearTitle":  "Clear archive?",
+    "recipeArchiveClearDesc":  "This removes all saved recipes from your archive.",
+    "recipeArchiveClearAll":  "Clear All",
+    "recipeArchiveSavedTitle":  "Saved Recipes",
+    "recipeArchiveEmptyTitle":  "No saved recipes yet",
+    "recipeArchiveEmptyDesc":  "Save recipes and they will appear here.",
+    "recipeArchiveGoBack":  "Go Back",
+    "recipeArchiveSavedOn":  "Saved on {date}",
+    "recipeGeneratorFailed":  "Generation failed: {error}",
+    "recipeGeneratorReviewSelectionTitle":  "Review your selection",
+    "recipeGeneratorReviewSelectionDesc":  "Choose ingredients and preferences before generating recipes.",
+    "recipeGeneratorNoItemsTitle":  "No ingredients selected",
+    "recipeGeneratorNoItemsDesc":  "Select at least one ingredient to continue.",
+    "recipeGeneratorExtrasTitle":  "Extras \u0026 Prompts",
+    "recipeGeneratorCookingFor":  "Cooking for {count}",
+    "recipeGeneratorStudentModeOn":  "Student mode ON",
+    "recipeGeneratorNote":  "Note: {note}",
+    "recipeGeneratorStartTitle":  "Generate recipes",
+    "recipeGeneratorStartSubtitle":  "We will suggest options based on your ingredients.",
+    "recipeGeneratorNoRecipes":  "No recipes generated yet.",
+    "recipeGeneratorSuggestionsTitle":  "Suggestions",
+    "recipeDetailRemovedFromArchive":  "Removed from archive",
+    "recipeDetailSavedToArchive":  "Saved to archive",
+    "recipeDetailOperationFailed":  "Operation failed: {error}",
+    "recipeDetailNoOvenTemp":  "No oven temperature found in this recipe.",
+    "recipeDetailOvenBusy":  "Oven is busy. Stop it before preheating.",
+    "recipeDetailOvenPreheating":  "Oven preheating to {temp}C",
+    "recipeDetailPreheatFailed":  "Preheat failed: {error}",
+    "recipeDetailOvenAlreadyIdle":  "Oven is already idle.",
+    "recipeDetailOvenStopped":  "Oven stopped.",
+    "recipeDetailStopFailed":  "Stop failed: {error}",
+    "recipeDetailSavedLeftoversToInventory":  "Saved leftovers to inventory.",
+    "recipeDetailInventoryUpdated":  "Inventory updated.",
+    "recipeDetailTitle":  "Recipe Details",
+    "recipeDetailYields":  "Yields: {servings}",
+    "recipeDetailSmartKitchen":  "Smart Kitchen",
+    "recipeDetailOvenReady":  "Oven is Ready",
+    "recipeDetailPreheatOven":  "Preheat Oven",
+    "recipeDetailPreheatTo":  "Preheat to {temp}",
+    "recipeDetailTemp":  "{temp}C",
+    "recipeDetailTapToStop":  "Tap to stop",
+    "recipeDetailTapToStart":  "Tap to start",
+    "recipeDetailIngredientsTitle":  "Ingredients",
+    "recipeDetailInstructionsTitle":  "Instructions",
+    "recipeDetailStep":  "Step {number}",
+    "recipeDetailCookedThis":  "I Cooked This",
+    "recipeDetailReviewUsageTitle":  "Review Ingredients Usage",
+    "recipeDetailUsageNone":  "None",
+    "recipeDetailUsageAll":  "All",
+    "recipeDetailConfirmUsage":  "Confirm Usage",
+    "recipeDetailMealPrepTitle":  "Did you finish it all?",
+    "recipeDetailMealPrepDesc":  "Or did you meal prep for later?",
+    "recipeDetailLeftoversToSave":  "Leftovers to save:",
+    "recipeDetailWhereStoreLeftovers":  "Where will you store it?",
+    "recipeDetailSaveLeftovers":  "Save Leftovers",
+    "recipeDetailAteEverything":  "Ate Everything!",
+    "guestListAddYourNameTitle":  "Add your name",
+    "guestListEnterDisplayNameHint":  "Enter a display name",
+    "guestListAddNoteTitle":  "Add note",
+    "guestListAddNoteHint":  "e.g. low fat, brand, size",
+    "guestListShareLinkCopied":  "Share link copied.",
+    "guestListExpiredEditingDisabled":  "This list has expired. Editing is disabled.",
+    "guestListTitle":  "Guest Shopping List",
+    "guestListCopyShareLinkTooltip":  "Copy share link",
+    "guestListMineLabel":  "Mine",
+    "guestListJoining":  "Joining list...",
+    "guestListAddNameToEdit":  "Add your name to edit items.",
+    "guestListAddNameAction":  "Add Name",
+    "shoppingAddItemHint":  "Add item...",
+    "guestListNoItemsYet":  "No items yet",
+    "guestListLookingForList":  "Looking for shared list...",
+    "guestListFailedLoad":  "Failed to load list.",
+    "guestListRefreshPage":  "Refresh Page",
+    "guestListGuestFallback":  "Guest",
+    "guestArchiveEmpty":  "No guest lists yet",
+    "guestArchiveExpires":  "Expires {label}",
+    "guestArchiveExpired":  "Expired",
+    "guestArchiveActive":  "Active",
+    "authUnexpectedError":  "Unexpected error, please try again.",
+    "authEnterEmailFirst":  "Please enter your email first.",
+    "authResetEmailSent":  "Password reset email sent.",
+    "authResetEmailFailed":  "Failed to send reset email.",
+    "loginWelcomeBack":  "Welcome back",
+    "loginWelcomeSubtitle":  "Sign in to continue",
+    "authPleaseEnterEmail":  "Please enter email.",
+    "authEmailInvalid":  "Please enter a valid email.",
+    "authPleaseEnterPassword":  "Please enter password.",
+    "authAtLeast6Chars":  "At least 6 characters.",
+    "authShowPassword":  "Show password",
+    "authHidePassword":  "Hide password",
+    "authForgotPassword":  "Forgot password?",
+    "authLogIn":  "Log In",
+    "authOr":  "or",
+    "authNoAccount":  "No account?",
+    "authSignUp":  "Sign up",
+    "authSkipForNow":  "Skip for now",
+    "authBack":  "Back",
+    "registerPasswordsDoNotMatch":  "Passwords do not match.",
+    "registerSuccessCheckEmail":  "Sign-up successful! Please check your email to confirm.",
+    "registerBackToLogin":  "Back to login",
+    "registerCreateAccountTitle":  "Create Account",
+    "registerCreateAccountSubtitle":  "Start your smart kitchen journey.",
+    "registerNameLabel":  "Name",
+    "registerNameHint":  "Your display name",
+    "registerEnterName":  "Please enter your name.",
+    "registerNameTooShort":  "Name is too short.",
+    "registerEmailLabel":  "Email",
+    "registerPasswordLabel":  "Password",
+    "registerPasswordHint":  "At least 6 characters",
+    "registerRepeatPasswordLabel":  "Repeat password",
+    "registerRepeatPasswordHint":  "Type password again",
+    "registerPasswordsDoNotMatchInline":  "Passwords do not match",
+    "registerProfileDetailsTitle":  "Profile details",
+    "registerGenderLabel":  "Gender",
+    "registerAgeGroupLabel":  "Age group",
+    "registerRequired":  "Required",
+    "registerCountryLabel":  "Country",
+    "registerCountryHint":  "e.g. Germany",
+    "registerPleaseEnterCountry":  "Please enter your country.",
+    "fridgeCameraSignInToConnect":  "Please sign in to connect fridge cameras.",
+    "fridgeCameraNotConnected":  "Home Connect is not connected.",
+    "fridgeCameraLoadFailed":  "Failed to load fridge images: {error}",
+    "fridgeCameraTitle":  "Fridge Camera",
+    "fridgeCameraRefreshTooltip":  "Refresh",
+    "fridgeCameraNoDevices":  "No connected fridges found.",
+    "fridgeCameraNoImages":  "No images available yet.",
+    "fridgeCameraImageCount":  "{count} image(s)",
+    "fridgeCameraImageLoadFailed":  "Failed to load image",
+    "shoppingArchiveTitle":  "Purchase History",
+    "shoppingArchiveClearTooltip":  "Clear History",
+    "shoppingArchiveClearTitle":  "Clear History?",
+    "shoppingArchiveClearDesc":  "This will remove all archived shopping items.",
+    "shoppingArchiveClearAction":  "Clear",
+    "shoppingArchiveAddBackTooltip":  "Add back to shopping list",
+    "shoppingArchiveAddedBack":  "Added back: {name}",
+    "shoppingArchiveToday":  "Today",
+    "shoppingArchiveYesterday":  "Yesterday",
+    "shoppingArchiveEmptyTitle":  "No history yet",
+    "shoppingArchiveEmptyDesc":  "Completed shopping items will appear here.",
+    "@shoppingMoveCheckedSemHint":  {
+                                        "placeholders":  {
+                                                             "count":  {
+
+                                                                       }
+                                                         }
+                                    },
+    "@shoppingMoveCheckedToFridge":  {
+                                         "placeholders":  {
+                                                              "count":  {
+
+                                                                        }
+                                                          }
+                                     },
+    "@recipeArchiveSavedOn":  {
+                                  "placeholders":  {
+                                                       "date":  {
+
+                                                                }
+                                                   }
+                              },
+    "@recipeGeneratorFailed":  {
+                                   "placeholders":  {
+                                                        "error":  {
+
+                                                                  }
+                                                    }
+                               },
+    "@recipeGeneratorCookingFor":  {
+                                       "placeholders":  {
+                                                            "count":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "@recipeGeneratorNote":  {
+                                 "placeholders":  {
+                                                      "note":  {
+
+                                                               }
+                                                  }
+                             },
+    "@recipeDetailOperationFailed":  {
+                                         "placeholders":  {
+                                                              "error":  {
+
+                                                                        }
+                                                          }
+                                     },
+    "@recipeDetailOvenPreheating":  {
+                                        "placeholders":  {
+                                                             "temp":  {
+
+                                                                      }
+                                                         }
+                                    },
+    "@recipeDetailPreheatFailed":  {
+                                       "placeholders":  {
+                                                            "error":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "@recipeDetailStopFailed":  {
+                                    "placeholders":  {
+                                                         "error":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@recipeDetailYields":  {
+                                "placeholders":  {
+                                                     "servings":  {
+
+                                                                  }
+                                                 }
+                            },
+    "@recipeDetailPreheatTo":  {
+                                   "placeholders":  {
+                                                        "temp":  {
+
+                                                                 }
+                                                    }
+                               },
+    "@recipeDetailTemp":  {
+                              "placeholders":  {
+                                                   "temp":  {
+
+                                                            }
+                                               }
+                          },
+    "@recipeDetailStep":  {
+                              "placeholders":  {
+                                                   "number":  {
+
+                                                              }
+                                               }
+                          },
+    "@guestArchiveExpires":  {
+                                 "placeholders":  {
+                                                      "label":  {
+
+                                                                }
+                                                  }
+                             },
+    "@fridgeCameraLoadFailed":  {
+                                    "placeholders":  {
+                                                         "error":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@fridgeCameraImageCount":  {
+                                    "placeholders":  {
+                                                         "count":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@shoppingArchiveAddedBack":  {
+                                      "placeholders":  {
+                                                           "name":  {
+
+                                                                    }
+                                                       }
+                                  },
+    "recipeDetailAllLabel":  "All"
+}

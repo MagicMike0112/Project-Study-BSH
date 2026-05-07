@@ -1,8 +1,10 @@
-// lib/screens/family_page.dart
 import 'package:flutter/material.dart';
+// lib/screens/family_page.dart
+import '../utils/app_haptics.dart';
 import 'package:flutter/services.dart';
 import '../repositories/inventory_repository.dart';
-import 'today_page.dart'; // 引入 FadeInSlide 和 BouncingButton
+import '../l10n/app_localizations.dart';
+import 'today_page.dart'; // NOTE: legacy comment cleaned.
 
 class FamilyPage extends StatefulWidget {
   final InventoryRepository repo;
@@ -22,7 +24,7 @@ class _FamilyPageState extends State<FamilyPage> {
     _loadMembers();
   }
 
-  // 🟢 核心修复：使用 try-catch-finally 确保 Loading 必定停止
+  // NOTE: legacy comment cleaned.
   Future<void> _loadMembers() async {
     if (!mounted) return;
     setState(() => _loading = true);
@@ -37,16 +39,19 @@ class _FamilyPageState extends State<FamilyPage> {
     } catch (e) {
       debugPrint("Error loading members: $e");
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to load members: $e'),
+            content: Text(
+              l10n?.familyLoadMembersFailed(e.toString()) ?? 'Failed to load members: $e',
+            ),
             backgroundColor: Colors.redAccent,
             behavior: SnackBarBehavior.floating,
           ),
         );
       }
     } finally {
-      // 无论成功还是失败，都必须停止转圈
+      // NOTE: legacy comment cleaned.
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -54,11 +59,11 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 
   Future<void> _generateInvite() async {
-    HapticFeedback.mediumImpact();
+    AppHaptics.success();
     setState(() => _loading = true);
     
     try {
-      // 增加超时保护，防止卡死
+      // NOTE: legacy comment cleaned.
       final code = await widget.repo.createInviteCode().timeout(
         const Duration(seconds: 5),
         onTimeout: () {
@@ -75,19 +80,26 @@ class _FamilyPageState extends State<FamilyPage> {
         if (errorMsg.contains('message:')) {
            errorMsg = errorMsg.split('message:')[1].split(',')[0];
         }
+        final l10n = AppLocalizations.of(context);
         showDialog(
           context: context,
           builder: (ctx) => AlertDialog(
-            title: const Text('Error'),
-            content: Text('Failed to generate code:\n\n$errorMsg'),
+            title: Text(l10n?.familyErrorTitle ?? 'Error'),
+            content: Text(
+              l10n?.familyGenerateCodeFailed(errorMsg) ??
+                  'Failed to generate code:\n\n$errorMsg',
+            ),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK'))
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(l10n?.familyOk ?? 'OK'),
+              )
             ],
           ),
         );
       }
     } finally {
-      // 🟢 修复：生成邀请码后也要确保 Loading 停止
+      // NOTE: legacy comment cleaned.
       if (mounted) {
         setState(() => _loading = false);
       }
@@ -95,8 +107,9 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 
   Future<void> _joinFamily() async {
-    HapticFeedback.lightImpact();
+    AppHaptics.selection();
     final controller = TextEditingController();
+    final l10n = AppLocalizations.of(context);
     
     final ok = await showDialog<bool>(
       context: context,
@@ -105,22 +118,26 @@ class _FamilyPageState extends State<FamilyPage> {
         final colors = theme.colorScheme;
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Text('Join Family', style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface)),
+          title: Text(
+            l10n?.familyJoinTitle ?? 'Join Family',
+            style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+          ),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Enter the 6-digit invitation code shared by a family member.', 
-                  style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6), height: 1.5)
+                  l10n?.familyJoinDesc ??
+                      'Enter the 6-digit invitation code shared by a family member.',
+                  style: TextStyle(fontSize: 13, color: colors.onSurface.withValues(alpha: 0.6), height: 1.5)
                 ),
                 const SizedBox(height: 24),
                 TextField(
                   controller: controller,
                   autofocus: true,
                   decoration: InputDecoration(
-                    labelText: 'Invite Code',
-                    labelStyle: TextStyle(color: colors.onSurface.withOpacity(0.7)),
+                    labelText: l10n?.familyInviteCodeLabel ?? 'Invite Code',
+                    labelStyle: TextStyle(color: colors.onSurface.withValues(alpha: 0.7)),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
                     filled: true,
                     fillColor: theme.cardColor,
@@ -138,7 +155,7 @@ class _FamilyPageState extends State<FamilyPage> {
           TextButton(
             onPressed: () => Navigator.pop(ctx), 
             style: TextButton.styleFrom(foregroundColor: Colors.grey),
-            child: const Text('Cancel')
+            child: Text(l10n?.cancel ?? 'Cancel')
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -147,7 +164,10 @@ class _FamilyPageState extends State<FamilyPage> {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-            child: const Text('Join', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: Text(
+              l10n?.familyJoinAction ?? 'Join',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
         );
@@ -162,21 +182,21 @@ class _FamilyPageState extends State<FamilyPage> {
         if (mounted) {
           if (success) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
+              SnackBar(
                 behavior: SnackBarBehavior.floating,
                 margin: EdgeInsets.all(20),
-                content: Text('Joined family successfully! 🎉'),
+                content: Text(l10n?.familyJoinedSuccess ?? 'Joined family successfully!'),
                 backgroundColor: Color(0xFF005F87),
               )
             );
-            // 重新加载成员列表
+            // NOTE: legacy comment cleaned.
             _loadMembers();
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
+              SnackBar(
                 behavior: SnackBarBehavior.floating,
                 margin: EdgeInsets.all(20),
-                content: Text('Invalid or expired code.'), 
+                content: Text(l10n?.familyInvalidOrExpiredCode ?? 'Invalid or expired code.'),
                 backgroundColor: Colors.redAccent
               )
             );
@@ -184,7 +204,9 @@ class _FamilyPageState extends State<FamilyPage> {
         }
       } catch (e) {
         if(mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n?.familyErrorMessage(e.toString()) ?? 'Error: $e')),
+          );
         }
       } finally {
         if (mounted) {
@@ -194,19 +216,23 @@ class _FamilyPageState extends State<FamilyPage> {
     }
   }
 
-  // 🟢 退出家庭的处理函数
+  // NOTE: legacy comment cleaned.
   Future<void> _handleLeaveFamily() async {
+    final l10n = AppLocalizations.of(context);
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Leave Family?'),
-        content: const Text('You will no longer see shared inventory and shopping lists. You will return to your own private home.'),
+        title: Text(l10n?.familyLeaveTitle ?? 'Leave Family?'),
+        content: Text(
+          l10n?.familyLeaveDesc ??
+              'You will no longer see shared inventory and shopping lists. You will return to your own private home.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n?.cancel ?? 'Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true), 
             style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Leave'),
+            child: Text(l10n?.familyLeaveAction ?? 'Leave'),
           ),
         ],
       ),
@@ -219,19 +245,24 @@ class _FamilyPageState extends State<FamilyPage> {
         if (mounted) {
           if (success) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Left family. Switched to private mode.'))
+              SnackBar(content: Text(l10n?.familyLeftSuccess ?? 'Left family. Switched to private mode.'))
             );
-            _loadMembers(); // 重新加载（会自动变为 My Home）
+            _loadMembers(); // NOTE: legacy comment cleaned.
           } else {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to leave family.'), backgroundColor: Colors.red)
+              SnackBar(
+                content: Text(l10n?.familyLeaveFailed ?? 'Failed to leave family.'),
+                backgroundColor: Colors.red,
+              )
             );
           }
         }
       } catch (e) {
         debugPrint('Leave family error: $e');
         if(mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n?.familyErrorMessage(e.toString()) ?? 'Error: $e')),
+          );
         }
       } finally {
         if (mounted) setState(() => _loading = false);
@@ -240,6 +271,7 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 
   void _showInviteDialog(String code) {
+    final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).cardColor,
@@ -264,20 +296,22 @@ class _FamilyPageState extends State<FamilyPage> {
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: isDark ? colors.onSurface.withOpacity(0.08) : const Color(0xFFE3F2FD),
+                      color: isDark ? colors.onSurface.withValues(alpha: 0.08) : const Color(0xFFE3F2FD),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.mark_email_unread_rounded, size: 36, color: Color(0xFF005F87)),
                   ),
                   const SizedBox(height: 20),
                   Text(
-                    'Invite Member',
+                    l10n?.familyInviteMemberTitle ?? 'Invite Member',
                     style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: colors.onSurface),
                   ),
                   const SizedBox(height: 8),
-                  Text('Share this code with your family member.\nThey can use it to join your home.', 
+                  Text(
+                    l10n?.familyInviteMemberDesc ??
+                        'Share this code with your family member.\nThey can use it to join your home.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: colors.onSurface.withOpacity(0.6), height: 1.5, fontSize: 14)
+                    style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6), height: 1.5, fontSize: 14)
                   ),
                   const SizedBox(height: 32),
                   
@@ -299,10 +333,13 @@ class _FamilyPageState extends State<FamilyPage> {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                           decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
+                            color: Colors.orange.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(20),
                           ),
-                          child: const Text('Expires in 2 days', style: TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w700)),
+                          child: Text(
+                            l10n?.familyInviteExpiresIn2Days ?? 'Expires in 2 days',
+                            style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.w700),
+                          ),
                         ),
                       ],
                     ),
@@ -320,7 +357,10 @@ class _FamilyPageState extends State<FamilyPage> {
                         elevation: 0,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                       ),
-                      child: const Text('Done', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      child: Text(
+                        l10n?.familyDone ?? 'Done',
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
                     ),
                   ),
                 ],
@@ -332,16 +372,71 @@ class _FamilyPageState extends State<FamilyPage> {
     );
   }
 
+  Future<void> _editMyName() async {
+    final controller = TextEditingController(text: widget.repo.currentUserName);
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(l10n?.familyUpdateNameTitle ?? 'Update your name'),
+          content: TextField(
+            controller: controller,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: l10n?.familyDisplayNameHint ?? 'Enter your display name',
+              filled: true,
+              fillColor: theme.cardColor,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+            ),
+            onSubmitted: (_) => Navigator.pop(ctx, true),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n?.cancel ?? 'Cancel')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text(l10n?.commonSave ?? 'Save')),
+          ],
+        );
+      },
+    );
+    if (ok != true) return;
+    final name = controller.text.trim();
+    if (name.isEmpty) return;
+    setState(() => _loading = true);
+    final success = await widget.repo.updateMyDisplayName(name);
+    if (mounted) {
+      setState(() => _loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? (l10n?.familyNameUpdated ?? 'Name updated.')
+                : (l10n?.familyNameUpdateFailed ?? 'Failed to update name.'),
+          ),
+          backgroundColor: success ? const Color(0xFF005F87) : Colors.redAccent,
+        ),
+      );
+      if (success) {
+        _loadMembers();
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
+    final cardBg = isDark ? colors.surfaceVariant.withValues(alpha: 0.35) : theme.cardColor;
     return Scaffold(
         backgroundColor: theme.scaffoldBackgroundColor,
         appBar: AppBar(
-          title: Text('My Family', style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface)),
+          title: Text(
+            l10n?.familyMyFamilyTitle ?? 'My Family',
+            style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface),
+          ),
           backgroundColor: theme.scaffoldBackgroundColor,
           centerTitle: false,
           elevation: 0,
@@ -365,21 +460,27 @@ class _FamilyPageState extends State<FamilyPage> {
                       index: 1,
                       child: _buildHeaderCard(),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 16),
 
-                    // 🟢 2. Inventory Mode Selection (新增)
                     FadeInSlide(
                       index: 2,
+                      child: _buildNameEntryCard(),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // NOTE: legacy comment cleaned.
+                    FadeInSlide(
+                      index: 3,
                       child: _buildModeSelection(),
                     ),
                     const SizedBox(height: 32),
 
                     FadeInSlide(
-                      index: 3,
+                      index: 4,
                       child: Row(
                         children: [
                           Text(
-                            'Members',
+                            l10n?.familyMembersTitle ?? 'Members',
                             style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w800,
@@ -390,7 +491,7 @@ class _FamilyPageState extends State<FamilyPage> {
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF005F87).withOpacity(0.1),
+                              color: const Color(0xFF005F87).withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
@@ -406,23 +507,23 @@ class _FamilyPageState extends State<FamilyPage> {
                     if (_members.isEmpty)
                       Padding(
                         padding: const EdgeInsets.all(20.0),
-                        child: Center(
-                          child: Text(
-                            "No members found.",
-                            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
+                          child: Center(
+                            child: Text(
+                              l10n?.familyNoMembersFound ?? 'No members found.',
+                              style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6)),
+                            ),
                           ),
-                        ),
                       )
                     else
                       ..._members.asMap().entries.map((e) => FadeInSlide(
-                        index: 4 + e.key,
+                        index: 5 + e.key,
                         child: _MemberTile(member: e.value),
                       )),
                     
                     const SizedBox(height: 48),
 
                     FadeInSlide(
-                      index: 4 + (_members.isEmpty ? 1 : _members.length),
+                      index: 5 + (_members.isEmpty ? 1 : _members.length),
                       child: Column(
                         children: [
                           BouncingButton(
@@ -437,15 +538,26 @@ class _FamilyPageState extends State<FamilyPage> {
                                 ),
                                 borderRadius: BorderRadius.circular(20),
                                 boxShadow: [
-                                  BoxShadow(color: const Color(0xFF005F87).withOpacity(0.25), blurRadius: 16, offset: const Offset(0, 8))
+                                  BoxShadow(color: const Color(0xFF005F87).withValues(alpha: 0.25), blurRadius: 16, offset: const Offset(0, 8))
                                 ],
                               ),
-                              child: const Row(
+                              child: Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
-                                  Icon(Icons.person_add_rounded, color: Colors.white, size: 22),
-                                  SizedBox(width: 12),
-                                  Text('Invite New Member', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                                  const Icon(
+                                    Icons.person_add_rounded,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Text(
+                                    l10n?.familyInviteNewMember ?? 'Invite New Member',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 16,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -460,7 +572,7 @@ class _FamilyPageState extends State<FamilyPage> {
                                 borderRadius: BorderRadius.circular(20),
                                 border: Border.all(color: theme.dividerColor, width: 1.5),
                                 boxShadow: [
-                                  BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))
+                                  BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 10, offset: const Offset(0, 4))
                                 ],
                               ),
                               child: Row(
@@ -469,7 +581,7 @@ class _FamilyPageState extends State<FamilyPage> {
                                   const Icon(Icons.group_add_outlined, color: Color(0xFF005F87), size: 22),
                                   const SizedBox(width: 12),
                                   Text(
-                                    'Join Another Family',
+                                    l10n?.familyJoinAnotherFamily ?? 'Join Another Family',
                                     style: TextStyle(
                                       color: colors.onSurface,
                                       fontWeight: FontWeight.w700,
@@ -481,12 +593,15 @@ class _FamilyPageState extends State<FamilyPage> {
                             ),
                           ),
                           
-                          // 🟢 底部退出按钮
+                          // NOTE: legacy comment cleaned.
                           const SizedBox(height: 40),
                           TextButton.icon(
                             onPressed: _handleLeaveFamily,
                             icon: const Icon(Icons.exit_to_app_rounded, color: Colors.redAccent, size: 20),
-                            label: const Text('Leave This Family', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                            label: Text(
+                              l10n?.familyLeaveThisFamily ?? 'Leave This Family',
+                              style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600),
+                            ),
                             style: TextButton.styleFrom(
                               padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
                             ),
@@ -503,10 +618,11 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 
   Widget _buildHeaderCard() {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
+    final cardBg = isDark ? colors.surfaceVariant.withValues(alpha: 0.35) : theme.cardColor;
     return Container(
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
@@ -514,7 +630,7 @@ class _FamilyPageState extends State<FamilyPage> {
         borderRadius: BorderRadius.circular(32),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF005F87).withOpacity(0.08),
+            color: const Color(0xFF005F87).withValues(alpha: 0.08),
             blurRadius: 24,
             offset: const Offset(0, 12),
           ),
@@ -525,7 +641,7 @@ class _FamilyPageState extends State<FamilyPage> {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: isDark ? colors.onSurface.withOpacity(0.08) : const Color(0xFFF0F7FF),
+              color: isDark ? colors.onSurface.withValues(alpha: 0.08) : const Color(0xFFF0F7FF),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.home_rounded, color: Color(0xFF005F87), size: 36),
@@ -537,8 +653,58 @@ class _FamilyPageState extends State<FamilyPage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Inventory & Shopping List Synced',
-            style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 13, fontWeight: FontWeight.w500),
+            l10n?.familyInventoryShoppingSynced ?? 'Inventory & Shopping List Synced',
+            style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6), fontSize: 13, fontWeight: FontWeight.w500),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNameEntryCard() {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+    final cardBg = isDark ? colors.surfaceVariant.withValues(alpha: 0.35) : theme.cardColor;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: theme.dividerColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: const Color(0xFF005F87).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(Icons.person_outline, color: Color(0xFF005F87)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n?.familyYourDisplayName ?? 'Your display name',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.repo.currentUserName,
+                  style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6), fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _editMyName,
+            child: Text(l10n?.familyEdit ?? 'Edit'),
           ),
         ],
       ),
@@ -553,23 +719,27 @@ class _FamilyPageState extends State<FamilyPage> {
   }
 
   Widget _buildMigrationBanner(InventoryRepository repo) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final isFailed = repo.migrationPhase == MigrationPhase.failed;
     final bg = isFailed
         ? (isDark ? const Color(0xFF2A1B1B) : const Color(0xFFFFF3F3))
-        : (isDark ? colors.surfaceVariant.withOpacity(0.35) : const Color(0xFFF2F6FB));
+        : (isDark ? colors.surfaceVariant.withValues(alpha: 0.35) : const Color(0xFFF2F6FB));
     final borderColor = isFailed ? Colors.redAccent : const Color(0xFF005F87);
-    final title = isFailed ? 'Migration failed' : 'Migrating your data';
-    final subtitle = repo.migrationMessage ?? 'Please keep the app open.';
+    final title = isFailed
+        ? (l10n?.familyMigrationFailed ?? 'Migration failed')
+        : (l10n?.familyMigratingData ?? 'Migrating your data');
+    final subtitle = repo.migrationMessage ??
+        (l10n?.familyKeepAppOpen ?? 'Please keep the app open.');
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: borderColor.withOpacity(0.5)),
+        border: Border.all(color: borderColor.withValues(alpha: 0.5)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -578,7 +748,7 @@ class _FamilyPageState extends State<FamilyPage> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: borderColor.withOpacity(0.1),
+              color: borderColor.withValues(alpha: 0.1),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -605,7 +775,7 @@ class _FamilyPageState extends State<FamilyPage> {
                   subtitle,
                   style: TextStyle(
                     fontSize: 12,
-                    color: colors.onSurface.withOpacity(0.6),
+                    color: colors.onSurface.withValues(alpha: 0.6),
                   ),
                 ),
                 if (!isFailed) ...[
@@ -613,14 +783,15 @@ class _FamilyPageState extends State<FamilyPage> {
                   LinearProgressIndicator(
                     minHeight: 6,
                     color: const Color(0xFF005F87),
-                    backgroundColor: colors.onSurface.withOpacity(0.08),
+                    backgroundColor: colors.onSurface.withValues(alpha: 0.08),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    'Attempt ${repo.migrationAttempt} / 3',
+                    l10n?.familyMigrationAttempt(repo.migrationAttempt.toString(), '3') ??
+                        'Attempt ${repo.migrationAttempt} / 3',
                     style: TextStyle(
                       fontSize: 11,
-                      color: colors.onSurface.withOpacity(0.5),
+                      color: colors.onSurface.withValues(alpha: 0.5),
                     ),
                   ),
                 ],
@@ -632,7 +803,7 @@ class _FamilyPageState extends State<FamilyPage> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 11,
-                      color: colors.onSurface.withOpacity(0.6),
+                      color: colors.onSurface.withValues(alpha: 0.6),
                     ),
                   ),
                 ],
@@ -644,20 +815,21 @@ class _FamilyPageState extends State<FamilyPage> {
     );
   }
 
-  // 🟢 新增：模式选择组件
+  // NOTE: legacy comment cleaned.
   Widget _buildModeSelection() {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
+    final cardBg = isDark ? colors.surfaceVariant.withValues(alpha: 0.35) : theme.cardColor;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
-            'Inventory Mode',
-            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colors.onSurface.withOpacity(0.6)),
+            l10n?.familyInventoryMode ?? 'Inventory Mode',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: colors.onSurface.withValues(alpha: 0.6)),
           ),
         ),
         Container(
@@ -666,34 +838,46 @@ class _FamilyPageState extends State<FamilyPage> {
             color: cardBg,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
+              BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4)),
             ],
           ),
           child: Column(
             children: [
               RadioListTile<bool>(
-                title: Text('Shared Fridge', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface)),
-                subtitle: Text('All members manage inventory together.', style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6))),
+                title: Text(
+                  l10n?.familySharedFridgeTitle ?? 'Shared Fridge',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface),
+                ),
+                subtitle: Text(
+                  l10n?.familySharedFridgeDesc ?? 'All members manage inventory together.',
+                  style: TextStyle(fontSize: 13, color: colors.onSurface.withValues(alpha: 0.6)),
+                ),
                 value: true,
                 groupValue: widget.repo.isSharedUsage,
                 activeColor: const Color(0xFF0E7AA8),
                 secondary: Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.blue.withOpacity(isDark ? 0.2 : 0.1), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Colors.blue.withValues(alpha: isDark ? 0.2 : 0.1), shape: BoxShape.circle),
                   child: const Icon(Icons.group_work_rounded, color: Colors.blue),
                 ),
                 onChanged: (val) => widget.repo.setSharedUsageMode(val!),
               ),
               const Divider(height: 1, indent: 20, endIndent: 20),
               RadioListTile<bool>(
-                title: Text('Separate Fridges', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface)),
-                subtitle: Text('Items are strictly assigned to owners.', style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6))),
+                title: Text(
+                  l10n?.familySeparateFridgesTitle ?? 'Separate Fridges',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: colors.onSurface),
+                ),
+                subtitle: Text(
+                  l10n?.familySeparateFridgesDesc ?? 'Items are strictly assigned to owners.',
+                  style: TextStyle(fontSize: 13, color: colors.onSurface.withValues(alpha: 0.6)),
+                ),
                 value: false,
                 groupValue: widget.repo.isSharedUsage,
                 activeColor: const Color(0xFF0E7AA8),
                 secondary: Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: Colors.orange.withOpacity(isDark ? 0.2 : 0.1), shape: BoxShape.circle),
+                  decoration: BoxDecoration(color: Colors.orange.withValues(alpha: isDark ? 0.2 : 0.1), shape: BoxShape.circle),
                   child: const Icon(Icons.person_outline_rounded, color: Colors.orange),
                 ),
                 onChanged: (val) => widget.repo.setSharedUsageMode(val!),
@@ -723,11 +907,12 @@ class _MemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final cardBg = isDark ? colors.surfaceVariant.withOpacity(0.35) : theme.cardColor;
-    final name = member['name'] ?? 'Unknown';
+    final cardBg = isDark ? colors.surfaceVariant.withValues(alpha: 0.35) : theme.cardColor;
+    final name = member['name'] ?? (l10n?.familyUnknownMember ?? 'Unknown');
     final role = (member['role'] ?? 'member').toString().toUpperCase();
     final isOwner = role == 'OWNER';
     final avatarColor = _getAvatarColor(name);
@@ -741,7 +926,7 @@ class _MemberTile extends StatelessWidget {
           color: cardBg,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4)),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4)),
           ],
         ),
         child: Row(
@@ -750,12 +935,12 @@ class _MemberTile extends StatelessWidget {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: avatarColor.withOpacity(0.1),
+                color: avatarColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
               child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                name.isNotEmpty ? name[0].toUpperCase() : (l10n?.familyUnknownInitial ?? 'U'),
                 style: TextStyle(fontWeight: FontWeight.w800, color: avatarColor, fontSize: 18),
               ),
             ),
@@ -776,7 +961,7 @@ class _MemberTile extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isOwner ? Colors.orange.withOpacity(0.1) : Colors.grey.withOpacity(0.1),
+                      color: isOwner ? Colors.orange.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -795,7 +980,7 @@ class _MemberTile extends StatelessWidget {
             if (isOwner)
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: Colors.orange.withOpacity(0.1), shape: BoxShape.circle),
+                decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), shape: BoxShape.circle),
                 child: Icon(Icons.star_rounded, color: Colors.orange[400], size: 18),
               ),
           ],
@@ -804,3 +989,9 @@ class _MemberTile extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+

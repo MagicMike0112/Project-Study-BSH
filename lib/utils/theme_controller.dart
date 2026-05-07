@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _kThemeModeKey = 'theme_mode_v1';
@@ -41,3 +41,4 @@ class ThemeController extends ChangeNotifier {
     }
   }
 }
+

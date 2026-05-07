@@ -1,4 +1,4 @@
-import 'dart:ui'; // 必须引入，用于 BackdropFilter (如果需要背景模糊)
+import 'dart:ui'; // NOTE: legacy comment cleaned.
 import 'package:flutter/material.dart';
 
 class InventoryHeroCard extends StatelessWidget {
@@ -17,7 +17,7 @@ class InventoryHeroCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // BSH 风格渐变
+    // NOTE: legacy comment cleaned.
     final gradientColors = [
       const Color(0xFF002E4D), // Deep Navy
       const Color(0xFF005F7F), // Mid Petrol
@@ -26,16 +26,16 @@ class InventoryHeroCard extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(28),
-        // 1. 背景渐变
+        // NOTE: legacy comment cleaned.
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: gradientColors,
         ),
-        // 2. 更有深度的阴影
+        // NOTE: legacy comment cleaned.
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF002E4D).withOpacity(0.4),
+            color: const Color(0xFF002E4D).withValues(alpha: 0.4),
             blurRadius: 24,
             offset: const Offset(0, 12),
             spreadRadius: -4,
@@ -44,27 +44,27 @@ class InventoryHeroCard extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // 装饰性光斑 (更柔和)
+          // NOTE: legacy comment cleaned.
           Positioned(
               right: -40, top: -40, child: _GlassCircle(size: 180, opacity: 0.08)),
           Positioned(
               left: -30, bottom: -60, child: _GlassCircle(size: 200, opacity: 0.06)),
 
-          // 3. 玻璃质感边框 (Overlay)
+          // NOTE: legacy comment cleaned.
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(28),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.15),
+                  color: Colors.white.withValues(alpha: 0.15),
                   width: 1.5,
                 ),
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white.withOpacity(0.15), // 左上角高光
-                    Colors.white.withOpacity(0.0),  // 右下角透明
+                    Colors.white.withValues(alpha: 0.15), // NOTE: legacy comment cleaned.
+                    Colors.white.withValues(alpha: 0.0),  // NOTE: legacy comment cleaned.
                   ],
                   stops: const [0.0, 0.4],
                 ),
@@ -76,7 +76,7 @@ class InventoryHeroCard extends StatelessWidget {
             padding: const EdgeInsets.all(28),
             child: Column(
               children: [
-                // Total Count 区域
+                // NOTE: legacy comment cleaned.
                 Column(
                   children: [
                     Text(
@@ -84,7 +84,7 @@ class InventoryHeroCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: const Color(0xFF81D4FA).withOpacity(0.9), // 浅蓝灰色文字
+                        color: const Color(0xFF81D4FA).withValues(alpha: 0.9), // NOTE: legacy comment cleaned.
                         letterSpacing: 1.2,
                         //uppercase: true,
                       ),
@@ -104,13 +104,13 @@ class InventoryHeroCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 32),
                 
-                // 统计数据栏
+                // NOTE: legacy comment cleaned.
                 Container(
                   padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.15), // 内部加深，增加对比度
+                    color: Colors.black.withValues(alpha: 0.15), // NOTE: legacy comment cleaned.
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withOpacity(0.05)),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -149,7 +149,7 @@ class _StatColumn extends StatelessWidget {
                 color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
         Text(label,
             style: TextStyle(
-                color: Colors.white.withOpacity(0.6),
+                color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 11,
                 fontWeight: FontWeight.w500)),
       ],
@@ -163,7 +163,7 @@ class _VerticalDivider extends StatelessWidget {
     return Container(
       width: 1,
       height: 24,
-      color: Colors.white.withOpacity(0.1),
+      color: Colors.white.withValues(alpha: 0.1),
     );
   }
 }
@@ -180,14 +180,16 @@ class _GlassCircle extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        // 使用径向渐变让光圈更自然
+        // NOTE: legacy comment cleaned.
         gradient: RadialGradient(
           colors: [
-            Colors.white.withOpacity(opacity * 2),
-            Colors.white.withOpacity(0),
+            Colors.white.withValues(alpha: opacity * 2),
+            Colors.white.withValues(alpha: 0),
           ],
         ),
       ),
     );
   }
 }
+
+

@@ -1,6 +1,6 @@
-// lib/models/impact_event.dart
+import '../utils/app_time.dart';
 
-// 🟢 修改点：将 trashed 改为 trash，以便与 Repository 代码匹配
+// NOTE: legacy comment cleaned.
 enum ImpactType { 
   eaten, 
   fedToPet, 
@@ -38,8 +38,8 @@ class ImpactEvent {
       'id': id,
       'family_id': familyId,
       'user_id': userId,
-      'created_at': date.toIso8601String(),
-      'type': type.name, // 存入数据库时会是 'trash'
+      'created_at': AppTime.toUtcIso(date),
+      'type': type.name, // NOTE: legacy comment cleaned.
       'quantity': quantity,
       'unit': unit,
       'money_saved': moneySaved,
@@ -52,13 +52,16 @@ class ImpactEvent {
   factory ImpactEvent.fromJson(Map<String, dynamic> json) {
     return ImpactEvent(
       id: json['id'].toString(),
-      date: DateTime.tryParse(json['created_at'].toString()) ?? DateTime.now(),
-      // 🟢 健壮性处理：这里做一点兼容，防止数据库里存的是旧的字符串
+      date: AppTime.parseServerTimestamp(json['created_at']) ?? DateTime.now(),
+      // NOTE: legacy comment cleaned.
       type: ImpactType.values.firstWhere(
         (e) {
             final dbType = json['type'] as String;
-            // 兼容 'trash' 和 'trashed'，如果数据库里已经存了 'trashed' 也能读出来
+            // NOTE: legacy comment cleaned.
             if (e.name == 'trash' && (dbType == 'trash' || dbType == 'trashed')) {
+                return true;
+            }
+            if (e.name == 'fedToPet' && (dbType == 'fedToPet' || dbType == 'fed_to_pet' || dbType == 'pet')) {
                 return true;
             }
             return e.name == dbType;
@@ -75,3 +78,6 @@ class ImpactEvent {
     );
   }
 }
+
+
+

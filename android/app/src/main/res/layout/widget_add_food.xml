@@ -3,40 +3,57 @@
     android:id="@+id/widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:clickable="true"
+    android:focusable="true"
     android:background="@drawable/widget_add_food_bg"
     android:gravity="center_vertical"
     android:orientation="vertical"
-    android:padding="10dp">
-
-    <ImageView
-        android:id="@+id/widget_icon"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:contentDescription="Add Food"
-        android:src="@mipmap/ic_launcher" />
+    android:padding="12dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="8dp"
-        android:orientation="vertical">
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="Scan Food"
-            android:textColor="#111418"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/widget_subtitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Scan with camera"
-            android:textColor="#616161"
-            android:textSize="11sp" />
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Scan Food"
+                android:textColor="#111418"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_subtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Open camera quickly"
+                android:textColor="#5F6368"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/widget_icon_circle"
+            android:padding="10dp">
+
+            <ImageView
+                android:id="@+id/widget_icon"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Camera"
+                android:src="@drawable/widget_ic_camera" />
+        </FrameLayout>
     </LinearLayout>
 
 </LinearLayout>

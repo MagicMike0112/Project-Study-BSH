@@ -1,16 +1,14 @@
-// lib/models/food_item.dart
+﻿import '../utils/app_time.dart';
 
-// 1. 保留这三个核心 Enum，因为它们只属于 FoodItem
 enum StorageLocation { fridge, freezer, pantry }
 enum FoodStatus { good, consumed, discarded }
 
-// ⚠️ 注意：ImpactType 如果在 Repository 里也定义了，这里就不要定义。
-// 如果您的 Repository 报错说找不到 ImpactType，请把下面这行取消注释：
-// enum ImpactType { eaten, fedToPet, trashed } 
-
 class FoodItem {
+  static const Object _sentinel = Object();
+
   final String id;
-  final String name;
+  final String name; // 产品具体名称，如 "Lays Classic"
+  final String? genericName; // 新增：通用名称，如 "Potato Chips"
   final StorageLocation location;
   final double quantity;
   final String unit;
@@ -20,20 +18,20 @@ class FoodItem {
   final DateTime? openDate;
   final DateTime? bestBeforeDate;
   final DateTime? predictedExpiry;
+  final DateTime? updatedAt;
 
   final FoodStatus status;
-  final String? category;
+  final String? category; // 大分类，如 "Snacks"
   final String? source;
   
-  // 🟢 谁买的/谁添加的
   final String? ownerName;
   final String? note;
-  // 🟢 私有物品标记
   final bool isPrivate; 
 
   FoodItem({
     required this.id,
     required this.name,
+    this.genericName, // Initialize
     required this.location,
     required this.quantity,
     required this.unit,
@@ -42,6 +40,7 @@ class FoodItem {
     this.openDate,
     this.bestBeforeDate,
     this.predictedExpiry,
+    this.updatedAt,
     this.status = FoodStatus.good,
     this.category,
     this.source,
@@ -51,6 +50,13 @@ class FoodItem {
   });
 
   // ================== Helper Getters ==================
+
+  // 获取用于显示的名字：如果有具体通用名，可以组合显示，或者只显示 name
+  // 这里保留原逻辑，只显示 name，您可以在 UI 层决定怎么展示
+  String get displayName => name; 
+
+  // 获取用于 AI 预测的名字：优先使用通用名，因为 AI 对 "Potato Chips" 的过期理解比对 "Lays" 更准
+  String get nameForAi => genericName != null && genericName!.isNotEmpty ? genericName! : name;
 
   int get daysToExpiry {
     if (predictedExpiry == null) return 999;
@@ -74,37 +80,61 @@ class FoodItem {
   FoodItem copyWith({
     String? id,
     String? name,
+    Object? genericName = _sentinel, // Add to copyWith
     StorageLocation? location,
     double? quantity,
     String? unit,
-    double? minQuantity,
+    Object? minQuantity = _sentinel,
     DateTime? purchasedDate,
-    DateTime? openDate,
-    DateTime? bestBeforeDate,
-    DateTime? predictedExpiry,
+    Object? openDate = _sentinel,
+    Object? bestBeforeDate = _sentinel,
+    Object? predictedExpiry = _sentinel,
+    Object? updatedAt = _sentinel,
     FoodStatus? status,
-    String? category,
-    String? source,
-    String? ownerName,
-    String? note,
+    Object? category = _sentinel,
+    Object? source = _sentinel,
+    Object? ownerName = _sentinel,
+    Object? note = _sentinel,
     bool? isPrivate,
   }) {
     return FoodItem(
       id: id ?? this.id,
       name: name ?? this.name,
+      genericName: identical(genericName, _sentinel)
+          ? this.genericName
+          : genericName as String?,
       location: location ?? this.location,
       quantity: quantity ?? this.quantity,
       unit: unit ?? this.unit,
-      minQuantity: minQuantity ?? this.minQuantity,
+      minQuantity: identical(minQuantity, _sentinel)
+          ? this.minQuantity
+          : minQuantity as double?,
       purchasedDate: purchasedDate ?? this.purchasedDate,
-      openDate: openDate ?? this.openDate,
-      bestBeforeDate: bestBeforeDate ?? this.bestBeforeDate,
-      predictedExpiry: predictedExpiry ?? this.predictedExpiry,
+      openDate: identical(openDate, _sentinel)
+          ? this.openDate
+          : openDate as DateTime?,
+      bestBeforeDate: identical(bestBeforeDate, _sentinel)
+          ? this.bestBeforeDate
+          : bestBeforeDate as DateTime?,
+      predictedExpiry: identical(predictedExpiry, _sentinel)
+          ? this.predictedExpiry
+          : predictedExpiry as DateTime?,
+      updatedAt: identical(updatedAt, _sentinel)
+          ? this.updatedAt
+          : updatedAt as DateTime?,
       status: status ?? this.status,
-      category: category ?? this.category,
-      source: source ?? this.source,
-      ownerName: ownerName ?? this.ownerName,
-      note: note ?? this.note,
+      category: identical(category, _sentinel)
+          ? this.category
+          : category as String?,
+      source: identical(source, _sentinel)
+          ? this.source
+          : source as String?,
+      ownerName: identical(ownerName, _sentinel)
+          ? this.ownerName
+          : ownerName as String?,
+      note: identical(note, _sentinel)
+          ? this.note
+          : note as String?,
       isPrivate: isPrivate ?? this.isPrivate,
     );
   }
@@ -115,6 +145,7 @@ class FoodItem {
     return {
       'id': id,
       'name': name,
+      'generic_name': genericName, // Serialize
       'location': location.name,
       'quantity': quantity,
       'unit': unit,
@@ -123,6 +154,7 @@ class FoodItem {
       'open_date': openDate?.toIso8601String(),
       'best_before_date': bestBeforeDate?.toIso8601String(),
       'predicted_expiry': predictedExpiry?.toIso8601String(),
+      'updated_at': updatedAt == null ? null : AppTime.toUtcIso(updatedAt!),
       'status': status.name,
       'category': category,
       'source': source,
@@ -165,7 +197,7 @@ class FoodItem {
 
     DateTime? parseDate(dynamic value) {
       if (value == null) return null;
-      if (value is String) return DateTime.tryParse(value);
+      if (value is String) return AppTime.parseServerTimestamp(value);
       return null;
     }
 
@@ -190,6 +222,7 @@ class FoodItem {
     return FoodItem(
       id: json['id'].toString(),
       name: json['name'] ?? 'Unknown',
+      genericName: json['generic_name'], // Deserialize
       location: parseLocation(json['location']),
       quantity: parseDouble(json['quantity'], defaultValue: 1.0),
       unit: json['unit'] ?? 'pcs',
@@ -198,6 +231,7 @@ class FoodItem {
       openDate: parseDate(json['open_date']),
       bestBeforeDate: parseDate(json['best_before_date']),
       predictedExpiry: parseDate(json['predicted_expiry']),
+      updatedAt: parseDate(json['updated_at']), 
       status: parseStatus(json['status']),
       category: json['category'],
       source: json['source'],
@@ -207,3 +241,6 @@ class FoodItem {
     );
   }
 }
+
+
+

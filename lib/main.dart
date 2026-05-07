@@ -1,24 +1,24 @@
-// lib/main.dart
-import 'dart:convert';
-
+﻿// lib/main.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'l10n/app_localizations.dart';
 
 import 'repositories/inventory_repository.dart';
 import 'screens/add_food_page.dart';
 import 'screens/auth_root.dart';
-import 'screens/archive_recipe_detail_page.dart';
-import 'services/archive_service.dart';
+import 'screens/guest_shopping_list_page.dart';
 import 'services/notification_service.dart';
+import 'utils/app_frame_profiler.dart';
+import 'utils/locale_controller.dart';
+import 'utils/supabase_config.dart';
 import 'utils/theme_controller.dart';
 
 
-// 🎨 标准配色
+// NOTE: legacy comment cleaned.
 class BshColors {
   static const primary = Color(0xFF004A77);
   static const secondary = Color(0xFF50738A);
@@ -28,30 +28,14 @@ class BshColors {
 }
 
 const double kDefaultRadius = 16.0;
+const double kMenuRadius = 24.0;
+const double kMenuElevation = 12.0;
 
-const MethodChannel _widgetChannel = MethodChannel('widget_channel');
 final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
-
-Future<void> _pushInventorySnapshot(InventoryRepository repo) async {
-  final prefs = await SharedPreferences.getInstance();
-  final studentMode = prefs.getBool('student_mode') ?? false;
-  final items = repo.getActiveItems();
-  final payload = {
-    'studentMode': studentMode,
-    'items': items
-        .map((e) => {
-              'name': e.name,
-              'category': e.category,
-              'daysToExpiry': e.daysToExpiry,
-            })
-        .toList(),
-  };
-  await _widgetChannel.invokeMethod('updateInventorySnapshot', jsonEncode(payload));
-  await _widgetChannel.invokeMethod('refreshRecipeWidget');
-}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppFrameProfiler.maybeInstall();
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -65,8 +49,8 @@ Future<void> main() async {
   ]);
 
   await Supabase.initialize(
-    url: 'https://avsyxlgfqnrknvvbjxul.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2c3l4bGdmcW5ya252dmJqeHVsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzNTk2MjcsImV4cCI6MjA4MDkzNTYyN30.M7FfDZzjYvCt0hSz0W508oSGmzw7tcZ9E5vGyQlnCKY',
+    url: kSupabaseUrl,
+    anonKey: kSupabaseAnonKey,
   );
 
   if (!kIsWeb) {
@@ -79,27 +63,26 @@ Future<void> main() async {
 
   final inventoryRepo = await InventoryRepository.create();
   final themeController = ThemeController();
+  final localeController = LocaleController();
   await themeController.load();
+  await localeController.load();
 
-  _widgetChannel.setMethodCallHandler((call) async {
-    if (call.method != 'openRoute') return;
-    final route = call.arguments as String?;
-    if (route == null || route.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _navigatorKey.currentState?.pushNamed(route);
-    });
-  });
-
-  inventoryRepo.addListener(() {
-    _pushInventorySnapshot(inventoryRepo);
-  });
-  _pushInventorySnapshot(inventoryRepo);
+  if (!kIsWeb) {
+    try {
+      await NotificationService().syncSchedulesFromPreferences(
+        activeItems: inventoryRepo.getActiveItems(),
+      );
+    } catch (e) {
+      debugPrint('Notification schedule sync failed: $e');
+    }
+  }
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: inventoryRepo),
         ChangeNotifierProvider.value(value: themeController),
+        ChangeNotifierProvider.value(value: localeController),
       ],
       child: const SmartFoodApp(),
     ),
@@ -118,20 +101,43 @@ class SmartFoodApp extends StatelessWidget {
         },
       );
     }
-    if (settings.name == '/widget-recipe') {
-      return MaterialPageRoute(builder: (_) => const _WidgetRecipeRoute());
+    if (settings.name?.startsWith('/guest-list') == true) {
+      final token = GuestShoppingListPage.resolveToken(settings);
+      if (token == null || token.isEmpty) return null;
+      return MaterialPageRoute(
+        builder: (_) => GuestShoppingListPage(shareToken: token),
+      );
+    }
+    if (settings.name?.startsWith('/share/') == true) {
+      final token = GuestShoppingListPage.resolveToken(settings);
+      if (token == null || token.isEmpty) return null;
+      return MaterialPageRoute(
+        builder: (_) => GuestShoppingListPage(
+          shareToken: token,
+          lookupById: true,
+        ),
+      );
     }
     return null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<ThemeController>(
-      builder: (context, themeController, _) {
+    return Consumer2<ThemeController, LocaleController>(
+      builder: (context, themeController, localeController, _) {
         final lightBase = ThemeData.light();
         final darkBase = ThemeData.dark();
         final lightTextTheme = GoogleFonts.dmSansTextTheme(lightBase.textTheme);
         final darkTextTheme = GoogleFonts.dmSansTextTheme(darkBase.textTheme);
+        const pageTransitions = PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.windows: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.linux: CupertinoPageTransitionsBuilder(),
+          },
+        );
 
         final lightTheme = ThemeData(
           brightness: Brightness.light,
@@ -168,9 +174,65 @@ class SmartFoodApp extends StatelessWidget {
             fillColor: Colors.white,
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.grey.withOpacity(0.1), width: 1)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.grey.withValues(alpha: 0.1), width: 1)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: const BorderSide(color: BshColors.primary, width: 2)),
           ),
+          chipTheme: lightBase.chipTheme.copyWith(
+            shape: const StadiumBorder(),
+            side: BorderSide(color: Colors.grey.withValues(alpha: 0.2)),
+            backgroundColor: Colors.white,
+            selectedColor: BshColors.primary,
+            labelStyle: TextStyle(color: BshColors.text.withValues(alpha: 0.75), fontWeight: FontWeight.w600),
+            secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          ),
+          sliderTheme: lightBase.sliderTheme.copyWith(
+            trackHeight: 5,
+            activeTrackColor: BshColors.primary.withValues(alpha: 0.9),
+            inactiveTrackColor: BshColors.primary.withValues(alpha: 0.18),
+            thumbColor: BshColors.primary,
+            overlayColor: BshColors.primary.withValues(alpha: 0.14),
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+          ),
+          switchTheme: SwitchThemeData(
+            thumbColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) return Colors.white;
+              return Colors.white;
+            }),
+            trackColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) return BshColors.primary.withValues(alpha: 0.85);
+              return Colors.grey.withValues(alpha: 0.35);
+            }),
+            overlayColor: WidgetStateProperty.all(BshColors.primary.withValues(alpha: 0.12)),
+            splashRadius: 18,
+          ),
+          popupMenuTheme: PopupMenuThemeData(
+            color: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            elevation: kMenuElevation,
+            shadowColor: Colors.black.withValues(alpha: 0.16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(kMenuRadius),
+            ),
+            menuPadding: const EdgeInsets.symmetric(vertical: 6),
+          ),
+          dropdownMenuTheme: DropdownMenuThemeData(
+            menuStyle: MenuStyle(
+              elevation: const WidgetStatePropertyAll(kMenuElevation),
+              shadowColor: WidgetStatePropertyAll(
+                Colors.black.withValues(alpha: 0.16),
+              ),
+              backgroundColor: const WidgetStatePropertyAll(Colors.white),
+              surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(kMenuRadius),
+                ),
+              ),
+            ),
+          ),
+          pageTransitionsTheme: pageTransitions,
         );
 
         final darkTheme = ThemeData(
@@ -199,18 +261,89 @@ class SmartFoodApp extends StatelessWidget {
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: BorderSide(color: Colors.white12, width: 1)),
             focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(kDefaultRadius), borderSide: const BorderSide(color: BshColors.secondary, width: 2)),
           ),
+          chipTheme: darkBase.chipTheme.copyWith(
+            shape: const StadiumBorder(),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+            backgroundColor: const Color(0xFF1D2432),
+            selectedColor: BshColors.secondary,
+            labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.82), fontWeight: FontWeight.w600),
+            secondaryLabelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          ),
+          sliderTheme: darkBase.sliderTheme.copyWith(
+            trackHeight: 5,
+            activeTrackColor: BshColors.secondary.withValues(alpha: 0.95),
+            inactiveTrackColor: Colors.white.withValues(alpha: 0.18),
+            thumbColor: Colors.white,
+            overlayColor: BshColors.secondary.withValues(alpha: 0.2),
+            thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 10),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 20),
+          ),
+          switchTheme: SwitchThemeData(
+            thumbColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) return Colors.white;
+              return Colors.white.withValues(alpha: 0.9);
+            }),
+            trackColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) return BshColors.secondary.withValues(alpha: 0.88);
+              return Colors.white.withValues(alpha: 0.22);
+            }),
+            overlayColor: WidgetStateProperty.all(BshColors.secondary.withValues(alpha: 0.2)),
+            splashRadius: 18,
+          ),
+          popupMenuTheme: PopupMenuThemeData(
+            color: const Color(0xFF1A1E25),
+            surfaceTintColor: Colors.transparent,
+            elevation: kMenuElevation,
+            shadowColor: Colors.black.withValues(alpha: 0.35),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(kMenuRadius),
+            ),
+            menuPadding: const EdgeInsets.symmetric(vertical: 6),
+          ),
+          dropdownMenuTheme: DropdownMenuThemeData(
+            menuStyle: MenuStyle(
+              elevation: const WidgetStatePropertyAll(kMenuElevation),
+              shadowColor: WidgetStatePropertyAll(
+                Colors.black.withValues(alpha: 0.35),
+              ),
+              backgroundColor: const WidgetStatePropertyAll(Color(0xFF1A1E25)),
+              surfaceTintColor: const WidgetStatePropertyAll(Colors.transparent),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(kMenuRadius),
+                ),
+              ),
+            ),
+          ),
+          pageTransitionsTheme: pageTransitions,
         );
 
         return MaterialApp(
-          title: 'Smart Food Home',
+          onGenerateTitle: (context) => AppLocalizations.of(context)?.appTitle ?? 'BSH Smart',
           debugShowCheckedModeBanner: false,
           navigatorKey: _navigatorKey,
           onGenerateRoute: _onGenerateRoute,
           theme: lightTheme,
           darkTheme: darkTheme,
           themeMode: themeController.themeMode,
+          locale: localeController.locale,
+          localeResolutionCallback: (deviceLocale, supportedLocales) {
+            if (localeController.locale != null) {
+              return localeController.locale;
+            }
+            final deviceCode = deviceLocale?.languageCode.toLowerCase();
+            for (final locale in supportedLocales) {
+              if (locale.languageCode == deviceCode) {
+                return locale;
+              }
+            }
+            return const Locale('en');
+          },
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
 
-          // 🟢 回归单一入口
+          // NOTE: legacy comment cleaned.
           home: const AuthRoot(),
         );
       },
@@ -218,104 +351,5 @@ class SmartFoodApp extends StatelessWidget {
   }
 }
 
-class _WidgetRecipeRoute extends StatefulWidget {
-  const _WidgetRecipeRoute();
 
-  @override
-  State<_WidgetRecipeRoute> createState() => _WidgetRecipeRouteState();
-}
 
-class _WidgetRecipeRouteState extends State<_WidgetRecipeRoute> {
-  ArchivedRecipe? _recipe;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadRecipe();
-  }
-
-  Future<void> _loadRecipe() async {
-    final pendingJson = await _widgetChannel.invokeMethod<String>('getPendingRecipe');
-    final pendingOpenId = await _widgetChannel.invokeMethod<String>('getPendingOpenRecipeId');
-
-    ArchivedRecipe? pendingRecipe;
-    if (pendingJson != null && pendingJson.trim().isNotEmpty) {
-      try {
-        pendingRecipe = ArchivedRecipe.fromJson(jsonDecode(pendingJson));
-        final exists = await ArchiveService.instance.containsRecipeId(pendingRecipe.recipeId);
-        if (!exists) {
-          await ArchiveService.instance.add(pendingRecipe);
-        }
-        await _widgetChannel.invokeMethod('clearPendingRecipe');
-      } catch (_) {}
-    }
-
-    if (pendingOpenId != null) {
-      await _widgetChannel.invokeMethod('clearPendingOpenRecipeId');
-    }
-
-    ArchivedRecipe? resolved;
-    if (pendingOpenId != null && pendingOpenId.isNotEmpty) {
-      final list = await ArchiveService.instance.getAll();
-      for (final r in list) {
-        if (r.recipeId == pendingOpenId) {
-          resolved = r;
-          break;
-        }
-      }
-    }
-    resolved ??= pendingRecipe;
-
-    if (mounted) {
-      setState(() {
-        _recipe = resolved;
-        _loading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    if (_loading) {
-      return Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        appBar: AppBar(
-          title: Text('Recipe', style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w700)),
-          backgroundColor: theme.scaffoldBackgroundColor,
-          elevation: 0,
-          iconTheme: IconThemeData(color: colors.onSurface),
-        ),
-        body: Center(
-          child: Text(
-            'Chef is thinking...',
-            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
-          ),
-        ),
-      );
-    }
-
-    final recipe = _recipe;
-    if (recipe == null) {
-      return Scaffold(
-        backgroundColor: theme.scaffoldBackgroundColor,
-        appBar: AppBar(
-          title: Text('Recipe', style: TextStyle(color: colors.onSurface, fontWeight: FontWeight.w700)),
-          backgroundColor: theme.scaffoldBackgroundColor,
-          elevation: 0,
-          iconTheme: IconThemeData(color: colors.onSurface),
-        ),
-        body: Center(
-          child: Text(
-            'Add items to get recipes',
-            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
-          ),
-        ),
-      );
-    }
-
-    return ArchiveRecipeDetailPage(recipe: recipe);
-  }
-}

@@ -50,7 +50,7 @@ class _ArchivePageState extends State<ArchivePage> {
                     padding: EdgeInsets.all(16),
                     child: _EmptyCard(
                       title: 'No archived recipes',
-                      subtitle: 'Open any recipe and tap “Add to archive”.',
+                      subtitle: 'Open any recipe and tap "Add to archive".',
                       icon: Icons.archive_outlined,
                     ),
                   )
@@ -108,7 +108,7 @@ class _ArchiveTile extends StatelessWidget {
             border: Border.all(color: theme.dividerColor),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+                color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
                 blurRadius: 10,
                 offset: const Offset(0, 6),
               ),
@@ -120,7 +120,7 @@ class _ArchiveTile extends StatelessWidget {
                 width: 42,
                 height: 42,
                 decoration: BoxDecoration(
-                  color: scheme.primary.withOpacity(0.12),
+                  color: scheme.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(Icons.bookmark, color: scheme.primary),
@@ -138,16 +138,16 @@ class _ArchiveTile extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '${recipe.timeLabel} • ${recipe.appliancesLabel}',
+                      '${recipe.timeLabel} - ${recipe.appliancesLabel}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withOpacity(0.6)),
+                      style: TextStyle(fontSize: 12, color: scheme.onSurface.withValues(alpha: 0.6)),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Icon(Icons.chevron_right, color: scheme.onSurface.withOpacity(0.5)),
+              Icon(Icons.chevron_right, color: scheme.onSurface.withValues(alpha: 0.5)),
             ],
           ),
         ),
@@ -181,7 +181,7 @@ class _EmptyCard extends StatelessWidget {
         border: Border.all(color: theme.dividerColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.06),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.06),
             blurRadius: 12,
             offset: const Offset(0, 8),
           ),
@@ -189,7 +189,7 @@ class _EmptyCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(icon, color: scheme.onSurface.withOpacity(0.6)),
+          Icon(icon, color: scheme.onSurface.withValues(alpha: 0.6)),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -197,7 +197,7 @@ class _EmptyCard extends StatelessWidget {
               children: [
                 Text(title, style: TextStyle(fontWeight: FontWeight.w900, color: scheme.onSurface)),
                 const SizedBox(height: 2),
-                Text(subtitle, style: TextStyle(color: scheme.onSurface.withOpacity(0.6))),
+                Text(subtitle, style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.6))),
               ],
             ),
           ),
@@ -206,3 +206,5 @@ class _EmptyCard extends StatelessWidget {
     );
   }
 }
+
+

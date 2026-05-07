@@ -4,15 +4,15 @@ import 'package:flutter/material.dart';
 enum BSHToastType { success, error, info, warning }
 
 class BSHToast {
-  /// 原生 SnackBar 封装，BSH 风格
+  // NOTE: legacy comment cleaned.
   static void show(BuildContext context, {
     required String title,
     String? description,
     BSHToastType type = BSHToastType.success,
     Duration duration = const Duration(seconds: 3),
-    VoidCallback? onTap, // 用于撤销操作等
+    VoidCallback? onTap, // NOTE: legacy comment cleaned.
   }) {
-    // 1. 配色方案
+    // NOTE: legacy comment cleaned.
     Color bgColor;
     IconData icon;
     Color iconColor = Colors.white;
@@ -31,23 +31,22 @@ class BSHToast {
         icon = Icons.warning_amber_rounded;
         break;
       case BSHToastType.info:
-      default:
         bgColor = const Color(0xFF2D3436); // Grey
         icon = Icons.info_outline_rounded;
         break;
     }
 
-    // 2. 清除旧的
+    // NOTE: legacy comment cleaned.
     ScaffoldMessenger.of(context).clearSnackBars();
 
-    // 3. 显示新的
+    // NOTE: legacy comment cleaned.
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         elevation: 0,
-        backgroundColor: Colors.transparent, // 透明背景，完全由 content 控制
+        backgroundColor: Colors.transparent, // NOTE: legacy comment cleaned.
         duration: duration,
         padding: EdgeInsets.zero,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20), // 悬浮底部
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 20), // NOTE: legacy comment cleaned.
         behavior: SnackBarBehavior.floating,
         
         content: GestureDetector(
@@ -59,10 +58,10 @@ class BSHToast {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: bgColor,
-              borderRadius: BorderRadius.circular(16), // 统一圆角
+              borderRadius: BorderRadius.circular(16), // NOTE: legacy comment cleaned.
               boxShadow: [
                 BoxShadow(
-                  color: bgColor.withOpacity(0.3),
+                  color: bgColor.withValues(alpha: 0.3),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -114,3 +113,5 @@ class BSHToast {
     );
   }
 }
+
+

@@ -1,5 +1,6 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../utils/app_haptics.dart';
 import 'package:flutter/services.dart';
 
 class BouncingButton extends StatefulWidget {
@@ -54,7 +55,7 @@ class _BouncingButtonState extends State<BouncingButton> with SingleTickerProvid
       onTapDown: (_) {
         if (widget.enabled) {
           _controller!.forward();
-          HapticFeedback.lightImpact();
+          AppHaptics.selection();
         }
       },
       onTapUp: (_) {
@@ -131,3 +132,8 @@ class _FadeInSlideState extends State<FadeInSlide> with SingleTickerProviderStat
     );
   }
 }
+
+
+
+
+

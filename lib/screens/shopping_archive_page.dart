@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../repositories/inventory_repository.dart';
+import '../l10n/app_localizations.dart';
 
 class ShoppingArchivePage extends StatelessWidget {
   final InventoryRepository repo;
@@ -17,12 +18,13 @@ class ShoppingArchivePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          'Purchase History',
+          l10n?.shoppingArchiveTitle ?? 'Purchase History',
           style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
         ),
         backgroundColor: theme.scaffoldBackgroundColor,
@@ -31,27 +33,32 @@ class ShoppingArchivePage extends StatelessWidget {
         iconTheme: IconThemeData(color: colors.onSurface),
         actions: [
           IconButton(
-            icon: Icon(Icons.delete_outline, color: colors.onSurface.withOpacity(0.6)),
-            tooltip: 'Clear History',
+            icon: Icon(Icons.delete_outline, color: colors.onSurface.withValues(alpha: 0.6)),
+            tooltip: l10n?.shoppingArchiveClearTooltip ?? 'Clear History',
             onPressed: () {
               showDialog(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Clear History?'),
-                  content: const Text('This will remove all items from your history.'),
+                  title: Text(
+                    l10n?.shoppingArchiveClearTitle ?? 'Clear History?',
+                  ),
+                  content: Text(
+                    l10n?.shoppingArchiveClearDesc ??
+                        'This will remove all items from your history.',
+                  ),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel'),
+                      child: Text(l10n?.cancel ?? 'Cancel'),
                     ),
                     TextButton(
                       onPressed: () {
-                        repo.clearHistory(); // 这会触发 notifyListeners
+                        repo.clearHistory(); // NOTE: legacy comment cleaned.
                         Navigator.pop(ctx);
                       },
                       style: TextButton.styleFrom(foregroundColor: Colors.red),
-                      child: const Text('Clear'),
+                      child: Text(l10n?.shoppingArchiveClearAction ?? 'Clear'),
                     ),
                   ],
                 ),
@@ -60,20 +67,20 @@ class ShoppingArchivePage extends StatelessWidget {
           ),
         ],
       ),
-      // 🔴 核心修复：使用 AnimatedBuilder 监听 repo 的变化
+      // NOTE: legacy comment cleaned.
       body: AnimatedBuilder(
-        animation: repo, // 监听仓库变动
+        animation: repo, // NOTE: legacy comment cleaned.
         builder: (context, child) {
-          final history = repo.shoppingHistory; // 在 builder 内部获取最新数据
+          final history = repo.shoppingHistory; // NOTE: legacy comment cleaned.
 
           if (history.isEmpty) {
             return _buildEmptyState(context);
           }
 
-          // 按日期分组逻辑 (移动到 builder 内部以确保实时计算)
+          // NOTE: legacy comment cleaned.
           final Map<String, List<ShoppingHistoryItem>> grouped = {};
           for (var item in history) {
-            final dateKey = _getDateKey(item.date);
+            final dateKey = _getDateKey(context, item.date);
             if (!grouped.containsKey(dateKey)) grouped[dateKey] = [];
             grouped[dateKey]!.add(item);
           }
@@ -93,7 +100,7 @@ class ShoppingArchivePage extends StatelessWidget {
                     child: Text(
                       dateKey,
                       style: TextStyle(
-                        color: colors.onSurface.withOpacity(0.6),
+                        color: colors.onSurface.withValues(alpha: 0.6),
                         fontWeight: FontWeight.w700,
                         fontSize: 14,
                       ),
@@ -106,7 +113,7 @@ class ShoppingArchivePage extends StatelessWidget {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.02),
+                              color: Colors.black.withValues(alpha: 0.02),
                               blurRadius: 4,
                               offset: const Offset(0, 2),
                             ),
@@ -122,18 +129,22 @@ class ShoppingArchivePage extends StatelessWidget {
                           ),
                           subtitle: Text(
                             item.category,
-                            style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.5)),
+                            style: TextStyle(fontSize: 12, color: colors.onSurface.withValues(alpha: 0.5)),
                           ),
                           trailing: IconButton(
                             icon: const Icon(Icons.add_circle_outline, color: Color(0xFF005F87)),
-                            tooltip: 'Add back to list',
+                            tooltip: l10n?.shoppingArchiveAddBackTooltip ??
+                                'Add back to list',
                             onPressed: () {
                               onAddBack(item.name, item.category);
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('${item.name} added back!'),
+                                  content: Text(
+                                    l10n?.shoppingArchiveAddedBack(item.name) ??
+                                        '${item.name} added back!',
+                                  ),
                                   duration: const Duration(seconds: 1),
-                                  behavior: SnackBarBehavior.floating, // 悬浮样式
+                                  behavior: SnackBarBehavior.floating, // NOTE: legacy comment cleaned.
                                 ),
                               );
                             },
@@ -149,33 +160,40 @@ class ShoppingArchivePage extends StatelessWidget {
     );
   }
 
-  String _getDateKey(DateTime date) {
+  String _getDateKey(BuildContext context, DateTime date) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final itemDate = DateTime(date.year, date.month, date.day);
     final diff = today.difference(itemDate).inDays;
-    if (diff == 0) return 'Today';
-    if (diff == 1) return 'Yesterday';
+    if (diff == 0) {
+      return AppLocalizations.of(context)?.shoppingArchiveToday ?? 'Today';
+    }
+    if (diff == 1) {
+      return AppLocalizations.of(context)?.shoppingArchiveYesterday ??
+          'Yesterday';
+    }
     return DateFormat('MMMM d').format(date);
   }
 
   Widget _buildEmptyState(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.history_edu_rounded, size: 64, color: colors.onSurface.withOpacity(0.3)),
+          Icon(Icons.history_edu_rounded, size: 64, color: colors.onSurface.withValues(alpha: 0.3)),
           const SizedBox(height: 16),
           Text(
-            'No history yet',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colors.onSurface.withOpacity(0.8)),
+            l10n?.shoppingArchiveEmptyTitle ?? 'No history yet',
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: colors.onSurface.withValues(alpha: 0.8)),
           ),
           const SizedBox(height: 8),
           Text(
-            'Items you verify as bought will appear here.',
-            style: TextStyle(color: colors.onSurface.withOpacity(0.6)),
+            l10n?.shoppingArchiveEmptyDesc ??
+                'Items you verify as bought will appear here.',
+            style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6)),
           ),
         ],
       ),
@@ -190,10 +208,13 @@ class ShoppingArchivePage extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: 0,
-            top: 2,
-            child: Icon(Icons.check_circle_outline, color: theme.colorScheme.onSurface.withOpacity(0.3), size: 20),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Icon(
+              Icons.check_circle_outline,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.3),
+              size: 20,
+            ),
           ),
           if (buyerName != null && buyerName.isNotEmpty)
             Positioned(
@@ -238,3 +259,5 @@ class _UserAvatarBadge extends StatelessWidget {
     );
   }
 }
+
+

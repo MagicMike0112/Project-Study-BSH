@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+// lib/models/shopping_item.dart
+import '../utils/app_time.dart';
 
 class ShoppingItem {
   final String id;
@@ -8,6 +9,8 @@ class ShoppingItem {
   final String? ownerName;
   final String? userId;
   final String? note;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 
   ShoppingItem({
     required this.id,
@@ -17,24 +20,36 @@ class ShoppingItem {
     this.ownerName,
     this.userId,
     this.note,
+    this.createdAt,
+    this.updatedAt,
   });
 
   Map<String, dynamic> toDbJson(String familyId, String currentUserId) {
-    return {
+    final map = <String, dynamic>{
       'id': id,
       'family_id': familyId,
       'user_id': userId ?? currentUserId,
       'name': name,
       'category': category,
       'is_checked': isChecked,
-      'updated_at': DateTime.now().toIso8601String(),
+      'updated_at': AppTime.toUtcIso(DateTime.now()),
       'note': note,
     };
+    if (createdAt != null) {
+      map['created_at'] = AppTime.toUtcIso(createdAt!);
+    }
+    return map;
   }
 
   Map<String, dynamic> toLocalJson(String familyId, String currentUserId) {
-    var map = toDbJson(familyId, currentUserId);
+    final map = toDbJson(familyId, currentUserId);
     map['owner_name'] = ownerName;
+    if (updatedAt != null) {
+      map['updated_at'] = AppTime.toUtcIso(updatedAt!);
+    }
+    if (createdAt != null) {
+      map['created_at'] = AppTime.toUtcIso(createdAt!);
+    }
     return map;
   }
 
@@ -57,6 +72,8 @@ class ShoppingItem {
       ownerName: extractName(json),
       userId: json['user_id']?.toString(),
       note: json['note'],
+      createdAt: AppTime.parseServerTimestamp(json['created_at']),
+      updatedAt: AppTime.parseServerTimestamp(json['updated_at']),
     );
   }
 }

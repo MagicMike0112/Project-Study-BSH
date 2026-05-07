@@ -4,42 +4,42 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../screens/login_page.dart';
 
-/// 检查是否已登录：
-/// - 已登录：返回 true
-/// - 未登录：弹出对话框 -> 跳登录页 -> 登录成功返回 true，其他情况返回 false
+// NOTE: legacy comment cleaned.
+// NOTE: legacy comment cleaned.
+// NOTE: legacy comment cleaned.
 Future<bool> requireLogin(BuildContext context) async {
   final supabase = Supabase.instance.client;
   final user = supabase.auth.currentUser;
 
   if (user != null) {
-    // 已经登录，直接放行
+    // NOTE: legacy comment cleaned.
     return true;
   }
 
-  // 未登录：先问一下要不要去登录
+  // NOTE: legacy comment cleaned.
   final goLogin = await showDialog<bool>(
     context: context,
     builder: (ctx) {
-      // 定义我们统一的主色调
+      // NOTE: legacy comment cleaned.
       const primaryColor = Color(0xFF005F87);
 
       return AlertDialog(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24), // 更圆润的角
+          borderRadius: BorderRadius.circular(24), // NOTE: legacy comment cleaned.
         ),
         backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white, // 防止 Material 3 的默认紫色
+        surfaceTintColor: Colors.white, // NOTE: legacy comment cleaned.
         titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
         contentPadding: const EdgeInsets.symmetric(horizontal: 24),
         actionsPadding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
         
-        // 标题区域：图标 + 文字
+        // NOTE: legacy comment cleaned.
         title: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: primaryColor.withOpacity(0.1),
+                color: primaryColor.withValues(alpha: 0.1),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -62,7 +62,7 @@ Future<bool> requireLogin(BuildContext context) async {
           ],
         ),
         
-        // 内容区域：说明文案 + 权益列表
+        // NOTE: legacy comment cleaned.
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -84,7 +84,7 @@ Future<bool> requireLogin(BuildContext context) async {
           ],
         ),
         
-        // 按钮区域
+        // NOTE: legacy comment cleaned.
         actions: [
           Row(
             children: [
@@ -127,7 +127,7 @@ Future<bool> requireLogin(BuildContext context) async {
     return false;
   }
 
-  // 跳到登录页
+  // NOTE: legacy comment cleaned.
   if (!context.mounted) return false;
   final loggedIn = await Navigator.push<bool>(
     context,
@@ -139,7 +139,7 @@ Future<bool> requireLogin(BuildContext context) async {
   return loggedIn == true;
 }
 
-// 辅助组件：权益行
+// NOTE: legacy comment cleaned.
 class _BenefitRow extends StatelessWidget {
   final IconData icon;
   final String text;
@@ -151,7 +151,7 @@ class _BenefitRow extends StatelessWidget {
     const primaryColor = Color(0xFF005F87);
     return Row(
       children: [
-        Icon(icon, size: 18, color: primaryColor.withOpacity(0.8)),
+        Icon(icon, size: 18, color: primaryColor.withValues(alpha: 0.8)),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -167,3 +167,5 @@ class _BenefitRow extends StatelessWidget {
     );
   }
 }
+
+

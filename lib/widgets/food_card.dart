@@ -1,14 +1,15 @@
-﻿// lib/widgets/food_card.dart
+// lib/widgets/food_card.dart
 import 'package:flutter/material.dart';
 import '../models/food_item.dart';
+import '../l10n/app_localizations.dart';
 
 class FoodCard extends StatelessWidget {
   final FoodItem item;
-  final Function(String action) onAction; // 回调函数
+  final Function(String action) onAction; // NOTE: legacy comment cleaned.
   final VoidCallback? onTap;
 
-  /// 可选：允许外部传入 leading（用于 TodayPage 与 InventoryPage 统一图标风格）
-  /// 不传则保持你原来的 CircleAvatar(timer) 逻辑不变。
+  // NOTE: legacy comment cleaned.
+  // NOTE: legacy comment cleaned.
   final Widget? leading;
 
   const FoodCard({
@@ -19,14 +20,14 @@ class FoodCard extends StatelessWidget {
     this.onTap,
   });
 
-  String _locationLabel(StorageLocation loc) {
+  String _locationLabel(StorageLocation loc, AppLocalizations? l10n) {
     switch (loc) {
       case StorageLocation.fridge:
-        return 'Fridge';
+        return l10n?.foodLocationFridge ?? 'Fridge';
       case StorageLocation.freezer:
-        return 'Freezer';
+        return l10n?.foodLocationFreezer ?? 'Freezer';
       case StorageLocation.pantry:
-        return 'Pantry';
+        return l10n?.foodLocationPantry ?? 'Pantry';
     }
   }
 
@@ -34,13 +35,14 @@ class FoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isCritical = item.daysToExpiry <= 1;
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     final daysLabel = item.daysToExpiry < 0
-        ? 'Expired ${-item.daysToExpiry}d ago'
-        : '${item.daysToExpiry} days left';
+        ? (l10n?.foodExpiredDaysAgo(-item.daysToExpiry) ?? 'Expired ${-item.daysToExpiry}d ago')
+        : (l10n?.foodDaysLeft(item.daysToExpiry) ?? '${item.daysToExpiry} days left');
 
     final bgColor = isCritical
-        ? scheme.errorContainer.withOpacity(0.15)
-        : scheme.primaryContainer.withOpacity(0.15);
+        ? scheme.errorContainer.withValues(alpha: 0.15)
+        : scheme.primaryContainer.withValues(alpha: 0.15);
     final iconColor = isCritical ? scheme.error : scheme.primary;
 
     return Card(
@@ -48,7 +50,7 @@ class FoodCard extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         onTap: onTap,
-        // 如果传了 leading 就用传入的；否则维持原样（不动其它逻辑）
+        // NOTE: legacy comment cleaned.
         leading: leading ??
             CircleAvatar(
               backgroundColor: bgColor,
@@ -63,22 +65,28 @@ class FoodCard extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          '$daysLabel - ${_locationLabel(item.location)}',
+          '$daysLabel - ${_locationLabel(item.location, l10n)}',
           style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w500,
-            color: scheme.onSurface.withOpacity(0.6),
+            color: scheme.onSurface.withValues(alpha: 0.6),
           ),
         ),
         trailing: PopupMenuButton(
-          itemBuilder: (ctx) => const [
+          elevation: 12,
+          shadowColor: Colors.black.withValues(alpha: 0.18),
+          menuPadding: const EdgeInsets.symmetric(vertical: 6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          itemBuilder: (ctx) => [
             PopupMenuItem(
               value: 'eat',
               child: Row(
                 children: [
                   Icon(Icons.restaurant, size: 18),
                   SizedBox(width: 8),
-                  Text('Cook / Eat'),
+                  Text(l10n?.foodActionCookEat ?? 'Cook / Eat'),
                 ],
               ),
             ),
@@ -88,7 +96,7 @@ class FoodCard extends StatelessWidget {
                 children: [
                   Icon(Icons.pets, size: 18),
                   SizedBox(width: 8),
-                  Text('Feed Pets'),
+                  Text(l10n?.foodActionFeedPets ?? 'Feed Pets'),
                 ],
               ),
             ),
@@ -98,7 +106,7 @@ class FoodCard extends StatelessWidget {
                 children: [
                   Icon(Icons.delete, size: 18),
                   SizedBox(width: 8),
-                  Text('Discard'),
+                  Text(l10n?.foodActionDiscard ?? 'Discard'),
                 ],
               ),
             ),
@@ -106,10 +114,10 @@ class FoodCard extends StatelessWidget {
           onSelected: (val) {
             onAction(val);
             if (val == 'pet') {
-              // 你的小彩蛋 🐞
+              // NOTE: legacy comment cleaned.
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Little Shi & Little Yuan are happy! 🐞'),
+                SnackBar(
+                  content: Text(l10n?.foodPetsHappy ?? 'Little Shi & Little Yuan are happy!'),
                 ),
               );
             }
@@ -119,5 +127,7 @@ class FoodCard extends StatelessWidget {
     );
   }
 }
+
+
 
 

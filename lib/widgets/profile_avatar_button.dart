@@ -1,17 +1,33 @@
-// lib/widgets/profile_avatar_button.dart
 import 'package:flutter/material.dart';
+// lib/widgets/profile_avatar_button.dart
+import '../utils/app_haptics.dart';
 import 'package:flutter/services.dart'; // Haptics
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../repositories/inventory_repository.dart';
 import '../screens/account_page.dart';
-import '../screens/login_page.dart';
+import '../utils/reveal_route.dart';
 
 class ProfileAvatarButton extends StatelessWidget {
   final InventoryRepository repo;
 
   const ProfileAvatarButton({super.key, required this.repo});
 
-  // 🟢 辅助方法：根据名字生成固定颜色
+  void _openAccountPage(BuildContext context, {required bool isLoggedIn}) {
+    Navigator.of(context).push(
+      topRightRevealRoute(
+        AccountPage(
+          repo: repo,
+          isLoggedIn: isLoggedIn,
+          onLogin: () {},
+          onLogout: () async {
+            await Supabase.instance.client.auth.signOut();
+          },
+        ),
+      ),
+    );
+  }
+
+  // NOTE: legacy comment cleaned.
   Color _getUserColor(String name) {
     if (name.isEmpty) return Colors.grey;
     final colors = [
@@ -35,8 +51,8 @@ class ProfileAvatarButton extends StatelessWidget {
         final isLoggedIn = session != null;
 
         String initial = 'U';
-        // 🟢 获取更准确的名字用于生成颜色
-        // 如果 Repo 里存了当前用户名，优先用那个，否则用 Email 前缀
+        // NOTE: legacy comment cleaned.
+        // NOTE: legacy comment cleaned.
         String displayNameForColor = 'User'; 
 
         if (isLoggedIn) {
@@ -45,49 +61,54 @@ class ProfileAvatarButton extends StatelessWidget {
             initial = email[0].toUpperCase();
             displayNameForColor = email;
           }
-          // 尝试从 Repo 获取更准确的名字 (如果有的话，需要将 Repo 改为 ChangeNotifier 监听才能实时更新，这里简单处理)
-          // 实际项目中，这里可以监听 repo._currentUserName
+          // NOTE: legacy comment cleaned.
+          // NOTE: legacy comment cleaned.
         }
 
-        // 1. 未登录：显示登录按钮
+        // NOTE: legacy comment cleaned.
         if (!isLoggedIn) {
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: IconButton(
-              tooltip: 'Log In',
-              icon: const Icon(Icons.login, color: Color(0xFF005F87)),
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const LoginPage()),
-                );
+            child: GestureDetector(
+              onTap: () {
+                AppHaptics.selection();
+                _openAccountPage(context, isLoggedIn: false);
               },
+              child: Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Icon(Icons.settings, size: 18, color: Colors.white),
+                ),
+              ),
             ),
           );
         }
 
-        // 2. 已登录：点击直接跳转 Account 页面
+        // NOTE: legacy comment cleaned.
         return Padding(
           padding: const EdgeInsets.only(right: 12),
           child: GestureDetector(
             onTap: () {
-              HapticFeedback.lightImpact(); // 触感反馈
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => AccountPage(
-                    repo: repo, 
-                    isLoggedIn: true,
-                    onLogin: () {}, 
-                    onLogout: () async {
-                      await Supabase.instance.client.auth.signOut();
-                    },
-                  ),
-                ),
-              );
+              AppHaptics.selection(); // NOTE: legacy comment cleaned.
+              _openAccountPage(context, isLoggedIn: true);
             },
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // 主头像
+                // NOTE: legacy comment cleaned.
                 Container(
                   width: 36,
                   height: 36,
@@ -97,7 +118,7 @@ class ProfileAvatarButton extends StatelessWidget {
                     border: Border.all(color: Colors.white, width: 2),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
+                        color: Colors.black.withValues(alpha: 0.1),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -115,8 +136,8 @@ class ProfileAvatarButton extends StatelessWidget {
                   ),
                 ),
                 
-                // 🟢 右下角的用户颜色标识 (Tag)
-                // 这样用户能知道自己代表什么颜色
+                // NOTE: legacy comment cleaned.
+                // NOTE: legacy comment cleaned.
                 Positioned(
                   right: -2,
                   bottom: -2,
@@ -124,7 +145,7 @@ class ProfileAvatarButton extends StatelessWidget {
                     width: 14,
                     height: 14,
                     decoration: BoxDecoration(
-                      color: _getUserColor(displayNameForColor), // 动态颜色
+                      color: _getUserColor(displayNameForColor), // NOTE: legacy comment cleaned.
                       shape: BoxShape.circle,
                       border: Border.all(color: Colors.white, width: 2),
                     ),
@@ -138,3 +159,10 @@ class ProfileAvatarButton extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+

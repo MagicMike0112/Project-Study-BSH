@@ -1,3 +1,5 @@
+import '../utils/app_time.dart';
+
 class ShoppingHistoryItem {
   final String id;
   final String name;
@@ -23,7 +25,7 @@ class ShoppingHistoryItem {
       'shopping_item_id': shoppingItemId,
       'name': name,
       'category': category,
-      'added_date': date.toIso8601String(),
+      'added_date': AppTime.toUtcIso(date),
     };
   }
 
@@ -32,7 +34,7 @@ class ShoppingHistoryItem {
       id: json['id'].toString(),
       name: json['name'] ?? 'Unknown',
       category: json['category'] ?? 'general',
-      date: DateTime.tryParse(json['added_date'].toString()) ?? DateTime.now(),
+      date: AppTime.parseServerTimestamp(json['added_date']) ?? DateTime.now(),
       userId: json['user_id']?.toString(),
       shoppingItemId: json['shopping_item_id']?.toString(),
     );

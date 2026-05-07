@@ -1,18 +1,17 @@
 // lib/screens/account_page.dart
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
+import '../utils/app_haptics.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http;
-import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/app_localizations.dart';
 import '../repositories/inventory_repository.dart';
 import 'family_page.dart';
 import 'notification_settings_page.dart';
 import 'login_page.dart';
 import '../utils/bsh_toast.dart';
+import '../utils/locale_controller.dart';
 import '../utils/theme_controller.dart';
 
 class AccountPage extends StatefulWidget {
@@ -33,14 +32,7 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  static const String _backendBase = 'https://project-study-bsh.vercel.app';
   static const Color _primaryColor = Color(0xFF004A77);
-
-  bool _hcLoading = false;
-  bool _hcConnected = false;
-  Map<String, dynamic>? _hcInfo;
-  String? _hcError;
-  List<Map<String, dynamic>> _hcAppliances = const [];
 
   bool _studentMode = false;
 
@@ -48,19 +40,6 @@ class _AccountPageState extends State<AccountPage> {
   void initState() {
     super.initState();
     _initStudentMode();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final qp = Uri.base.queryParameters;
-      if (qp['hc'] == 'connected') {
-        _refreshHomeConnectStatus().then((_) {
-          if (mounted) {
-            BSHToast.show(context, title: 'Home Connect Linked ✅', type: BSHToastType.success);
-          }
-        });
-      } else {
-        _refreshHomeConnectStatus();
-      }
-    });
   }
 
   void _initStudentMode() {
@@ -85,7 +64,7 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> _toggleStudentMode(bool value) async {
     setState(() => _studentMode = value);
-    HapticFeedback.selectionClick();
+    AppHaptics.selection();
     
     try {
       final user = Supabase.instance.client.auth.currentUser;
@@ -99,176 +78,8 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  // --- Home Connect Logic ---
-
-  Future<void> _refreshHomeConnectStatus() async {
-    final client = Supabase.instance.client;
-    final session = client.auth.currentSession;
-
-    if (session == null) {
-      if (mounted) {
-        setState(() {
-          _hcConnected = false;
-          _hcInfo = null;
-          _hcError = null;
-          _hcAppliances = const [];
-        });
-      }
-      return;
-    }
-
-    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
-
-    try {
-      final r = await http.get(
-        Uri.parse('$_backendBase/api/hc?action=status'), 
-        headers: {'Authorization': 'Bearer ${session.accessToken}'},
-      );
-      final data = jsonDecode(r.body) as Map<String, dynamic>;
-      if (r.statusCode != 200 || data['ok'] != true) throw Exception(data['error'] ?? 'Failed');
-
-      if (mounted) {
-        setState(() {
-          _hcConnected = (data['connected'] == true);
-          _hcInfo = (data['info'] is Map<String, dynamic>) ? (data['info'] as Map<String, dynamic>) : null;
-          if (!_hcConnected) _hcAppliances = const [];
-        });
-      }
-    } catch (e) {
-      if (mounted) setState(() { _hcConnected = false; _hcInfo = null; _hcError = e.toString(); });
-    } finally {
-      if (mounted) setState(() => _hcLoading = false);
-    }
-  }
-
-  Future<void> _startHomeConnectBind() async {
-    final client = Supabase.instance.client;
-    final session = client.auth.currentSession;
-    if (session == null) { _handleLogin(); return; } 
-
-    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
-
-    try {
-      final r = await http.post(
-        Uri.parse('$_backendBase/api/hc?action=connect'),
-        headers: {'Authorization': 'Bearer ${session.accessToken}', 'Content-Type': 'application/json'},
-        body: jsonEncode({"returnTo": "https://bshpwa.vercel.app/#/account?hc=connected"}),
-      );
-      final data = jsonDecode(r.body);
-      if (r.statusCode != 200 || data['ok'] != true) throw Exception(data['error'] ?? 'Failed');
-      
-      final authorizeUrl = data['authorizeUrl'] as String?;
-      if (authorizeUrl == null) throw Exception('No authorizeUrl');
-      
-      await launchUrl(Uri.parse(authorizeUrl), mode: LaunchMode.externalApplication);
-    } catch (e) {
-      if (mounted) {
-        setState(() => _hcError = e.toString());
-        BSHToast.show(context, title: 'Connection Failed', type: BSHToastType.error);
-      }
-    } finally {
-      if (mounted) setState(() => _hcLoading = false);
-    }
-  }
-
-  Future<void> _disconnectHomeConnect() async {
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) return;
-
-    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
-    try {
-      final r = await http.delete(
-        Uri.parse('$_backendBase/api/hc?action=disconnect'),
-        headers: {'Authorization': 'Bearer ${session.accessToken}'},
-      );
-      if (r.statusCode != 200) throw Exception('Failed');
-      await _refreshHomeConnectStatus();
-      if (mounted) BSHToast.show(context, title: 'Disconnected', type: BSHToastType.info);
-    } catch (e) {
-      if (mounted) setState(() => _hcError = e.toString());
-    } finally {
-      if (mounted) setState(() => _hcLoading = false);
-    }
-  }
-
-  Future<void> _fetchHomeConnectAppliances() async {
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) { _handleLogin(); return; }
-    if (!_hcConnected) return;
-
-    if (mounted) setState(() { _hcLoading = true; _hcError = null; });
-    try {
-      final r = await http.get(
-        Uri.parse('$_backendBase/api/hc?action=appliances'),
-        headers: {'Authorization': 'Bearer ${session.accessToken}'},
-      );
-      final data = jsonDecode(r.body) as Map<String, dynamic>;
-      if (r.statusCode != 200 || data['ok'] != true) throw Exception(data['error']);
-      
-      final list = (data['homeappliances'] as List?) ?? const [];
-      final parsed = list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
-      
-      if (mounted) setState(() => _hcAppliances = parsed);
-      _showApplianceListSheet();
-    } catch (e) {
-      if (mounted) setState(() => _hcError = e.toString());
-    } finally {
-      if (mounted) setState(() => _hcLoading = false);
-    }
-  }
-
-  void _showApplianceListSheet() {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: Theme.of(context).cardColor,
-      builder: (_) {
-        final items = _hcAppliances;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text('Simulator Appliances', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                const SizedBox(height: 16),
-                if (items.isEmpty)
-                  Text(
-                    'No appliances found',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5)),
-                  )
-                else
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.5),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(),
-                      itemBuilder: (_, i) {
-                        final a = items[i];
-                        return ListTile(
-                          title: Text(a['name'] ?? 'Unknown'),
-                          subtitle: Text('ID: ${a['haId']}'),
-                          trailing: const Icon(Icons.copy, size: 16),
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: a['haId'].toString()));
-                            BSHToast.show(context, title: 'ID Copied', type: BSHToastType.info);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
   void _handleLogin() {
-    HapticFeedback.mediumImpact();
+    AppHaptics.success();
     widget.onLogin();
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const LoginPage(allowSkip: false)),
@@ -276,13 +87,14 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   String _themeLabel(ThemeMode mode) {
+    final l10n = AppLocalizations.of(context);
     switch (mode) {
       case ThemeMode.system:
-        return 'Follow system';
+        return l10n?.themeFollowSystem ?? 'Follow system';
       case ThemeMode.light:
-        return 'Light';
+        return l10n?.themeLight ?? 'Light';
       case ThemeMode.dark:
-        return 'Dark';
+        return l10n?.themeDark ?? 'Dark';
     }
   }
 
@@ -300,36 +112,102 @@ class _AccountPageState extends State<AccountPage> {
             children: [
               const SizedBox(height: 8),
               Text(
-                'Theme',
+                AppLocalizations.of(ctx)?.themeTitle ?? 'Theme',
                 style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
               ),
               const SizedBox(height: 8),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.system,
-                groupValue: themeController.themeMode,
-                onChanged: (val) {
-                  if (val != null) themeController.setThemeMode(val);
+              ListTile(
+                title: Text(AppLocalizations.of(ctx)?.themeFollowSystem ?? 'Follow system'),
+                trailing: themeController.themeMode == ThemeMode.system
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () {
+                  themeController.setThemeMode(ThemeMode.system);
                   Navigator.pop(ctx);
                 },
-                title: const Text('Follow system'),
               ),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.light,
-                groupValue: themeController.themeMode,
-                onChanged: (val) {
-                  if (val != null) themeController.setThemeMode(val);
+              ListTile(
+                title: Text(AppLocalizations.of(ctx)?.themeLight ?? 'Light'),
+                trailing: themeController.themeMode == ThemeMode.light
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () {
+                  themeController.setThemeMode(ThemeMode.light);
                   Navigator.pop(ctx);
                 },
-                title: const Text('Light'),
               ),
-              RadioListTile<ThemeMode>(
-                value: ThemeMode.dark,
-                groupValue: themeController.themeMode,
-                onChanged: (val) {
-                  if (val != null) themeController.setThemeMode(val);
+              ListTile(
+                title: Text(AppLocalizations.of(ctx)?.themeDark ?? 'Dark'),
+                trailing: themeController.themeMode == ThemeMode.dark
+                    ? const Icon(Icons.check_rounded)
+                    : null,
+                onTap: () {
+                  themeController.setThemeMode(ThemeMode.dark);
                   Navigator.pop(ctx);
                 },
-                title: const Text('Dark'),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  String _languageLabel(AppLocalizations l10n, Locale? locale) {
+    final code = locale?.languageCode;
+    if (code == 'en') return l10n.languageEnglish;
+    if (code == 'zh') return l10n.languageChinese;
+    if (code == 'de') return l10n.languageGerman;
+    return l10n.languageSystem;
+  }
+
+  void _showLanguagePicker(LocaleController localeController, AppLocalizations l10n) {
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).cardColor,
+      builder: (ctx) {
+        final currentCode = localeController.locale?.languageCode;
+        void select(String? code) {
+          final locale = code == null ? null : Locale(code);
+          localeController.setLocale(locale);
+          AppHaptics.selection();
+          Navigator.pop(ctx);
+        }
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Text(
+                l10n.prefLanguageTitle,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Theme.of(ctx).colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ListTile(
+                title: Text(l10n.languageSystem),
+                trailing: currentCode == null ? const Icon(Icons.check_rounded) : null,
+                onTap: () => select(null),
+              ),
+              ListTile(
+                title: Text(l10n.languageEnglish),
+                trailing: currentCode == 'en' ? const Icon(Icons.check_rounded) : null,
+                onTap: () => select('en'),
+              ),
+              ListTile(
+                title: Text(l10n.languageChinese),
+                trailing: currentCode == 'zh' ? const Icon(Icons.check_rounded) : null,
+                onTap: () => select('zh'),
+              ),
+              ListTile(
+                title: Text(l10n.languageGerman),
+                trailing: currentCode == 'de' ? const Icon(Icons.check_rounded) : null,
+                onTap: () => select('de'),
               ),
               const SizedBox(height: 12),
             ],
@@ -346,7 +224,7 @@ class _AccountPageState extends State<AccountPage> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final bgColor = theme.scaffoldBackgroundColor;
-    final sectionTitleColor = colors.onSurface.withOpacity(0.55);
+    final sectionTitleColor = colors.onSurface.withValues(alpha: 0.55);
     const sectionTitleSize = 12.0;
 
     return StreamBuilder<AuthState>(
@@ -357,12 +235,17 @@ class _AccountPageState extends State<AccountPage> {
         final String email = session?.user.email ?? '';
         final String name = session?.user.userMetadata?['full_name'] ?? 'User';
         final themeController = context.watch<ThemeController>();
+        final localeController = context.watch<LocaleController>();
+        final l10n = AppLocalizations.of(context);
+        if (l10n == null) {
+          return const SizedBox.shrink();
+        }
 
         return Scaffold(
           backgroundColor: bgColor,
           appBar: AppBar(
             title: Text(
-              'Account',
+              l10n.accountTitle,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 color: colors.onSurface,
@@ -380,27 +263,21 @@ class _AccountPageState extends State<AccountPage> {
               const SizedBox(height: 32),
               
               if (loggedIn) ...[
-                _buildSectionTitle('Household', sectionTitleColor!, sectionTitleSize),
+                _buildSectionTitle(l10n.accountSectionMyHome, sectionTitleColor, sectionTitleSize),
                 const SizedBox(height: 12),
                 _buildFamilyCard(context),
                 const SizedBox(height: 32),
               ],
               
-              _buildSectionTitle('Integrations', sectionTitleColor!, sectionTitleSize),
-              const SizedBox(height: 12),
-              _buildHomeConnectCard(context, loggedIn),
-              
-              const SizedBox(height: 32),
-              
-              _buildSectionTitle('Preferences', sectionTitleColor!, sectionTitleSize),
+              _buildSectionTitle(l10n.accountSectionPreferences, sectionTitleColor, sectionTitleSize),
               const SizedBox(height: 12),
               _SettingsContainer(
                 children: [
                   _SettingsTile(
                     icon: Icons.notifications_rounded,
                     iconColor: Colors.orange,
-                    title: 'Notifications',
-                    subtitle: 'Expiry alerts & reminders',
+                    title: l10n.accountNotificationsTitle,
+                    subtitle: l10n.accountNotificationsSubtitle,
                     onTap: () {
                       Navigator.of(context).push(
                         MaterialPageRoute(builder: (_) => const NotificationSettingsPage()),
@@ -412,11 +289,11 @@ class _AccountPageState extends State<AccountPage> {
                   _SettingsTile(
                     icon: Icons.dark_mode_rounded,
                     iconColor: Colors.blueGrey,
-                    title: 'Night Mode',
+                    title: l10n.accountNightModeTitle,
                     subtitle: _themeLabel(themeController.themeMode),
                     trailing: Text(
                       _themeLabel(themeController.themeMode),
-                      style: TextStyle(color: colors.onSurface.withOpacity(0.5), fontSize: 12),
+                      style: TextStyle(color: colors.onSurface.withValues(alpha: 0.5), fontSize: 12),
                     ),
                     onTap: () => _showThemePicker(themeController),
                   ),
@@ -424,13 +301,30 @@ class _AccountPageState extends State<AccountPage> {
                   const _Divider(),
 
                   _SettingsTile(
+                    icon: Icons.language_rounded,
+                    iconColor: Colors.teal,
+                    title: l10n.prefLanguageTitle,
+                    subtitle: l10n.prefLanguageSubtitle,
+                    trailing: Text(
+                      _languageLabel(l10n, localeController.locale),
+                      style: TextStyle(
+                        color: colors.onSurface.withValues(alpha: 0.5),
+                        fontSize: 12,
+                      ),
+                    ),
+                    onTap: () => _showLanguagePicker(localeController, l10n),
+                  ),
+
+                  const _Divider(),
+
+                  _SettingsTile(
                     icon: Icons.school_rounded,
                     iconColor: Colors.indigo,
-                    title: 'Student Mode',
-                    subtitle: 'Budget-friendly recipes & tips 🎓',
+                    title: l10n.accountStudentModeTitle,
+                    subtitle: l10n.accountStudentModeSubtitle,
                     trailing: Switch.adaptive(
                       value: _studentMode,
-                      activeColor: _primaryColor,
+                      activeThumbColor: _primaryColor,
                       onChanged: _toggleStudentMode,
                     ),
                     onTap: () => _toggleStudentMode(!_studentMode),
@@ -438,35 +332,35 @@ class _AccountPageState extends State<AccountPage> {
                   
                   const _Divider(),
                   
-                  const _SettingsTile(
+                  _SettingsTile(
                     icon: Icons.card_giftcard_rounded,
                     iconColor: Colors.purple,
-                    title: 'Loyalty Cards',
-                    subtitle: 'Connect PAYBACK (Coming soon)',
+                    title: l10n.accountLoyaltyCardsTitle,
+                    subtitle: l10n.accountLoyaltyCardsSubtitle,
                     onTap: null,
                   ),
                 ],
               ),
               
               const SizedBox(height: 32),
-              _buildSectionTitle('About', sectionTitleColor!, sectionTitleSize),
+              _buildSectionTitle(l10n.accountSectionAbout, sectionTitleColor, sectionTitleSize),
               const SizedBox(height: 12),
               _SettingsContainer(
                 children: [
-                  const _SettingsTile(
+                  _SettingsTile(
                     icon: Icons.privacy_tip_rounded,
                     iconColor: Colors.blueGrey,
-                    title: 'Privacy Policy',
+                    title: l10n.accountPrivacyPolicyTitle,
                     onTap: null,
                   ),
                   const _Divider(),
                   _SettingsTile(
                     icon: Icons.info_outline_rounded,
                     iconColor: Colors.blueGrey,
-                    title: 'Version',
+                    title: l10n.accountVersionTitle,
                     trailing: Text(
                       '1.0.0 (Beta)',
-                      style: TextStyle(color: colors.onSurface.withOpacity(0.5), fontSize: 13),
+                      style: TextStyle(color: colors.onSurface.withValues(alpha: 0.5), fontSize: 13),
                     ),
                     onTap: null,
                   ),
@@ -478,14 +372,14 @@ class _AccountPageState extends State<AccountPage> {
                 Center(
                   child: TextButton.icon(
                     onPressed: () {
-                      HapticFeedback.mediumImpact();
+                      AppHaptics.success();
                       widget.onLogout();
                     },
-                    icon: Icon(Icons.logout_rounded, size: 20, color: colors.onSurface.withOpacity(0.6)),
+                    icon: Icon(Icons.logout_rounded, size: 20, color: colors.onSurface.withValues(alpha: 0.6)),
                     label: Text(
-                      'Sign Out', 
+                      l10n.accountSignOut, 
                       style: TextStyle(
-                        color: colors.onSurface.withOpacity(0.6),
+                        color: colors.onSurface.withValues(alpha: 0.6),
                         fontWeight: FontWeight.w600,
                         fontSize: 14
                       )
@@ -521,6 +415,7 @@ class _AccountPageState extends State<AccountPage> {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final l10n = AppLocalizations.of(context);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -529,7 +424,7 @@ class _AccountPageState extends State<AccountPage> {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.25 : 0.04),
+            color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.04),
             blurRadius: 24,
             offset: const Offset(0, 8),
           )
@@ -547,7 +442,7 @@ class _AccountPageState extends State<AccountPage> {
             ),
             child: Icon(
               loggedIn ? Icons.person_rounded : Icons.person_off_rounded,
-              color: loggedIn ? const Color(0xFF1565C0) : colors.onSurface.withOpacity(0.4),
+              color: loggedIn ? const Color(0xFF1565C0) : colors.onSurface.withValues(alpha: 0.4),
               size: 30,
             ),
           ),
@@ -557,13 +452,15 @@ class _AccountPageState extends State<AccountPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                   Text(
-                    loggedIn ? 'Hello, $name' : 'Guest Account',
+                    loggedIn
+                        ? (l10n?.accountHelloUser(name) ?? 'Hello, $name')
+                        : (l10n?.accountGuestTitle ?? 'Guest Account'),
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: colors.onSurface),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    loggedIn ? email : 'Sign in to sync your data',
-                    style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.6)),
+                    loggedIn ? email : (l10n?.accountSignInHint ?? 'Sign in to sync your data'),
+                    style: TextStyle(fontSize: 13, color: colors.onSurface.withValues(alpha: 0.6)),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                   ),
               ],
@@ -576,7 +473,7 @@ class _AccountPageState extends State<AccountPage> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), 
                 padding: const EdgeInsets.symmetric(horizontal: 16)
               ),
-              child: const Text('Log In', style: TextStyle(fontSize: 14)),
+              child: Text(l10n?.accountLogIn ?? 'Log In', style: const TextStyle(fontSize: 14)),
             ),
         ],
       ),
@@ -596,7 +493,7 @@ class _AccountPageState extends State<AccountPage> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
+              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
               blurRadius: 16,
             )
           ],
@@ -606,118 +503,13 @@ class _AccountPageState extends State<AccountPage> {
             const Icon(Icons.home_rounded, color: _primaryColor, size: 30),
             const SizedBox(width: 16),
             Expanded(child: Text(widget.repo.currentFamilyName, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
-            Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withOpacity(0.4)),
+            Icon(Icons.chevron_right, color: theme.colorScheme.onSurface.withValues(alpha: 0.4)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHomeConnectCard(BuildContext context, bool loggedIn) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: loggedIn && _hcConnected ? _primaryColor.withOpacity(0.1) : Colors.transparent),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          )
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(24),
-          onTap: () async {
-            if (!loggedIn) { _handleLogin(); return; } 
-            if (_hcConnected) {
-              await showModalBottomSheet(
-                context: context,
-                showDragHandle: true,
-                backgroundColor: Theme.of(context).cardColor,
-                builder: (_) => SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(leading: const Icon(Icons.refresh_rounded), title: const Text('Refresh Status'), onTap: () async { Navigator.pop(context); await _refreshHomeConnectStatus(); }),
-                      ListTile(leading: const Icon(Icons.kitchen_rounded), title: const Text('View Appliances'), onTap: () async { Navigator.pop(context); await _fetchHomeConnectAppliances(); }),
-                      const Divider(),
-                      ListTile(leading: Icon(Icons.link_off_rounded, color: Colors.red[400]), title: Text('Disconnect', style: TextStyle(color: Colors.red[700])), onTap: () async { Navigator.pop(context); await _disconnectHomeConnect(); }),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
-              );
-            } else {
-              await _startHomeConnectBind();
-            }
-          },
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: _primaryColor.withOpacity(0.1), 
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.power_settings_new_rounded, color: _primaryColor, size: 24),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Home Connect',
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: colors.onSurface),
-                          ),
-                          const SizedBox(height: 2),
-                          if (_hcLoading)
-                            Text(
-                              'Connecting...',
-                              style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.5)),
-                            )
-                          else if (_hcConnected)
-                            Text(
-                              'Active & Synced',
-                              style: TextStyle(fontSize: 13, color: Colors.green[600], fontWeight: FontWeight.w600),
-                            )
-                          else
-                            Text(
-                              'Tap to connect',
-                              style: TextStyle(fontSize: 13, color: colors.onSurface.withOpacity(0.5)),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (_hcLoading) const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    else Icon(
-                      _hcConnected ? Icons.check_circle_rounded : Icons.arrow_forward_ios_rounded,
-                      color: _hcConnected ? Colors.green : colors.onSurface.withOpacity(0.2),
-                      size: _hcConnected ? 28 : 16,
-                    ),
-                  ],
-                ),
-                if (_hcError != null) Padding(padding: const EdgeInsets.only(top: 16), child: Container(width: double.infinity, padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.red.withOpacity(0.05), borderRadius: BorderRadius.circular(12), border: Border.all(color: Colors.red.withOpacity(0.1))), child: Row(children: [Icon(Icons.error_outline_rounded, size: 16, color: Colors.red[700]), const SizedBox(width: 8), Expanded(child: Text(_hcError!, style: TextStyle(color: Colors.red[900], fontSize: 12)))]))),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _SettingsContainer extends StatelessWidget {
@@ -735,7 +527,7 @@ class _SettingsContainer extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.03),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.03),
             blurRadius: 16,
             offset: const Offset(0, 4),
           )
@@ -762,7 +554,7 @@ class _SettingsTile extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(10), 
         decoration: BoxDecoration(
-          color: (iconColor ?? Theme.of(context).colorScheme.onSurface).withOpacity(0.1), 
+          color: (iconColor ?? Theme.of(context).colorScheme.onSurface).withValues(alpha: 0.1), 
           borderRadius: BorderRadius.circular(12),
         ), 
         child: Icon(icon, color: iconColor, size: 20)
@@ -783,3 +575,10 @@ class _Divider extends StatelessWidget {
     return Divider(height: 1, thickness: 1, color: Theme.of(context).dividerColor, indent: 70);
   }
 }
+
+
+
+
+
+
+

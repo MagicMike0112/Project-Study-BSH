@@ -1,3 +1,5 @@
+import '../utils/app_time.dart';
+
 class MealPlan {
   final String id;
   final String? familyId;
@@ -34,7 +36,7 @@ class MealPlan {
       'recipe_name': recipeName,
       'item_ids': itemIds.toList(),
       'missing_items': missingItems,
-      'updated_at': updatedAt.toIso8601String(),
+      'updated_at': AppTime.toUtcIso(updatedAt),
     };
   }
 
@@ -49,7 +51,7 @@ class MealPlan {
       'recipe_name': recipeName,
       'item_ids': itemIds.toList(),
       'missing_items': missingItems,
-      'updated_at': updatedAt.toIso8601String(),
+      'updated_at': AppTime.toUtcIso(updatedAt),
     };
   }
 
@@ -64,7 +66,7 @@ class MealPlan {
       recipeName: json['recipe_name']?.toString(),
       itemIds: (json['item_ids'] as List? ?? []).map((e) => e.toString()).toSet(),
       missingItems: (json['missing_items'] as List? ?? []).map((e) => e.toString()).toList(),
-      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ?? DateTime.now(),
+      updatedAt: AppTime.parseServerTimestamp(json['updated_at']) ?? DateTime.now(),
     );
   }
 }
@@ -75,3 +77,5 @@ String _dateOnly(DateTime date) {
   final d = date.day.toString().padLeft(2, '0');
   return '$y-$m-$d';
 }
+
+

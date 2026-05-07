@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../l10n/app_localizations.dart';
 
 class FridgeCameraPage extends StatefulWidget {
   const FridgeCameraPage({super.key});
@@ -23,10 +24,15 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _load();
+    });
   }
 
   Future<void> _load() async {
+    final l10n = AppLocalizations.of(context);
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;
@@ -34,9 +40,11 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
 
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Please sign in to connect Home Connect.';
+        _error = l10n?.fridgeCameraSignInToConnect ??
+            'Please sign in to connect Home Connect.';
       });
       return;
     }
@@ -53,9 +61,11 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
         },
       );
       if (r.statusCode == 409) {
+        if (!mounted) return;
         setState(() {
           _loading = false;
-          _error = 'Home Connect is not connected.';
+          _error = l10n?.fridgeCameraNotConnected ??
+              'Home Connect is not connected.';
         });
         return;
       }
@@ -66,14 +76,17 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
       final list = (obj['appliances'] as List? ?? [])
           .map((e) => _FridgeDevice.fromJson((e as Map).cast<String, dynamic>()))
           .toList();
+      if (!mounted) return;
       setState(() {
         _devices = list;
         _loading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = 'Failed to load images: $e';
+        _error = l10n?.fridgeCameraLoadFailed(e.toString()) ??
+            'Failed to load images: $e';
       });
     }
   }
@@ -82,12 +95,13 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          'Fridge View',
+          l10n?.fridgeCameraTitle ?? 'Fridge View',
           style: TextStyle(fontWeight: FontWeight.w700, color: colors.onSurface),
         ),
         backgroundColor: theme.scaffoldBackgroundColor,
@@ -95,7 +109,7 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
         centerTitle: false,
         actions: [
           IconButton(
-            tooltip: 'Refresh',
+            tooltip: l10n?.fridgeCameraRefreshTooltip ?? 'Refresh',
             icon: Icon(Icons.refresh_rounded, color: colors.onSurface),
             onPressed: _load,
           ),
@@ -116,7 +130,10 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
       return _buildEmptyState(_error!);
     }
     if (_devices.isEmpty) {
-      return _buildEmptyState('No fridge devices found.');
+      return _buildEmptyState(
+        AppLocalizations.of(context)?.fridgeCameraNoDevices ??
+            'No fridge devices found.',
+      );
     }
 
     return ListView.separated(
@@ -138,7 +155,7 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.2 : 0.05),
+            color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.05),
             blurRadius: 16,
             offset: const Offset(0, 6),
           ),
@@ -164,14 +181,20 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  device.name.isNotEmpty ? device.name : 'Fridge',
+                  device.name.isNotEmpty
+                      ? device.name
+                      : (AppLocalizations.of(context)?.foodLocationFridge ??
+                          'Fridge'),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
                 ),
               ),
               Text(
-                '${device.images.length} images',
+                (AppLocalizations.of(context)?.fridgeCameraImageCount(
+                      device.images.length.toString(),
+                    )) ??
+                    '${device.images.length} images',
                 style: TextStyle(
-                  color: colors.onSurface.withOpacity(0.6),
+                  color: colors.onSurface.withValues(alpha: 0.6),
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
                 ),
@@ -188,8 +211,9 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
           if (device.images.isEmpty && device.error == null) ...[
             const SizedBox(height: 12),
             Text(
-              'No images available.',
-              style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 12),
+              AppLocalizations.of(context)?.fridgeCameraNoImages ??
+                  'No images available.',
+              style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6), fontSize: 12),
             ),
           ],
           if (device.images.isNotEmpty) ...[
@@ -260,7 +284,7 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
         child: Text(
           title,
           textAlign: TextAlign.center,
-          style: TextStyle(color: colors.onSurface.withOpacity(0.6), fontSize: 12),
+          style: TextStyle(color: colors.onSurface.withValues(alpha: 0.6), fontSize: 12),
         ),
       ),
     );
@@ -281,9 +305,10 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
                   url,
                   fit: BoxFit.contain,
                   headers: {'Authorization': 'Bearer $_token'},
-                  errorBuilder: (context, error, stack) => const Center(
+                  errorBuilder: (context, error, stack) => Center(
                     child: Text(
-                      'Failed to load image',
+                      AppLocalizations.of(context)?.fridgeCameraImageLoadFailed ??
+                          'Failed to load image',
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
@@ -328,7 +353,7 @@ class _FridgeCameraPageState extends State<FridgeCameraPage> {
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: isDark ? Colors.white.withOpacity(0.08) : const Color(0xFFE6F1F7),
+              color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE6F1F7),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -405,3 +430,5 @@ class _FridgeImage {
     return _FridgeImage(imageKey: key, title: title);
   }
 }
+
+

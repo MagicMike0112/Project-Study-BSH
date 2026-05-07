@@ -1,4 +1,4 @@
-// lib/services/archive_service.dart
+﻿// lib/services/archive_service.dart
 import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
@@ -144,7 +144,7 @@ class ArchiveService {
     final p = await _prefs();
     final list = await getAll();
 
-    // 防止重复：同 recipeId 的就先删掉，再插入最新（更符合“按添加时间排序”的直觉）
+    // NOTE: legacy comment cleaned.
     final filtered = list.where((x) => x.recipeId != recipe.recipeId).toList();
     filtered.insert(0, recipe);
 
@@ -178,3 +178,4 @@ class ArchiveService {
     }
   }
 }
+

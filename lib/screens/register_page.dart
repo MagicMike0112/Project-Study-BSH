@@ -1,6 +1,7 @@
 // lib/screens/register_page.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../l10n/app_localizations.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -12,7 +13,7 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
 
-  // 控制器
+  // NOTE: legacy comment cleaned.
   final _nameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _pwdCtrl = TextEditingController();
@@ -36,10 +37,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
   final _ageGroups = const [
     '<18',
-    '18–24',
-    '25–34',
-    '35–44',
-    '45–54',
+    '18-24',
+    '25-34',
+    '35-44',
+    '45-54',
     '55+',
   ];
 
@@ -54,15 +55,16 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
-    // 隐藏键盘，避免遮挡 SnackBar 或 Loading
+    final l10n = AppLocalizations.of(context);
+    // NOTE: legacy comment cleaned.
     FocusScope.of(context).unfocus();
 
     if (!_formKey.currentState!.validate()) return;
 
     if (_pwdCtrl.text != _pwd2Ctrl.text) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Passwords do not match.'),
+        SnackBar(
+          content: Text(l10n?.registerPasswordsDoNotMatch ?? 'Passwords do not match.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -75,11 +77,11 @@ class _RegisterPageState extends State<RegisterPage> {
       final email = _emailCtrl.text.trim();
       final pwd = _pwdCtrl.text;
 
-      // Supabase 注册
+      // NOTE: legacy comment cleaned.
       await _supabase.auth.signUp(
         email: email,
         password: pwd,
-        // 如果是 Web PWA，这个链接没问题；如果是 App，建议配置 Deep Link
+        // NOTE: legacy comment cleaned.
         emailRedirectTo: 'https://bshpwa.vercel.app', 
         data: {
           'display_name': name,
@@ -91,15 +93,15 @@ class _RegisterPageState extends State<RegisterPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Sign-up successful! Please check your email to confirm.',
+            l10n?.registerSuccessCheckEmail ?? 'Sign-up successful! Please check your email to confirm.',
           ),
           backgroundColor: Colors.green,
         ),
       );
 
-      Navigator.pop(context, true); // 返回 true 表示注册成功
+      Navigator.pop(context, true); // NOTE: legacy comment cleaned.
     } on AuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -111,8 +113,8 @@ class _RegisterPageState extends State<RegisterPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unexpected error, please try again.'),
+        SnackBar(
+          content: Text(l10n?.authUnexpectedError ?? 'Unexpected error, please try again.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -123,12 +125,13 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      // 🟢 确保键盘弹出时页面可以滚动
+      // NOTE: legacy comment cleaned.
       resizeToAvoidBottomInset: true,
       body: Container(
         decoration: BoxDecoration(
@@ -137,21 +140,21 @@ class _RegisterPageState extends State<RegisterPage> {
             end: Alignment.bottomRight,
             colors: [
               isDark ? const Color(0xFF0F141A) : const Color(0xFFF6F8FA),
-              scheme.primary.withOpacity(isDark ? 0.18 : 0.06),
-              scheme.secondary.withOpacity(isDark ? 0.12 : 0.05),
+              scheme.primary.withValues(alpha: isDark ? 0.18 : 0.06),
+              scheme.secondary.withValues(alpha: isDark ? 0.12 : 0.05),
             ],
           ),
         ),
         child: SafeArea(
           child: Stack(
             children: [
-              // --- 背景光晕特效 ---
+              // NOTE: legacy comment cleaned.
               Positioned(
                 left: -80,
                 top: -60,
                 child: _GlowOrb(
                   size: 200,
-                  color: scheme.secondary.withOpacity(0.15),
+                  color: scheme.secondary.withValues(alpha: 0.15),
                 ),
               ),
               Positioned(
@@ -159,25 +162,25 @@ class _RegisterPageState extends State<RegisterPage> {
                 bottom: -40,
                 child: _GlowOrb(
                   size: 260,
-                  color: scheme.primary.withOpacity(0.12),
+                  color: scheme.primary.withValues(alpha: 0.12),
                 ),
               ),
 
-              // --- 顶部返回按钮 ---
+              // NOTE: legacy comment cleaned.
               Positioned(
                 top: 0,
                 left: 0,
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(8, 6, 8, 0),
                   child: IconButton(
-                    tooltip: 'Back to Login',
+                    tooltip: l10n?.registerBackToLogin ?? 'Back to Login',
                     onPressed: _loading ? null : () => Navigator.pop(context),
                     icon: const Icon(Icons.arrow_back),
                   ),
                 ),
               ),
 
-              // --- 主内容区域 ---
+              // NOTE: legacy comment cleaned.
               Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(20),
@@ -186,13 +189,13 @@ class _RegisterPageState extends State<RegisterPage> {
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
-                        color: theme.cardColor.withOpacity(isDark ? 0.94 : 0.92),
+                        color: theme.cardColor.withValues(alpha: isDark ? 0.94 : 0.92),
                         border: Border.all(
-                          color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+                          color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(isDark ? 0.35 : 0.1),
+                            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.1),
                             blurRadius: 18,
                             offset: const Offset(0, 10),
                           ),
@@ -202,14 +205,14 @@ class _RegisterPageState extends State<RegisterPage> {
                         padding: const EdgeInsets.fromLTRB(22, 28, 22, 24),
                         child: Form(
                           key: _formKey,
-                          child: AutofillGroup( // 🟢 启用表单自动填充组
+                          child: AutofillGroup( // NOTE: legacy comment cleaned.
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 // Header
                                 Text(
-                                  'Create Account',
+                                  l10n?.registerCreateAccountTitle ?? 'Create Account',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 24,
@@ -220,37 +223,37 @@ class _RegisterPageState extends State<RegisterPage> {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  'Join us to manage your food smarter.',
+                                  l10n?.registerCreateAccountSubtitle ?? 'Join us to manage your food smarter.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     fontSize: 14,
-                                    color: scheme.onSurface.withOpacity(0.6),
+                                    color: scheme.onSurface.withValues(alpha: 0.6),
                                     height: 1.4,
                                   ),
                                 ),
                                 const SizedBox(height: 24),
 
-                                // 🟢 Name Input
+                                // NOTE: legacy comment cleaned.
                                 _TechField(
-                                  label: 'Name',
-                                  hint: 'How should we call you?',
+                                  label: l10n?.registerNameLabel ?? 'Name',
+                                  hint: l10n?.registerNameHint ?? 'How should we call you?',
                                   icon: Icons.person_outline_rounded,
                                   controller: _nameCtrl,
                                   keyboardType: TextInputType.name,
-                                  autofillHints: const [AutofillHints.name], // 🟢 自动填充
-                                  textInputAction: TextInputAction.next,     // 🟢 下一项
+                                  autofillHints: const [AutofillHints.name], // NOTE: legacy comment cleaned.
+                                  textInputAction: TextInputAction.next,     // NOTE: legacy comment cleaned.
                                   enabled: !_loading,
                                   validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return 'Please enter your name';
-                                    if (v.trim().length < 2) return 'Name is too short';
+                                    if (v == null || v.trim().isEmpty) return l10n?.registerEnterName ?? 'Please enter your name';
+                                    if (v.trim().length < 2) return l10n?.registerNameTooShort ?? 'Name is too short';
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 12),
 
-                                // 🟢 Email Input
+                                // NOTE: legacy comment cleaned.
                                 _TechField(
-                                  label: 'Email',
+                                  label: l10n?.registerEmailLabel ?? 'Email',
                                   hint: 'name@example.com',
                                   icon: Icons.mail_outline_rounded,
                                   controller: _emailCtrl,
@@ -259,17 +262,17 @@ class _RegisterPageState extends State<RegisterPage> {
                                   textInputAction: TextInputAction.next,
                                   enabled: !_loading,
                                   validator: (v) {
-                                    if (v == null || v.trim().isEmpty) return 'Please enter your email';
-                                    if (!v.contains('@')) return 'Email looks invalid';
+                                    if (v == null || v.trim().isEmpty) return l10n?.authPleaseEnterEmail ?? 'Please enter your email';
+                                    if (!v.contains('@')) return l10n?.authEmailInvalid ?? 'Email looks invalid';
                                     return null;
                                   },
                                 ),
                                 const SizedBox(height: 12),
 
-                                // 🟢 Password Input
+                                // NOTE: legacy comment cleaned.
                                 _TechField(
-                                  label: 'Password',
-                                  hint: 'Min 6 chars',
+                                  label: l10n?.registerPasswordLabel ?? 'Password',
+                                  hint: l10n?.registerPasswordHint ?? 'Min 6 chars',
                                   icon: Icons.lock_outline_rounded,
                                   controller: _pwdCtrl,
                                   enabled: !_loading,
@@ -279,97 +282,97 @@ class _RegisterPageState extends State<RegisterPage> {
                                   suffix: IconButton(
                                     icon: Icon(
                                       _obscure1 ? Icons.visibility_off : Icons.visibility,
-                                      color: scheme.onSurface.withOpacity(0.6),
+                                      color: scheme.onSurface.withValues(alpha: 0.6),
                                       size: 20,
                                     ),
                                     onPressed: () => setState(() => _obscure1 = !_obscure1),
                                   ),
                                   validator: (v) => (v == null || v.length < 6)
-                                      ? 'At least 6 characters'
+                                      ? (l10n?.authAtLeast6Chars ?? 'At least 6 characters')
                                       : null,
                                 ),
                                 const SizedBox(height: 12),
 
-                                // 🟢 Repeat Password
+                                // NOTE: legacy comment cleaned.
                                 _TechField(
-                                  label: 'Repeat Password',
-                                  hint: 'Confirm password',
+                                  label: l10n?.registerRepeatPasswordLabel ?? 'Repeat Password',
+                                  hint: l10n?.registerRepeatPasswordHint ?? 'Confirm password',
                                   icon: Icons.lock_reset_rounded,
                                   controller: _pwd2Ctrl,
                                   enabled: !_loading,
                                   obscureText: _obscure2,
                                   autofillHints: const [AutofillHints.newPassword],
-                                  textInputAction: TextInputAction.done, // 🟢 最后一项输入
+                                  textInputAction: TextInputAction.done, // NOTE: legacy comment cleaned.
                                   suffix: IconButton(
                                     icon: Icon(
                                       _obscure2 ? Icons.visibility_off : Icons.visibility,
-                                      color: scheme.onSurface.withOpacity(0.6),
+                                      color: scheme.onSurface.withValues(alpha: 0.6),
                                       size: 20,
                                     ),
                                     onPressed: () => setState(() => _obscure2 = !_obscure2),
                                   ),
                                   validator: (v) =>
-                                      (v != _pwdCtrl.text) ? 'Passwords do not match' : null,
+                                      (v != _pwdCtrl.text) ? (l10n?.registerPasswordsDoNotMatchInline ?? 'Passwords do not match') : null,
                                 ),
                                 const SizedBox(height: 20),
 
                                 // Divider
                                 Row(
                                   children: [
-                                    Expanded(child: Divider(color: Colors.black.withOpacity(isDark ? 0.3 : 0.1))),
+                                    Expanded(child: Divider(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1))),
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 8),
                                       child: Text(
-                                        'PROFILE DETAILS',
+                                        l10n?.registerProfileDetailsTitle ?? 'PROFILE DETAILS',
                                         style: TextStyle(
                                           fontSize: 11,
                                           fontWeight: FontWeight.w700,
-                                          color: scheme.onSurface.withOpacity(0.5),
+                                          color: scheme.onSurface.withValues(alpha: 0.5),
                                           letterSpacing: 0.5,
                                         ),
                                       ),
                                     ),
-                                    Expanded(child: Divider(color: Colors.black.withOpacity(isDark ? 0.3 : 0.1))),
+                                    Expanded(child: Divider(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.1))),
                                   ],
                                 ),
                                 const SizedBox(height: 20),
 
                                 // Gender Dropdown
                                 _TechDropdown(
-                                  label: 'Gender',
+                                  label: l10n?.registerGenderLabel ?? 'Gender',
                                   icon: Icons.wc_rounded,
                                   value: _gender,
                                   items: _genders,
                                   enabled: !_loading,
                                   onChanged: (v) => setState(() => _gender = v),
-                                  validator: (v) => v == null ? 'Required' : null,
+                                  validator: (v) => v == null ? (l10n?.registerRequired ?? 'Required') : null,
                                 ),
                                 const SizedBox(height: 12),
 
                                 // Age Group Dropdown
                                 _TechDropdown(
-                                  label: 'Age Group',
+                                  label: l10n?.registerAgeGroupLabel ?? 'Age Group',
                                   icon: Icons.cake_rounded,
                                   value: _ageGroup,
                                   items: _ageGroups,
                                   enabled: !_loading,
                                   onChanged: (v) => setState(() => _ageGroup = v),
-                                  validator: (v) => v == null ? 'Required' : null,
+                                  validator: (v) => v == null ? (l10n?.registerRequired ?? 'Required') : null,
                                 ),
                                 const SizedBox(height: 12),
 
-                                // 🟢 Country Input
+                                // NOTE: legacy comment cleaned.
                                 _TechField(
-                                  label: 'Country',
-                                  hint: 'e.g. Germany',
+                                  label: l10n?.registerCountryLabel ?? 'Country',
+                                  hint: l10n?.registerCountryHint ?? 'e.g. Germany',
                                   icon: Icons.public_rounded,
                                   controller: _countryCtrl,
                                   textInputAction: TextInputAction.done,
                                   enabled: !_loading,
-                                  // 这里也可以加上 AutofillHints.countryName，但 Flutter 某些版本支持有限
-                                  onFieldSubmitted: (_) => _register(), // 🟢 填完直接提交
+                                  // NOTE: legacy comment cleaned.
+                                  onFieldSubmitted: (_) => _register(), // NOTE: legacy comment cleaned.
                                   validator: (v) => (v == null || v.trim().isEmpty)
-                                      ? 'Please tell us your country'
+                                      ? (l10n?.registerPleaseEnterCountry ?? 'Please tell us your country')
                                       : null,
                                 ),
                                 const SizedBox(height: 32),
@@ -383,12 +386,12 @@ class _RegisterPageState extends State<RegisterPage> {
                                       gradient: LinearGradient(
                                         colors: [
                                           scheme.primary,
-                                          scheme.primary.withOpacity(0.8),
+                                          scheme.primary.withValues(alpha: 0.8),
                                         ],
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: scheme.primary.withOpacity(0.25),
+                                          color: scheme.primary.withValues(alpha: 0.25),
                                           blurRadius: 16,
                                           offset: const Offset(0, 8),
                                         ),
@@ -413,8 +416,8 @@ class _RegisterPageState extends State<RegisterPage> {
                                                 strokeWidth: 2,
                                               ),
                                             )
-                                          : const Text(
-                                              'Create Account',
+                                          : Text(
+                                              l10n?.registerCreateAccountTitle ?? 'Create Account',
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w800,
                                                 fontSize: 16,
@@ -442,7 +445,7 @@ class _RegisterPageState extends State<RegisterPage> {
 }
 
 // --------------------------------------------------------
-// 复用组件 (已增强 Autofill 和 InputAction 支持)
+// NOTE: legacy comment cleaned.
 // --------------------------------------------------------
 
 class _TechField extends StatelessWidget {
@@ -455,7 +458,7 @@ class _TechField extends StatelessWidget {
   final bool obscureText;
   final String? Function(String?)? validator;
   final Widget? suffix;
-  // 🟢 新增参数
+  // NOTE: legacy comment cleaned.
   final Iterable<String>? autofillHints;
   final TextInputAction? textInputAction;
   final ValueChanged<String>? onFieldSubmitted;
@@ -487,7 +490,7 @@ class _TechField extends StatelessWidget {
       enabled: enabled,
       obscureText: obscureText,
       validator: validator,
-      // 🟢 关键优化配置
+      // NOTE: legacy comment cleaned.
       autofillHints: autofillHints,
       textInputAction: textInputAction,
       onFieldSubmitted: onFieldSubmitted,
@@ -496,15 +499,15 @@ class _TechField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
-        hintStyle: TextStyle(color: scheme.onSurface.withOpacity(0.4), fontSize: 14),
+        hintStyle: TextStyle(color: scheme.onSurface.withValues(alpha: 0.4), fontSize: 14),
         prefixIcon: Container(
           margin: const EdgeInsets.all(10),
           width: 36,
           height: 36,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            color: scheme.primary.withOpacity(0.08),
-            border: Border.all(color: scheme.primary.withOpacity(0.1)),
+            color: scheme.primary.withValues(alpha: 0.08),
+            border: Border.all(color: scheme.primary.withValues(alpha: 0.1)),
           ),
           child: Icon(icon, size: 18, color: scheme.primary),
         ),
@@ -514,19 +517,19 @@ class _TechField extends StatelessWidget {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(isDark ? 0.3 : 0.08)),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.primary.withOpacity(0.5), width: 1.5),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.5), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.red.withOpacity(0.5)),
+          borderSide: BorderSide(color: Colors.red.withValues(alpha: 0.5)),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.red.withOpacity(0.8), width: 1.5),
+          borderSide: BorderSide(color: Colors.red.withValues(alpha: 0.8), width: 1.5),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       ),
@@ -561,12 +564,16 @@ class _TechDropdown extends StatelessWidget {
 
     return DropdownButtonFormField<String>(
       initialValue: value,
+      borderRadius: BorderRadius.circular(24),
+      elevation: 12,
+      menuMaxHeight: 360,
+      dropdownColor: isDark ? const Color(0xFF1A1E25) : Colors.white,
       items: items
           .map((e) => DropdownMenuItem(value: e, child: Text(e, style: const TextStyle(fontSize: 15))))
           .toList(),
       onChanged: enabled ? onChanged : null,
       validator: validator,
-      icon: Icon(Icons.arrow_drop_down_rounded, color: scheme.onSurface.withOpacity(0.6)),
+      icon: Icon(Icons.arrow_drop_down_rounded, color: scheme.onSurface.withValues(alpha: 0.6)),
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Container(
@@ -575,8 +582,8 @@ class _TechDropdown extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            color: scheme.primary.withOpacity(0.08),
-            border: Border.all(color: scheme.primary.withOpacity(0.1)),
+            color: scheme.primary.withValues(alpha: 0.08),
+            border: Border.all(color: scheme.primary.withValues(alpha: 0.1)),
           ),
           child: Icon(icon, size: 18, color: scheme.primary),
         ),
@@ -585,15 +592,15 @@ class _TechDropdown extends StatelessWidget {
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(isDark ? 0.3 : 0.08)),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.primary.withOpacity(0.5), width: 1.5),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.5), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.red.withOpacity(0.5)),
+          borderSide: BorderSide(color: Colors.red.withValues(alpha: 0.5)),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       ),
@@ -617,10 +624,13 @@ class _GlowOrb extends StatelessWidget {
         gradient: RadialGradient(
           colors: [
             color,
-            color.withOpacity(0.0),
+            color.withValues(alpha: 0.0),
           ],
         ),
       ),
     );
   }
 }
+
+
+

@@ -1,0 +1,1157 @@
+﻿{
+    "@@locale":  "zh",
+    "appTitle":  "BSH 智能食物小管家",
+    "navToday":  "今天",
+    "todayGreetingMorning":  "早上好",
+    "todayGreetingNoon":  "下午好",
+    "todayGreetingEvening":  "晚上好",
+    "navInventory":  "库存",
+    "navShopping":  "购物",
+    "navImpact":  "影响",
+    "undo":  "哎呀，撤销一下",
+    "prefLanguageTitle":  "语言",
+    "prefLanguageSubtitle":  "切换应用语言",
+    "languageSystem":  "跟随系统",
+    "languageEnglish":  "英语",
+    "languageChinese":  "中文",
+    "languageGerman":  "德语",
+    "themeTitle":  "主题",
+    "themeFollowSystem":  "跟随系统",
+    "themeLight":  "浅色",
+    "themeDark":  "深色",
+    "accountTitle":  "账户",
+    "accountSectionHousehold":  "家庭",
+    "accountSectionMyHome":  "我的家",
+    "accountSectionIntegrations":  "集成",
+    "accountSectionPreferences":  "偏好设置",
+    "accountSectionAbout":  "关于",
+    "accountNotificationsTitle":  "通知",
+    "accountNotificationsSubtitle":  "过期提醒与餐时提醒",
+    "notificationPermissionBlocked":  "系统设置中已阻止通知权限。",
+    "notificationMealReminderMessage":  "你的部分食材即将过期，快来 Smart Food Home 看看。",
+    "notificationSavedFutureApply":  "已保存，新提醒时间将应用于后续通知。",
+    "notificationEnablePermissionFirst":  "请先开启通知权限。",
+    "notificationTestMessage":  "这是一条来自 Smart Food Home 的测试过期提醒。",
+    "notificationTestSent":  "测试通知已发送。",
+    "notificationThreeDayExpiryTitle":  "3 天过期提醒",
+    "notificationThreeDayExpiryDesc":  "当食材距离过期 3 天时提醒一次。",
+    "notificationMealTimeTitle":  "餐时提醒",
+    "notificationMealTimeDesc":  "每天在午餐和晚餐时间提醒两次。",
+    "notificationPermissionAllowed":  "系统通知权限：已允许",
+    "notificationPermissionBlockedStatus":  "系统通知权限：已阻止",
+    "notificationStatusCombined":  "餐时提醒：{mealStatus} | 3 天提醒：{threeDayStatus}",
+    "@notificationStatusCombined":  {
+                                        "placeholders":  {
+                                                             "mealStatus":  {
+
+                                                                            },
+                                                             "threeDayStatus":  {
+
+                                                                                }
+                                                         }
+                                    },
+    "notificationStatusScheduled":  "已安排",
+    "notificationStatusOff":  "关闭",
+    "notificationMealTimesTitle":  "用餐时间",
+    "notificationMealTimesHint":  "我们会在这些时间提醒你查看即将过期的食材。",
+    "notificationLunchLabel":  "常用午餐时间",
+    "notificationDefaultLunchTime":  "11:30（默认）",
+    "notificationDinnerLabel":  "常用晚餐时间",
+    "notificationDefaultDinnerTime":  "17:30（默认）",
+    "notificationResetDefaults":  "恢复默认",
+    "notificationSendTestNow":  "立即发送测试",
+    "familyLoadMembersFailed":  "加载成员失败：{error}",
+    "@familyLoadMembersFailed":  {
+                                     "placeholders":  {
+                                                          "error":  {
+
+                                                                    }
+                                                      }
+                                 },
+    "familyErrorTitle":  "错误",
+    "familyGenerateCodeFailed":  "生成邀请码失败：\n\n{error}",
+    "@familyGenerateCodeFailed":  {
+                                      "placeholders":  {
+                                                           "error":  {
+
+                                                                     }
+                                                       }
+                                  },
+    "familyOk":  "确定",
+    "familyJoinTitle":  "加入家庭",
+    "familyJoinDesc":  "请输入家庭成员分享的 6 位邀请码。",
+    "familyInviteCodeLabel":  "邀请码",
+    "familyJoinAction":  "加入",
+    "familyJoinedSuccess":  "已成功加入家庭！",
+    "familyInvalidOrExpiredCode":  "邀请码无效或已过期。",
+    "familyErrorMessage":  "错误：{error}",
+    "@familyErrorMessage":  {
+                                "placeholders":  {
+                                                     "error":  {
+
+                                                               }
+                                                 }
+                            },
+    "familyLeaveTitle":  "退出家庭？",
+    "familyLeaveDesc":  "退出后你将不再看到共享库存和购物清单，并回到个人私有空间。",
+    "familyLeaveAction":  "退出",
+    "familyLeftSuccess":  "已退出家庭，已切换到私有模式。",
+    "familyLeaveFailed":  "退出家庭失败。",
+    "familyInviteMemberTitle":  "邀请成员",
+    "familyInviteMemberDesc":  "把这个邀请码发给你的家庭成员。\n他们可用它加入你的家庭空间。",
+    "familyInviteExpiresIn2Days":  "2 天后过期",
+    "familyDone":  "完成",
+    "familyUpdateNameTitle":  "更新你的昵称",
+    "familyDisplayNameHint":  "输入你的显示名称",
+    "familyNameUpdated":  "名称已更新。",
+    "familyNameUpdateFailed":  "名称更新失败。",
+    "familyMyFamilyTitle":  "我的家庭",
+    "familyMembersTitle":  "成员",
+    "familyNoMembersFound":  "未找到成员。",
+    "familyInviteNewMember":  "邀请新成员",
+    "familyJoinAnotherFamily":  "加入其他家庭",
+    "familyLeaveThisFamily":  "退出当前家庭",
+    "familyInventoryShoppingSynced":  "库存与购物清单已同步",
+    "familyYourDisplayName":  "你的显示名称",
+    "familyEdit":  "编辑",
+    "familyMigrationFailed":  "迁移失败",
+    "familyMigratingData":  "正在迁移你的数据",
+    "familyKeepAppOpen":  "请保持应用开启。",
+    "familyMigrationAttempt":  "尝试 {attempt} / {total}",
+    "@familyMigrationAttempt":  {
+                                    "placeholders":  {
+                                                         "attempt":  {
+
+                                                                     },
+                                                         "total":  {
+
+                                                                   }
+                                                     }
+                                },
+    "familyInventoryMode":  "库存模式",
+    "familySharedFridgeTitle":  "共享冰箱",
+    "familySharedFridgeDesc":  "所有成员共同管理库存。",
+    "familySeparateFridgesTitle":  "独立冰箱",
+    "familySeparateFridgesDesc":  "食材严格按成员归属。",
+    "familyUnknownMember":  "未知",
+    "familyUnknownInitial":  "U",
+    "accountNightModeTitle":  "夜间模式",
+    "accountStudentModeTitle":  "学生模式",
+    "accountStudentModeSubtitle":  "更省钱的食谱与建议",
+    "accountLoyaltyCardsTitle":  "会员卡",
+    "accountLoyaltyCardsSubtitle":  "连接 PAYBACK（即将上线）",
+    "accountPrivacyPolicyTitle":  "隐私政策",
+    "accountVersionTitle":  "版本",
+    "accountSignOut":  "退出登录",
+    "accountHelloUser":  "你好，{name}",
+    "@accountHelloUser":  {
+                              "placeholders":  {
+                                                   "name":  {
+
+                                                            }
+                                               }
+                          },
+    "accountGuestTitle":  "游客账户",
+    "accountSignInHint":  "登录后可同步你的数据",
+    "accountLogIn":  "登录",
+    "accountHomeConnectLinked":  "Home Connect 已连接！",
+    "accountConnectionFailed":  "连接失败",
+    "accountDisconnected":  "已断开连接",
+    "accountSimulatorAppliances":  "模拟器设备",
+    "accountNoAppliancesFound":  "未找到设备",
+    "accountUnknown":  "未知",
+    "accountIdCopied":  "ID 已复制",
+    "accountApplianceId":  "ID：{id}",
+    "@accountApplianceId":  {
+                                "placeholders":  {
+                                                     "id":  {
+
+                                                            }
+                                                 }
+                            },
+    "accountHomeConnectTitle":  "Home Connect",
+    "accountRefreshStatus":  "刷新状态",
+    "accountViewAppliances":  "查看设备",
+    "accountDisconnect":  "断开连接",
+    "accountConnecting":  "连接中...",
+    "accountActiveSynced":  "已激活并同步",
+    "accountTapToConnect":  "点击连接",
+    "leaderboardTitle":  "排行榜",
+    "leaderboardScopeWorld":  "全球",
+    "leaderboardGlobalTitle":  "全球榜",
+    "leaderboardGlobalSubtitle":  "全球表现最佳用户",
+    "leaderboardYourRank":  "你的排名",
+    "leaderboardNoDataYet":  "暂无数据",
+    "leaderboardRankInScope":  "{scope} 第 {rank} 名",
+    "@leaderboardRankInScope":  {
+                                    "placeholders":  {
+                                                         "rank":  {
+
+                                                                  },
+                                                         "scope":  {
+
+                                                                   }
+                                                     }
+                                },
+    "leaderboardLoadFailedTitle":  "排行榜加载失败",
+    "retry":  "重试",
+    "leaderboardPointsKgCo2":  "{value} kg CO2",
+    "@leaderboardPointsKgCo2":  {
+                                    "placeholders":  {
+                                                         "value":  {
+
+                                                                   }
+                                                     }
+                                },
+    "leaderboardAddFriendTitle":  "添加好友",
+    "leaderboardFriendEmailLabel":  "好友邮箱",
+    "leaderboardFriendEmailHint":  "name@email.com",
+    "cancel":  "取消",
+    "add":  "添加",
+    "leaderboardNoUserForEmail":  "没有找到该邮箱对应用户。",
+    "leaderboardInvalidUserId":  "该邮箱对应用户 ID 无效。",
+    "leaderboardCannotAddYourself":  "不能添加自己。",
+    "leaderboardFriendAdded":  "已添加好友。",
+    "leaderboardAddFriendFailed":  "添加好友失败：{error}",
+    "@leaderboardAddFriendFailed":  {
+                                        "placeholders":  {
+                                                             "error":  {
+
+                                                                       }
+                                                         }
+                                    },
+    "pullToRefreshHint":  "下拉刷新",
+    "pullToRefreshRelease":  "松手刷新",
+    "foodLocationFridge":  "冷藏",
+    "foodLocationFreezer":  "冷冻",
+    "foodLocationPantry":  "常温",
+    "foodExpiredDaysAgo":  "已过期 {days} 天",
+    "@foodExpiredDaysAgo":  {
+                                "placeholders":  {
+                                                     "days":  {
+
+                                                              }
+                                                 }
+                            },
+    "foodDaysLeft":  "还剩 {days} 天",
+    "@foodDaysLeft":  {
+                          "placeholders":  {
+                                               "days":  {
+
+                                                        }
+                                           }
+                      },
+    "foodActionCookEat":  "做饭 / 食用",
+    "foodActionFeedPets":  "喂宠物",
+    "foodActionDiscard":  "丢弃",
+    "foodPetsHappy":  "小屎和小远很开心！",
+    "todayRecipeArchiveTooltip":  "菜谱归档",
+    "todayAiChefTitle":  "AI 厨师",
+    "todayAiChefDescription":  "使用当前食材生成菜谱。",
+    "todayExpiringSoonTitle":  "即将过期",
+    "todayExpiringSoonDescription":  "快速烹饪、喂宠物或丢弃食材。",
+    "todayPetSafetyWarning":  "请确认该食物对宠物安全！",
+    "todayWhatCanICook":  "想烹饪什么？",
+    "todayBasedOnItems":  "基于你冰箱里的 {count} 个食材。",
+    "@todayBasedOnItems":  {
+                               "placeholders":  {
+                                                    "count":  {
+                                                                  "type":  "int"
+                                                              }
+                                                }
+                           },
+    "todayGenerate":  "看看",
+    "todayPlanWeekTitle":  "规划这一周！",
+    "todayPlanWeekSubtitle":  "点击开始安排餐食。",
+    "todayViewAll":  "查看全部",
+    "todayExpired":  "已过期",
+    "todayExpiryToday":  "今天到期",
+    "todayOneDayLeft":  "剩 1 天",
+    "todayAllClearTitle":  "一切正常！",
+    "todayAllClearSubtitle":  "你的冰箱很新鲜也很整洁。",
+    "todayUndoCooked":  "已烹饪“{name}”",
+    "@todayUndoCooked":  {
+                             "placeholders":  {
+                                                  "name":  {
+
+                                                           }
+                                              }
+                         },
+    "todayUndoFedPet":  "已将“{name}”喂给宠物",
+    "@todayUndoFedPet":  {
+                             "placeholders":  {
+                                                  "name":  {
+
+                                                           }
+                                              }
+                         },
+    "todayUndoDiscarded":  "已丢弃“{name}”",
+    "@todayUndoDiscarded":  {
+                                "placeholders":  {
+                                                     "name":  {
+
+                                                              }
+                                                 }
+                            },
+    "todayUndoUpdated":  "已更新“{name}”",
+    "@todayUndoUpdated":  {
+                              "placeholders":  {
+                                                   "name":  {
+
+                                                            }
+                                               }
+                          },
+    "commonSave":  "保存",
+    "inventorySyncChangesLabel":  "将更改同步到云端",
+    "inventoryCloudSyncStatusLabel":  "云同步状态",
+    "inventorySyncRetryHint":  "点击重试同步未完成的更改",
+    "inventorySyncAllSavedHint":  "点击确认所有更改已保存",
+    "inventorySyncingChanges":  "正在同步更改...",
+    "inventoryAllChangesSaved":  "所有更改已保存",
+    "inventorySyncingChangesToCloud":  "正在将更改同步到云端...",
+    "inventoryAllSavedToCloud":  "所有更改已保存到云端。",
+    "inventoryQuickSearchTitle":  "快速搜索",
+    "inventoryQuickSearchDescription":  "按名称快速找到任意食材。",
+    "inventorySearchHint":  "搜索食材...",
+    "inventoryNoItemsFound":  "未找到食材",
+    "inventoryEmptyTitle":  "库存为空",
+    "inventoryEmptySubtitle":  "点击 + 按钮添加食材。",
+    "inventoryLongPressTitle":  "长按菜单",
+    "inventoryLongPressDescription":  "长按食材可编辑、使用数量、移动或删除。",
+    "inventorySwipeDeleteTitle":  "左滑删除",
+    "inventorySwipeDeleteDescription":  "将食材向左滑动即可删除，删除后可立即撤销。",
+    "inventoryItemNoteTitle":  "食材备注",
+    "inventoryItemNoteHint":  "添加一条简短备注...",
+    "inventoryEditNote":  "编辑备注",
+    "inventoryAddNote":  "添加备注",
+    "inventorySharedLabel":  "共享",
+    "inventoryNoteReminderSubtitle":  "留一个简短提醒",
+    "inventoryChangeCategory":  "更改分类",
+    "inventoryRecordUsageUpdateQty":  "记录用量并更新数量",
+    "inventoryGreatForLeftovers":  "很适合处理剩余食物",
+    "inventoryTrackWasteImproveHabits":  "记录浪费，改进习惯",
+    "inventoryCookedToast":  "已烹饪 {qty} 的 {name}",
+    "@inventoryCookedToast":  {
+                                  "placeholders":  {
+                                                       "qty":  {
+
+                                                               },
+                                                       "name":  {
+
+                                                                }
+                                                   }
+                              },
+    "inventoryFedToPetToast":  "已把 {name} 喂给宠物",
+    "@inventoryFedToPetToast":  {
+                                    "placeholders":  {
+                                                         "name":  {
+
+                                                                  }
+                                                     }
+                                },
+    "inventoryRecordedWasteToast":  "已记录浪费：{name}",
+    "@inventoryRecordedWasteToast":  {
+                                         "placeholders":  {
+                                                              "name":  {
+
+                                                                       }
+                                                          }
+                                     },
+    "inventoryDeletedToast":  "已删除“{name}”",
+    "@inventoryDeletedToast":  {
+                                   "placeholders":  {
+                                                        "name":  {
+
+                                                                 }
+                                                    }
+                               },
+    "inventoryCookWithThis":  "用这个做饭",
+    "inventoryFeedToPet":  "喂给宠物",
+    "inventoryWastedThrownAway":  "浪费 / 丢弃",
+    "inventoryEditDetails":  "编辑详情",
+    "inventoryDeleteItem":  "删除食材",
+    "inventoryDeleteItemQuestion":  "确定删除该食材吗？",
+    "inventoryDeletePermanentQuestion":  "要将“{name}”从库存中永久移除吗？",
+    "@inventoryDeletePermanentQuestion":  {
+                                              "placeholders":  {
+                                                                   "name":  {
+
+                                                                            }
+                                                               }
+                                          },
+    "inventoryDeleteAction":  "删除",
+    "inventoryDetailQuantity":  "数量",
+    "inventoryDetailAdded":  "添加时间",
+    "inventoryDetailStorageLocation":  "存放位置",
+    "inventoryDetailNotes":  "备注",
+    "inventoryDetailStatusExpired":  "已过期",
+    "inventoryDetailStatusExpiresToday":  "今日到期",
+    "inventoryDetailStatusExpiring":  "即将过期",
+    "inventoryDetailStatusFresh":  "新鲜",
+    "inventoryDetailAddedToday":  "今天添加",
+    "inventoryDetailAddedOneDayAgo":  "1 天前添加",
+    "inventoryDetailAddedDaysAgo":  "{days} 天前添加",
+    "@inventoryDetailAddedDaysAgo":  {
+                                         "placeholders":  {
+                                                              "days":  {
+
+                                                                       }
+                                                          }
+                                     },
+    "inventoryDetailDaysLeftLabel":  "剩余\n天数",
+    "inventoryDetailEditDetailsSubtitle":  "更新食材详情和到期时间",
+    "inventorySheetUpdating":  "正在更新：{name}",
+    "@inventorySheetUpdating":  {
+                                    "placeholders":  {
+                                                         "name":  {
+
+                                                                  }
+                                                     }
+                                },
+    "inventoryActionType":  "操作类型",
+    "inventoryActionCooked":  "已烹饪",
+    "inventoryActionPetFeed":  "喂宠物",
+    "inventoryActionWaste":  "浪费",
+    "inventoryQuickAssign":  "快速分配",
+    "inventoryEditFamily":  "编辑家庭成员",
+    "inventoryYouLabel":  "你",
+    "inventoryConfirmUpdate":  "确认更新",
+    "inventoryQuantityUsed":  "已使用数量",
+    "inventoryRemainingQty":  "剩余：{value}{unit}",
+    "@inventoryRemainingQty":  {
+                                   "placeholders":  {
+                                                        "value":  {
+
+                                                                  },
+                                                        "unit":  {
+
+                                                                 }
+                                                    }
+                               },
+    "inventorySemanticsQuantityUsed":  "已使用数量",
+    "inventorySemanticsUsageHint":  "左右拖动来调整使用量",
+    "inventorySemanticsAdjustUsedAmount":  "调整已使用数量",
+    "shoppingTemporaryListTooltip":  "临时清单",
+    "shoppingFridgeCameraTitle":  "冰箱拍照",
+    "shoppingFridgeCameraDescription":  "拍一下冰箱，快速规划购物。",
+    "shoppingPurchaseHistoryTitle":  "购买记录",
+    "shoppingPurchaseHistoryDescription":  "查看已购买食材并一键加回。",
+    "shoppingCompletedLabel":  "已完成",
+    "shoppingAiSmartAddTitle":  "AI 智能添加",
+    "shoppingAiSmartAddDescription":  "从菜谱中提取食材并添加。",
+    "shoppingAiSmartAddHint":  "从菜谱文本导入食材",
+    "shoppingQuickAddTitle":  "快速添加",
+    "shoppingQuickAddDescription":  "一键快速添加单个食材。",
+    "shoppingQuickAddSemanticsLabel":  "快速添加条目",
+    "shoppingInputHint":  "在这里添加条目",
+    "shoppingRecipeImportTitle":  "菜谱导入",
+    "shoppingRecipeSignInRequiredAction":  "请先登录以使用 AI 菜谱识别。",
+    "shoppingRecipeSignInAction":  "去登录",
+    "shoppingRecipeProvideInput":  "请提供菜名、菜谱文本或图片。",
+    "shoppingRecipeAnalysisFailed":  "解析失败：{error}",
+    "@shoppingRecipeAnalysisFailed":  {
+                                          "placeholders":  {
+                                                               "error":  {
+
+                                                                         }
+                                                           }
+                                      },
+    "shoppingRecipeAddedItems":  "已添加 {count} 个条目到购物清单",
+    "@shoppingRecipeAddedItems":  {
+                                      "placeholders":  {
+                                                           "count":  {
+
+                                                                     }
+                                                       }
+                                  },
+    "shoppingRecipeInputHint":  "输入菜名或粘贴菜谱...",
+    "shoppingRecipeIngredientsSection": "食材",
+    "shoppingRecipeSeasoningsSection": "调味料",
+    "shoppingRecipeCamera":  "拍照",
+    "shoppingRecipeAlbum":  "相册",
+    "shoppingRecipeAnalyzing":  "分析中...",
+    "shoppingRecipeGetListButton":  "生成购物清单",
+    "shoppingRecipeAiThinking":  "AI 正在思考...",
+    "shoppingRecipeResultsPlaceholder":  "解析结果会显示在这里",
+    "shoppingRecipeInStockReason":  "库存中：{reason}",
+    "@shoppingRecipeInStockReason":  {
+                                         "placeholders":  {
+                                                              "reason":  {
+
+                                                                         }
+                                                          }
+                                     },
+    "shoppingRecipeCategoryLabel":  "分类：{category}",
+    "@shoppingRecipeCategoryLabel":  {
+                                         "placeholders":  {
+                                                              "category":  {
+
+                                                                           }
+                                                          }
+                                     },
+    "shoppingRecipeAddSelectedToList":  "添加 {count} 项到清单",
+    "@shoppingRecipeAddSelectedToList":  {
+                                             "placeholders":  {
+                                                                  "count":  {
+
+                                                                            }
+                                                              }
+                                         },
+    "shoppingRecipeSignInRequiredTitle":  "需要登录",
+    "shoppingRecipeSignInRequiredSubtitle":  "请先登录，同步库存并使用 AI 菜谱分析功能。",
+    "shoppingRecipeSignInNow":  "立即登录",
+    "shoppingEmptyTitle":  "清单为空",
+    "shoppingEmptySubtitle":  "手动添加食材，或使用菜谱导入。",
+    "shoppingDeletedToast":  "已删除“{name}”",
+    "@shoppingDeletedToast":  {
+                                  "placeholders":  {
+                                                       "name":  {
+
+                                                                }
+                                                   }
+                              },
+    "shoppingUndoAction":  "撤销",
+    "impactTitle":  "你的影响力",
+    "impactTimeRangeTitle":  "时间范围",
+    "impactTimeRangeDescription":  "可切换查看周、月、年数据。",
+    "impactSummaryTitle":  "影响力总览",
+    "impactSummaryDescription":  "这里可以看到省下的钱和拯救的食材。",
+    "impactKgAvoided":  "减少 {value}kg 排放",
+    "@impactKgAvoided":  {
+                             "placeholders":  {
+                                                  "value":  {
+
+                                                            }
+                                              }
+                         },
+    "impactLevelTitle":  "等级",
+    "impactStreakTitle":  "连续天数",
+    "impactDaysActive":  "活跃天数",
+    "impactActiveBadge":  "活跃中",
+    "impactWeeklyReportTitle":  "周报",
+    "impactWeeklyReportDescription":  "查看你的 AI 周总结和建议。",
+    "impactWeeklyReviewSubtitle":  "回顾你上周的表现",
+    "weeklyAddedToShoppingList":  "已添加到购物清单。",
+    "weeklyHeiExplainedTitle":  "HEI-2015 说明",
+    "weeklyHeiExplainedIntro":  "健康饮食指数（HEI-2015）是 0-100 分，用于衡量饮食与美国膳食指南的一致程度。",
+    "weeklyHeiHowComputeTitle":  "计算方式",
+    "weeklyHeiHowComputeBody":  "我们基于 USDA FoodData Central 营养数据和你记录的食物估算 HEI 组成项，包括：",
+    "weeklyHeiComponentsList":  "- 水果（总量与整果）\n- 蔬菜（总量与深绿/豆类）\n- 全谷物\n- 乳制品\n- 总蛋白与海鲜/植物蛋白\n- 脂肪酸比例\n- 适度项：精制谷物、钠、添加糖、饱和脂肪",
+    "weeklyHeiMorePoints":  "分数越高表示饮食越均衡。我们在适用场景按每 1000 千卡归一化，并使用 HEI-2015 评分标准。",
+    "weeklyGotIt":  "知道了",
+    "weeklyHeiLabelExcellent":  "优秀",
+    "weeklyHeiLabelGood":  "良好",
+    "weeklyHeiLabelFair":  "一般",
+    "weeklyHeiLabelNeedsWork":  "需改进",
+    "weeklyMacrosNotEnoughData":  "数据不足，无法计算宏量营养素。",
+    "weeklyMacroProtein":  "蛋白质",
+    "weeklyMacroCarbs":  "碳水",
+    "weeklyMacroFat":  "脂肪",
+    "weeklyDataSource":  "数据来源：{source}",
+    "@weeklyDataSource":  {
+                              "placeholders":  {
+                                                   "source":  {
+
+                                                              }
+                                               }
+                          },
+    "weeklyPrev":  "上一周",
+    "weeklyNext":  "下一周",
+    "impactChooseMascot":  "选择你的吉祥物",
+    "impactMascotNameTitle":  "吉祥物名称",
+    "impactMascotNameHint":  "给它取个名字",
+    "impactMascotCat":  "猫咪",
+    "impactMascotDog":  "狗狗",
+    "impactMascotHamster":  "仓鼠",
+    "impactMascotGuineaPig":  "豚鼠",
+    "impactFedToMascot":  "喂给 {name} 的食材",
+    "@impactFedToMascot":  {
+                               "placeholders":  {
+                                                    "name":  {
+
+                                                             }
+                                                }
+                           },
+    "impactItemFallback":  "食材",
+    "impactFridgeMasterTitle":  "冰箱达人！",
+    "impactSavedItemsStreak":  "已拯救 {savedCount} 个食材，连续 {streak} 天",
+    "@impactSavedItemsStreak":  {
+                                    "placeholders":  {
+                                                         "savedCount":  {
+
+                                                                        },
+                                                         "streak":  {
+
+                                                                    }
+                                                     }
+                                },
+    "impactTotalSavingsLabel":  "累计节省",
+    "impactNextRankLabel":  "下一级：零浪费英雄",
+    "impactBasedOnSavedItems":  "基于已拯救的 {count} 个食材",
+    "@impactBasedOnSavedItems":  {
+                                     "placeholders":  {
+                                                          "count":  {
+
+                                                                    }
+                                                      }
+                                 },
+    "impactOnTrackYearly":  "按当前节奏，全年可节省 {amount}",
+    "@impactOnTrackYearly":  {
+                                 "placeholders":  {
+                                                      "amount":  {
+
+                                                                 }
+                                                  }
+                             },
+    "impactCommunityQuestTitle":  "社区挑战",
+    "impactNewBadge":  "新",
+    "impactYouSavedCo2ThisWeek":  "本周你减少了 {value}kg 的 CO2！",
+    "@impactYouSavedCo2ThisWeek":  {
+                                       "placeholders":  {
+                                                            "value":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "impactViewLeaderboard":  "查看排行榜",
+    "impactTopSaversTitle":  "最省钱类别",
+    "impactSeeAll":  "查看全部",
+    "impactMostSavedLabel":  "节省最多",
+    "impactRecentActionsTitle":  "最近操作",
+    "impactFamilyLabel":  "家庭",
+    "impactActionCooked":  "已烹饪",
+    "impactActionFedToPet":  "已喂宠物",
+    "impactActionWasted":  "已浪费",
+    "impactTapForDietInsights":  "点我查看你的饮食洞察",
+    "impactEnjoyedLeftovers":  "吃掉了 {weight}kg 的剩余食材",
+    "@impactEnjoyedLeftovers":  {
+                                    "placeholders":  {
+                                                         "weight":  {
+
+                                                                    }
+                                                     }
+                                },
+    "impactNoDataTitle":  "暂无数据",
+    "impactNoDataSubtitle":  "开始减少浪费，这里就会出现你的影响力！",
+    "impactRangeWeek":  "周",
+    "impactRangeMonth":  "月",
+    "impactRangeYear":  "年",
+    "addFoodVoiceTapToStart":  "点按麦克风开始",
+    "addFoodDateNotSet":  "未设置",
+    "addFoodTextTooShort":  "文本太短，请提供更多信息。",
+    "addFoodRecognizedItems":  "识别到 {count} 个条目。",
+    "@addFoodRecognizedItems":  {
+                                    "placeholders":  {
+                                                         "count":  {
+                                                                       "type":  "int"
+                                                                   }
+                                                     }
+                                },
+    "addFoodAiParserUnavailable":  "AI 解析器不可用，已使用本地解析。",
+    "addFoodAiUnexpectedResponse":  "AI 返回异常，已使用本地解析。",
+    "addFoodFormFilledFromVoice":  "已根据语音填充表单。",
+    "addFoodAiReturnedEmpty":  "AI 返回为空，已使用本地解析。",
+    "addFoodNetworkParseFailed":  "网络解析失败，已使用本地解析。",
+    "addFoodAiParseFailed":  "AI 解析失败：{error}",
+    "@addFoodAiParseFailed":  {
+                                  "placeholders":  {
+                                                       "error":  {
+
+                                                                 }
+                                                   }
+                              },
+    "addFoodEnterNameFirst":  "请先输入食材名称",
+    "addFoodExpirySetTo":  "保质期已设置为 {date}",
+    "@addFoodExpirySetTo":  {
+                                "placeholders":  {
+                                                     "date":  {
+
+                                                              }
+                                                 }
+                            },
+    "addFoodMaxFourImages":  "最多支持 4 张图片，已选取前 4 张。",
+    "addFoodNoItemsDetected":  "图片中未识别到食材。",
+    "addFoodScanFailed":  "扫描失败：{error}",
+    "@addFoodScanFailed":  {
+                               "placeholders":  {
+                                                    "error":  {
+
+                                                              }
+                                                }
+                           },
+    "addFoodVoiceError":  "语音错误：{error}",
+    "@addFoodVoiceError":  {
+                               "placeholders":  {
+                                                    "error":  {
+
+                                                              }
+                                                }
+                           },
+    "addFoodSpeechNotAvailable":  "此设备不支持语音识别",
+    "addFoodSpeechNotSupported":  "当前设备不支持语音识别。",
+    "addFoodSpeechInitFailed":  "语音初始化失败：{code}",
+    "@addFoodSpeechInitFailed":  {
+                                     "placeholders":  {
+                                                          "code":  {
+
+                                                                   }
+                                                      }
+                                 },
+    "addFoodSpeechInitUnable":  "无法初始化语音识别。",
+    "addFoodOpeningXiaomiSpeech":  "正在打开小米语音...",
+    "addFoodVoiceGotIt":  "收到，点“解析并填充”。",
+    "addFoodVoiceCanceled":  "语音已取消，点麦克风重试。",
+    "addFoodMicBlocked":  "麦克风被禁用，请到设置开启。",
+    "addFoodMicDenied":  "麦克风权限被拒绝。",
+    "addFoodListeningNow":  "正在聆听...",
+    "addFoodAddItemTitle":  "新增食材",
+    "addFoodEditItemTitle":  "编辑食材",
+    "addFoodHelpButton":  "帮助",
+    "addFoodTabManual":  "手动",
+    "addFoodTabScan":  "扫描",
+    "addFoodTabVoice":  "语音",
+    "addFoodBasicInfoTitle":  "基础信息",
+    "addFoodNameLabel":  "名称",
+    "addFoodRequired":  "必填",
+    "addFoodQuantityLabel":  "数量",
+    "addFoodUnitLabel":  "单位",
+    "addFoodMinStockWarningLabel":  "最低库存预警（可选）",
+    "addFoodMinStockHint":  "例如：2（低于时提醒）",
+    "addFoodMinStockHelper":  "留空表示不提醒",
+    "addFoodStorageLocationTitle":  "存储位置",
+    "addFoodCategoriesTitle":  "分类",
+    "addFoodDatesTitle":  "日期",
+    "addFoodPurchaseDate":  "购买日期",
+    "addFoodOpenDate":  "开封日期",
+    "addFoodBestBefore":  "最佳食用期",
+    "addFoodSaveToInventory":  "保存到库存",
+    "addFoodScanReceipt":  "扫描小票",
+    "addFoodSnapFridge":  "拍摄冰箱",
+    "addFoodTakePhoto":  "拍照",
+    "addFoodUseCameraToScan":  "使用相机扫描",
+    "addFoodUploadMax4":  "上传（最多 4 张）",
+    "addFoodChooseMultipleFromGallery":  "从相册选择多张",
+    "addFoodAiExtractReceiptItems":  "AI 将从小票中提取食材。",
+    "addFoodAiIdentifyFridgeItems":  "AI 将识别冰箱或储物区中的食材。",
+    "addFoodAutoLabel":  "自动",
+    "addFoodXiaomiSpeechMode":  "小米语音模式",
+    "addFoodEngineReady":  "识别引擎就绪 - {locale}",
+    "@addFoodEngineReady":  {
+                                "placeholders":  {
+                                                     "locale":  {
+
+                                                                }
+                                                 }
+                            },
+    "addFoodPreparingEngine":  "正在准备语音引擎...",
+    "addFoodVoiceTrySaying":  "试试说：“3个苹果、牛奶、1公斤大米”",
+    "addFoodTranscriptHint":  "识别文本会显示在这里...",
+    "addFoodClear":  "清空",
+    "addFoodAnalyzing":  "分析中...",
+    "addFoodAnalyzeAndFill":  "解析并填充",
+    "addFoodAiExpiryPrediction":  "AI 保质期预测",
+    "addFoodAutoMagic":  "自动预测",
+    "addFoodThinking":  "思考中...",
+    "addFoodPredictedExpiry":  "预测到期日",
+    "addFoodManualDateOverride":  "手动日期将覆盖此结果",
+    "addFoodAutoApplied":  "已自动应用",
+    "addFoodAiSuggestHint":  "让 AI 根据食材类型和存储方式给出建议。",
+    "addFoodErrorPrefix":  "错误：",
+    "addFoodAutoMagicPrediction":  "自动魔法预测",
+    "addFoodScanningReceipts":  "正在扫描小票...",
+    "addFoodProcessing":  "处理中",
+    "addFoodItemsTitle":  "条目",
+    "addFoodAddCountItems":  "添加 {count} 项",
+    "@addFoodAddCountItems":  {
+                                  "placeholders":  {
+                                                       "count":  {
+                                                                     "type":  "int"
+                                                                 }
+                                                   }
+                              },
+    "addFoodAddedItems":  "已添加 {count} 项",
+    "@addFoodAddedItems":  {
+                               "placeholders":  {
+                                                    "count":  {
+                                                                  "type":  "int"
+                                                              }
+                                                }
+                           },
+    "addFoodHelpTitle":  "新增食材帮助",
+    "addFoodHelpManualTitle":  "手动",
+    "addFoodHelpManualPoint1":  "输入名称、数量和存储位置。",
+    "addFoodHelpManualPoint2":  "如果知道包装日期，请设置最佳食用期。",
+    "addFoodHelpManualPoint3":  "可在备注里记录规格或品牌。",
+    "addFoodHelpScanTitle":  "扫描",
+    "addFoodHelpScanPoint1":  "请使用清晰、光线充足的照片。",
+    "addFoodHelpScanPoint2":  "扫描小票时请保证文字完整可见。",
+    "addFoodHelpScanPoint3":  "保存前请检查识别结果。",
+    "addFoodHelpVoiceTitle":  "语音",
+    "addFoodHelpVoicePoint1":  "请说“食材 + 数量 + 单位”，例如“牛奶 两升”。",
+    "addFoodHelpVoicePoint2":  "多个食材之间请稍作停顿。",
+    "addFoodHelpVoicePoint3":  "保存前可再手动编辑字段。",
+    "addFoodHelpTip":  "提示：若不确定保质期，可先用 AI 预测，再手动微调。",
+    "selectIngredientsKitchenTitle":  "你的厨房",
+    "selectIngredientsSelectedCount":  "已选择 {count} 个食材用于烹饪",
+    "@selectIngredientsSelectedCount":  {
+                                            "placeholders":  {
+                                                                 "count":  {
+                                                                               "type":  "int"
+                                                                           }
+                                                             }
+                                        },
+    "selectIngredientsNoItemsSubtitle":  "试试其他筛选条件，或先添加新食材。",
+    "selectIngredientsExtrasPrompts":  "额外食材与偏好",
+    "selectIngredientsAddExtraHint":  "添加额外食材...",
+    "selectIngredientsSpecialRequestHint":  "有特别口味偏好或饮食限制吗？",
+    "selectIngredientsPageTitle":  "选择食材",
+    "selectIngredientsReset":  "重置",
+    "selectIngredientsFilterAll":  "全部",
+    "selectIngredientsFilterExpiring":  "临期",
+    "selectIngredientsFilterVeggie":  "蔬菜",
+    "selectIngredientsFilterMeat":  "肉类",
+    "selectIngredientsFilterDairy":  "乳制品",
+    "selectIngredientsExpiringLabel":  "即将到期",
+    "selectIngredientsSoonLabel":  "尽快食用",
+    "selectIngredientsFreshLabel":  "新鲜",
+    "selectIngredientsQuantityLeft":  "剩余 {value} {unit}",
+    "@selectIngredientsQuantityLeft":  {
+                                           "placeholders":  {
+                                                                "value":  {
+
+                                                                          },
+                                                                "unit":  {
+
+                                                                         }
+                                                            }
+                                       },
+    "selectIngredientsPeopleShort":  "人份",
+    "cookingPlanSlot":  "规划 {slot}",
+    "@cookingPlanSlot":  {
+                             "placeholders":  {
+                                                  "slot":  {
+
+                                                           }
+                                              }
+                         },
+    "cookingMealNameLabel":  "餐食名称",
+    "cookingMealNameHint":  "例如：柠檬鸡肉饭碗",
+    "cookingQuickPickRecipes":  "从菜谱快速选择",
+    "cookingBrowseAll":  "浏览全部",
+    "cookingUseFromInventory":  "从库存选择",
+    "cookingMissingItemsLabel":  "缺失食材（将加入购物清单）",
+    "cookingMissingItemsHint":  "例如：大蒜、香葱",
+    "cookingSavePlan":  "保存计划",
+    "cookingUntitledMeal":  "未命名餐食",
+    "cookingAddedItemsToShopping":  "已将 {count} 项添加到购物清单。",
+    "@cookingAddedItemsToShopping":  {
+                                         "placeholders":  {
+                                                              "count":  {
+                                                                            "type":  "int"
+                                                                        }
+                                                          }
+                                     },
+    "cookingMealPlannerTitle":  "餐食计划",
+    "cookingJumpToToday":  "跳转到今天",
+    "cookingNoMatches":  "无匹配项",
+    "cookingMissingItemsCount":  "缺少 {count} 项食材",
+    "@cookingMissingItemsCount":  {
+                                      "placeholders":  {
+                                                           "count":  {
+                                                                         "type":  "int"
+                                                                     }
+                                                       }
+                                  },
+    "cookingAllItemsInFridge":  "食材都在冰箱里",
+    "cookingSlotBreakfast":  "早餐",
+    "cookingSlotLunch":  "午餐",
+    "cookingSlotDinner":  "晚餐",
+    "shoppingGuestCreateTempTitle":  "创建临时清单",
+    "shoppingGuestCreateTempSubtitle":  "可分享给访客，无需登录。",
+    "shoppingGuestMyListsTitle":  "我的访客清单",
+    "shoppingGuestMyListsSubtitle":  "管理已有的临时清单。",
+    "shoppingGuestDialogTitle":  "创建临时清单",
+    "shoppingGuestTitleHint":  "例如：周末聚餐",
+    "shoppingGuestExpiresIn":  "有效期",
+    "shoppingGuestExpire24h":  "24 小时",
+    "shoppingGuestExpire3d":  "3 天",
+    "shoppingGuestExpire7d":  "7 天",
+    "shoppingGuestAttachMineTitle":  "绑定到我的账号",
+    "shoppingGuestAttachMineSubtitle":  "仅账号拥有者可修改拥有者设置。",
+    "shoppingGuestCreateAction":  "创建",
+    "shoppingShareLinkTitle":  "分享这个链接",
+    "shoppingLinkCopied":  "链接已复制。",
+    "shoppingCopyLink":  "复制链接",
+    "shoppingOpenList":  "打开清单",
+    "shoppingMoveCheckedSemLabel":  "移动已勾选项目",
+    "shoppingMoveCheckedSemHint":  "将 {count} 个已勾选项目移到库存",
+    "shoppingMoveCheckedToFridge":  "已将 {count} 个项目移入冰箱",
+    "shoppingEditingItem":  "正在编辑",
+    "shoppingRenameItemHint":  "重命名项目",
+    "recipeArchiveClearTitle":  "清空归档？",
+    "recipeArchiveClearDesc":  "这将移除归档中的全部已保存菜谱。",
+    "recipeArchiveClearAll":  "全部清空",
+    "recipeArchiveSavedTitle":  "已保存菜谱",
+    "recipeArchiveEmptyTitle":  "还没有保存的菜谱",
+    "recipeArchiveEmptyDesc":  "保存菜谱后会显示在这里。",
+    "recipeArchiveGoBack":  "返回",
+    "recipeArchiveSavedOn":  "保存于 {date}",
+    "recipeGeneratorFailed":  "生成失败：{error}",
+    "recipeGeneratorReviewSelectionTitle":  "确认你的选择",
+    "recipeGeneratorReviewSelectionDesc":  "先选择食材和偏好，再生成菜谱。",
+    "recipeGeneratorNoItemsTitle":  "未选择食材",
+    "recipeGeneratorNoItemsDesc":  "请至少选择一种食材后继续。",
+    "recipeGeneratorExtrasTitle":  "额外食材与提示",
+    "recipeGeneratorCookingFor":  "就餐人数：{count}",
+    "recipeGeneratorStudentModeOn":  "学生模式已开启",
+    "recipeGeneratorNote":  "备注：{note}",
+    "recipeGeneratorStartTitle":  "开始生成菜谱",
+    "recipeGeneratorStartSubtitle":  "我们会基于你的食材给出建议。",
+    "recipeGeneratorNoRecipes":  "还没有生成菜谱。",
+    "recipeGeneratorSuggestionsTitle":  "推荐结果",
+    "recipeDetailRemovedFromArchive":  "已从归档移除",
+    "recipeDetailSavedToArchive":  "已保存到归档",
+    "recipeDetailOperationFailed":  "操作失败：{error}",
+    "recipeDetailNoOvenTemp":  "该菜谱未识别到烤箱温度。",
+    "recipeDetailOvenBusy":  "烤箱正在运行，请先停止再预热。",
+    "recipeDetailOvenPreheating":  "烤箱正在预热到 {temp}C",
+    "recipeDetailPreheatFailed":  "预热失败：{error}",
+    "recipeDetailOvenAlreadyIdle":  "烤箱当前未运行。",
+    "recipeDetailOvenStopped":  "烤箱已停止。",
+    "recipeDetailStopFailed":  "停止失败：{error}",
+    "recipeDetailSavedLeftoversToInventory":  "剩菜已保存到库存。",
+    "recipeDetailInventoryUpdated":  "库存已更新。",
+    "recipeDetailTitle":  "菜谱详情",
+    "recipeDetailYields":  "份量：{servings}",
+    "recipeDetailSmartKitchen":  "智慧厨房",
+    "recipeDetailOvenReady":  "烤箱已就绪",
+    "recipeDetailPreheatOven":  "预热烤箱",
+    "recipeDetailPreheatTo":  "预热到 {temp}",
+    "recipeDetailTemp":  "{temp}C",
+    "recipeDetailTapToStop":  "点按停止",
+    "recipeDetailTapToStart":  "点按开始",
+    "recipeDetailIngredientsTitle":  "食材",
+    "recipeDetailInstructionsTitle":  "步骤",
+    "recipeDetailStep":  "第 {number} 步",
+    "recipeDetailCookedThis":  "我做过这道菜",
+    "recipeDetailReviewUsageTitle":  "确认食材用量",
+    "recipeDetailUsageNone":  "未使用",
+    "recipeDetailUsageAll":  "全部",
+    "recipeDetailConfirmUsage":  "确认用量",
+    "recipeDetailMealPrepTitle":  "这顿都吃完了吗？",
+    "recipeDetailMealPrepDesc":  "还是想留作备餐？",
+    "recipeDetailLeftoversToSave":  "要保存的剩余份数：",
+    "recipeDetailWhereStoreLeftovers":  "准备存放在哪里？",
+    "recipeDetailSaveLeftovers":  "保存剩菜",
+    "recipeDetailAteEverything":  "我都吃完了！",
+    "guestListAddYourNameTitle":  "添加你的名字",
+    "guestListEnterDisplayNameHint":  "输入展示名称",
+    "guestListAddNoteTitle":  "添加备注",
+    "guestListAddNoteHint":  "例如：低脂、品牌、规格",
+    "guestListShareLinkCopied":  "分享链接已复制。",
+    "guestListExpiredEditingDisabled":  "该清单已过期，无法编辑。",
+    "guestListTitle":  "访客购物清单",
+    "guestListCopyShareLinkTooltip":  "复制分享链接",
+    "guestListMineLabel":  "我的",
+    "guestListJoining":  "正在加入清单...",
+    "guestListAddNameToEdit":  "先添加你的名字再编辑项目。",
+    "guestListAddNameAction":  "添加名字",
+    "shoppingAddItemHint":  "添加项目...",
+    "guestListNoItemsYet":  "暂无项目",
+    "guestListLookingForList":  "正在查找分享清单...",
+    "guestListFailedLoad":  "加载清单失败。",
+    "guestListRefreshPage":  "刷新页面",
+    "guestListGuestFallback":  "访客",
+    "guestArchiveEmpty":  "暂无访客清单",
+    "guestArchiveExpires":  "到期：{label}",
+    "guestArchiveExpired":  "已过期",
+    "guestArchiveActive":  "进行中",
+    "authUnexpectedError":  "发生异常，请稍后重试。",
+    "authEnterEmailFirst":  "请先输入邮箱。",
+    "authResetEmailSent":  "重置密码邮件已发送。",
+    "authResetEmailFailed":  "发送重置邮件失败。",
+    "loginWelcomeBack":  "欢迎回来",
+    "loginWelcomeSubtitle":  "登录后继续",
+    "authPleaseEnterEmail":  "请输入邮箱。",
+    "authEmailInvalid":  "请输入有效邮箱。",
+    "authPleaseEnterPassword":  "请输入密码。",
+    "authAtLeast6Chars":  "至少 6 个字符。",
+    "authShowPassword":  "显示密码",
+    "authHidePassword":  "隐藏密码",
+    "authForgotPassword":  "忘记密码？",
+    "authLogIn":  "登录",
+    "authOr":  "或",
+    "authNoAccount":  "还没有账号？",
+    "authSignUp":  "注册",
+    "authSkipForNow":  "暂时跳过",
+    "authBack":  "返回",
+    "registerPasswordsDoNotMatch":  "两次输入的密码不一致。",
+    "registerSuccessCheckEmail":  "注册成功！请查收邮件完成验证。",
+    "registerBackToLogin":  "返回登录",
+    "registerCreateAccountTitle":  "创建账号",
+    "registerCreateAccountSubtitle":  "开启你的智能厨房之旅。",
+    "registerNameLabel":  "姓名",
+    "registerNameHint":  "你的显示名称",
+    "registerEnterName":  "请输入姓名。",
+    "registerNameTooShort":  "姓名太短。",
+    "registerEmailLabel":  "邮箱",
+    "registerPasswordLabel":  "密码",
+    "registerPasswordHint":  "至少 6 个字符",
+    "registerRepeatPasswordLabel":  "重复密码",
+    "registerRepeatPasswordHint":  "再次输入密码",
+    "registerPasswordsDoNotMatchInline":  "两次密码不一致",
+    "registerProfileDetailsTitle":  "个人信息",
+    "registerGenderLabel":  "性别",
+    "registerAgeGroupLabel":  "年龄段",
+    "registerRequired":  "必填",
+    "registerCountryLabel":  "国家/地区",
+    "registerCountryHint":  "例如：中国",
+    "registerPleaseEnterCountry":  "请输入国家/地区。",
+    "fridgeCameraSignInToConnect":  "请先登录后再连接冰箱相机。",
+    "fridgeCameraNotConnected":  "尚未连接 Home Connect。",
+    "fridgeCameraLoadFailed":  "加载冰箱图片失败：{error}",
+    "fridgeCameraTitle":  "冰箱相机",
+    "fridgeCameraRefreshTooltip":  "刷新",
+    "fridgeCameraNoDevices":  "未找到已连接的冰箱设备。",
+    "fridgeCameraNoImages":  "暂无可用图片。",
+    "fridgeCameraImageCount":  "{count} 张图片",
+    "fridgeCameraImageLoadFailed":  "图片加载失败",
+    "shoppingArchiveTitle":  "购买记录",
+    "shoppingArchiveClearTooltip":  "清空记录",
+    "shoppingArchiveClearTitle":  "清空购买记录？",
+    "shoppingArchiveClearDesc":  "这将移除所有已归档的购物项目。",
+    "shoppingArchiveClearAction":  "清空",
+    "shoppingArchiveAddBackTooltip":  "重新加入购物清单",
+    "shoppingArchiveAddedBack":  "已重新加入：{name}",
+    "shoppingArchiveToday":  "今天",
+    "shoppingArchiveYesterday":  "昨天",
+    "shoppingArchiveEmptyTitle":  "暂无记录",
+    "shoppingArchiveEmptyDesc":  "完成购买的项目会显示在这里。",
+    "@shoppingMoveCheckedSemHint":  {
+                                        "placeholders":  {
+                                                             "count":  {
+
+                                                                       }
+                                                         }
+                                    },
+    "@shoppingMoveCheckedToFridge":  {
+                                         "placeholders":  {
+                                                              "count":  {
+
+                                                                        }
+                                                          }
+                                     },
+    "@recipeArchiveSavedOn":  {
+                                  "placeholders":  {
+                                                       "date":  {
+
+                                                                }
+                                                   }
+                              },
+    "@recipeGeneratorFailed":  {
+                                   "placeholders":  {
+                                                        "error":  {
+
+                                                                  }
+                                                    }
+                               },
+    "@recipeGeneratorCookingFor":  {
+                                       "placeholders":  {
+                                                            "count":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "@recipeGeneratorNote":  {
+                                 "placeholders":  {
+                                                      "note":  {
+
+                                                               }
+                                                  }
+                             },
+    "@recipeDetailOperationFailed":  {
+                                         "placeholders":  {
+                                                              "error":  {
+
+                                                                        }
+                                                          }
+                                     },
+    "@recipeDetailOvenPreheating":  {
+                                        "placeholders":  {
+                                                             "temp":  {
+
+                                                                      }
+                                                         }
+                                    },
+    "@recipeDetailPreheatFailed":  {
+                                       "placeholders":  {
+                                                            "error":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "@recipeDetailStopFailed":  {
+                                    "placeholders":  {
+                                                         "error":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@recipeDetailYields":  {
+                                "placeholders":  {
+                                                     "servings":  {
+
+                                                                  }
+                                                 }
+                            },
+    "@recipeDetailPreheatTo":  {
+                                   "placeholders":  {
+                                                        "temp":  {
+
+                                                                 }
+                                                    }
+                               },
+    "@recipeDetailTemp":  {
+                              "placeholders":  {
+                                                   "temp":  {
+
+                                                            }
+                                               }
+                          },
+    "@recipeDetailStep":  {
+                              "placeholders":  {
+                                                   "number":  {
+
+                                                              }
+                                               }
+                          },
+    "@guestArchiveExpires":  {
+                                 "placeholders":  {
+                                                      "label":  {
+
+                                                                }
+                                                  }
+                             },
+    "@fridgeCameraLoadFailed":  {
+                                    "placeholders":  {
+                                                         "error":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@fridgeCameraImageCount":  {
+                                    "placeholders":  {
+                                                         "count":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@shoppingArchiveAddedBack":  {
+                                      "placeholders":  {
+                                                           "name":  {
+
+                                                                    }
+                                                       }
+                                  },
+    "recipeDetailAllLabel":  "全部"
+}

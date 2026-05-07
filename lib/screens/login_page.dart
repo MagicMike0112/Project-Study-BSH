@@ -2,10 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../l10n/app_localizations.dart';
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
-  /// allowSkip = true 时显示 “Skip for now” 按钮（第一次启动）
+  // NOTE: legacy comment cleaned.
   final bool allowSkip;
 
   const LoginPage({super.key, this.allowSkip = false});
@@ -32,6 +33,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _login() async {
+    final l10n = AppLocalizations.of(context);
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _loading = true);
@@ -45,7 +47,7 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       if (!mounted) return;
-      Navigator.pop(context, true); // 登录成功
+      Navigator.pop(context, true); // NOTE: legacy comment cleaned.
     } on AuthException catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -54,7 +56,7 @@ class _LoginPageState extends State<LoginPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unexpected error, please try again.')),
+        SnackBar(content: Text(l10n?.authUnexpectedError ?? 'Unexpected error, please try again.')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -62,10 +64,11 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _resetPassword() async {
+    final l10n = AppLocalizations.of(context);
     final email = _emailCtrl.text.trim();
     if (email.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter your email first.')),
+        SnackBar(content: Text(l10n?.authEnterEmailFirst ?? 'Please enter your email first.')),
       );
       return;
     }
@@ -74,15 +77,16 @@ class _LoginPageState extends State<LoginPage> {
     try {
       await _supabase.auth.resetPasswordForEmail(
         email,
-        // 旧版 SDK 的签名：resetPasswordForEmail(String email, { String? redirectTo })
+        // NOTE: legacy comment cleaned.
         redirectTo: 'https://smart-home-reset-password.vercel.app/',
       );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Password reset email sent. Please check your inbox.',
+            l10n?.authResetEmailSent ??
+                'Password reset email sent. Please check your inbox.',
           ),
         ),
       );
@@ -94,7 +98,7 @@ class _LoginPageState extends State<LoginPage> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to send reset email.')),
+        SnackBar(content: Text(l10n?.authResetEmailFailed ?? 'Failed to send reset email.')),
       );
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -110,19 +114,20 @@ class _LoginPageState extends State<LoginPage> {
     );
 
     if (result == true && mounted) {
-      // 注册成功后自动关闭登录页，并告诉上层“登录/注册完成”
+      // NOTE: legacy comment cleaned.
       Navigator.pop(context, true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
-      // 科技感背景：浅色渐变 + 玻璃高光
+      // NOTE: legacy comment cleaned.
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -130,21 +135,21 @@ class _LoginPageState extends State<LoginPage> {
             end: Alignment.bottomRight,
             colors: [
               isDark ? const Color(0xFF0F141A) : const Color(0xFFF6F8FA),
-              scheme.primary.withOpacity(isDark ? 0.18 : 0.06),
-              scheme.secondary.withOpacity(isDark ? 0.12 : 0.05),
+              scheme.primary.withValues(alpha: isDark ? 0.18 : 0.06),
+              scheme.secondary.withValues(alpha: isDark ? 0.12 : 0.05),
             ],
           ),
         ),
         child: SafeArea(
           child: Stack(
             children: [
-              // 背景装饰圆（更“科技”）
+              // NOTE: legacy comment cleaned.
               Positioned(
                 right: -80,
                 top: -90,
                 child: _GlowOrb(
                   size: 220,
-                  color: scheme.primary.withOpacity(0.18),
+                  color: scheme.primary.withValues(alpha: 0.18),
                 ),
               ),
               Positioned(
@@ -152,7 +157,7 @@ class _LoginPageState extends State<LoginPage> {
                 bottom: -90,
                 child: _GlowOrb(
                   size: 240,
-                  color: scheme.secondary.withOpacity(0.16),
+                  color: scheme.secondary.withValues(alpha: 0.16),
                 ),
               ),
 
@@ -164,13 +169,13 @@ class _LoginPageState extends State<LoginPage> {
                     child: Container(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
-                        color: theme.cardColor.withOpacity(isDark ? 0.94 : 0.92),
+                        color: theme.cardColor.withValues(alpha: isDark ? 0.94 : 0.92),
                         border: Border.all(
-                          color: Colors.black.withOpacity(isDark ? 0.25 : 0.06),
+                          color: Colors.black.withValues(alpha: isDark ? 0.25 : 0.06),
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(isDark ? 0.35 : 0.1),
+                            color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.1),
                             blurRadius: 18,
                             offset: const Offset(0, 10),
                           ),
@@ -184,7 +189,7 @@ class _LoginPageState extends State<LoginPage> {
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              // 顶部 Header
+                              // NOTE: legacy comment cleaned.
                               Row(
                                 children: [
                                   Container(
@@ -196,12 +201,12 @@ class _LoginPageState extends State<LoginPage> {
                                         begin: Alignment.topLeft,
                                         end: Alignment.bottomRight,
                                         colors: [
-                                          scheme.primary.withOpacity(0.18),
-                                          scheme.primary.withOpacity(0.08),
+                                          scheme.primary.withValues(alpha: 0.18),
+                                          scheme.primary.withValues(alpha: 0.08),
                                         ],
                                       ),
                                       border: Border.all(
-                                        color: scheme.primary.withOpacity(0.20),
+                                        color: scheme.primary.withValues(alpha: 0.20),
                                       ),
                                     ),
                                     child: Icon(
@@ -216,7 +221,7 @@ class _LoginPageState extends State<LoginPage> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Welcome back',
+                                          l10n?.loginWelcomeBack ?? 'Welcome back',
                                           style: Theme.of(context)
                                               .textTheme
                                               .titleLarge
@@ -227,14 +232,14 @@ class _LoginPageState extends State<LoginPage> {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          'Log in to sync your inventory across devices.',
+                                          l10n?.loginWelcomeSubtitle ?? 'Log in to sync your inventory across devices.',
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                           style: Theme.of(context)
                                               .textTheme
                                               .bodyMedium
                                               ?.copyWith(
-                                                color: scheme.onSurface.withOpacity(0.6),
+                                                color: scheme.onSurface.withValues(alpha: 0.6),
                                                 height: 1.25,
                                               ),
                                         ),
@@ -256,10 +261,10 @@ class _LoginPageState extends State<LoginPage> {
                                 enabled: !_loading,
                                 validator: (v) {
                                   if (v == null || v.trim().isEmpty) {
-                                    return 'Please enter your email';
+                                    return l10n?.authPleaseEnterEmail ?? 'Please enter your email';
                                   }
                                   if (!v.contains('@')) {
-                                    return 'Email looks invalid';
+                                    return l10n?.authEmailInvalid ?? 'Email looks invalid';
                                   }
                                   return null;
                                 },
@@ -269,25 +274,25 @@ class _LoginPageState extends State<LoginPage> {
                               // Password
                               _TechField(
                                 label: 'Password',
-                                hint: '••••••••',
+                                hint: '********',
                                 icon: Icons.lock_outline,
                                 controller: _pwdCtrl,
                                 enabled: !_loading,
                                 obscureText: _obscure,
                                 validator: (v) {
                                   if (v == null || v.isEmpty) {
-                                    return 'Please enter your password';
+                                    return l10n?.authPleaseEnterPassword ?? 'Please enter your password';
                                   }
                                   if (v.length < 6) {
-                                    return 'At least 6 characters';
+                                    return l10n?.authAtLeast6Chars ?? 'At least 6 characters';
                                   }
                                   return null;
                                 },
                                 suffix: IconButton(
-                                  tooltip: _obscure ? 'Show password' : 'Hide password',
+                                  tooltip: _obscure ? (l10n?.authShowPassword ?? 'Show password') : (l10n?.authHidePassword ?? 'Hide password'),
                                   icon: Icon(
                                     _obscure ? Icons.visibility_off : Icons.visibility,
-                                    color: scheme.onSurface.withOpacity(0.6),
+                                    color: scheme.onSurface.withValues(alpha: 0.6),
                                   ),
                                   onPressed: _loading
                                       ? null
@@ -301,13 +306,13 @@ class _LoginPageState extends State<LoginPage> {
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
                                   onPressed: _loading ? null : _resetPassword,
-                                  child: const Text('Forgot password?'),
+                                  child: Text(l10n?.authForgotPassword ?? 'Forgot password?'),
                                 ),
                               ),
 
                               const SizedBox(height: 8),
 
-                              // 主按钮（渐变 + loading）
+                              // NOTE: legacy comment cleaned.
                               SizedBox(
                                 height: 50,
                                 child: DecoratedBox(
@@ -318,12 +323,12 @@ class _LoginPageState extends State<LoginPage> {
                                       end: Alignment.bottomRight,
                                       colors: [
                                         scheme.primary,
-                                        scheme.primary.withOpacity(0.78),
+                                        scheme.primary.withValues(alpha: 0.78),
                                       ],
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: scheme.primary.withOpacity(0.22),
+                                        color: scheme.primary.withValues(alpha: 0.22),
                                         blurRadius: 16,
                                         offset: const Offset(0, 10),
                                       ),
@@ -350,8 +355,7 @@ class _LoginPageState extends State<LoginPage> {
                                               ),
                                             ),
                                           )
-                                        : const Text(
-                                            'Log in',
+                                        : Text(l10n?.authLogIn ?? 'Log in',
                                             style: TextStyle(
                                               fontWeight: FontWeight.w800,
                                               letterSpacing: 0.2,
@@ -363,21 +367,21 @@ class _LoginPageState extends State<LoginPage> {
 
                               const SizedBox(height: 14),
 
-                              // 分割线 + 提示
+                              // NOTE: legacy comment cleaned.
                               Row(
                                 children: [
                                   Expanded(
                                     child: Container(
                                       height: 1,
-                                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
+                                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
                                     ),
                                   ),
                                   const SizedBox(width: 10),
                                   Text(
-                                    'OR',
+                                    l10n?.authOr ?? 'OR',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: scheme.onSurface.withOpacity(0.6),
+                                      color: scheme.onSurface.withValues(alpha: 0.6),
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
@@ -385,7 +389,7 @@ class _LoginPageState extends State<LoginPage> {
                                   Expanded(
                                     child: Container(
                                       height: 1,
-                                      color: Colors.black.withOpacity(isDark ? 0.3 : 0.06),
+                                      color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.06),
                                     ),
                                   ),
                                 ],
@@ -397,12 +401,12 @@ class _LoginPageState extends State<LoginPage> {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Text(
-                                    "Don’t have an account?",
-                                    style: TextStyle(color: scheme.onSurface.withOpacity(0.8)),
+                                    l10n?.authNoAccount ?? "Don't have an account?",
+                                    style: TextStyle(color: scheme.onSurface.withValues(alpha: 0.8)),
                                   ),
                                   TextButton(
                                     onPressed: _loading ? null : _goToRegister,
-                                    child: const Text('Sign up'),
+                                    child: Text(l10n?.authSignUp ?? 'Sign up'),
                                   ),
                                 ],
                               ),
@@ -417,7 +421,7 @@ class _LoginPageState extends State<LoginPage> {
                                             Navigator.pop(context, false);
                                           },
                                     child: Text(
-                                      'Skip for now',
+                                      l10n?.authSkipForNow ?? 'Skip for now',
                                       style: TextStyle(
                                         color: scheme.primary,
                                         fontWeight: FontWeight.w700,
@@ -435,7 +439,7 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
 
-              // 顶部 AppBar（透明科技风）
+              // NOTE: legacy comment cleaned.
               Positioned(
                 top: 0,
                 left: 0,
@@ -447,7 +451,7 @@ class _LoginPageState extends State<LoginPage> {
                     child: Row(
                       children: [
                         IconButton(
-                          tooltip: 'Back',
+                          tooltip: l10n?.authBack ?? 'Back',
                           onPressed: _loading ? null : () => Navigator.pop(context),
                           icon: const Icon(Icons.arrow_back),
                         ),
@@ -465,7 +469,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
-/// 更“科技感”的输入框（不改任何功能，只换皮）
+// NOTE: legacy comment cleaned.
 class _TechField extends StatelessWidget {
   final String label;
   final String? hint;
@@ -509,8 +513,8 @@ class _TechField extends StatelessWidget {
           height: 36,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
-            color: scheme.primary.withOpacity(0.08),
-            border: Border.all(color: scheme.primary.withOpacity(0.14)),
+            color: scheme.primary.withValues(alpha: 0.08),
+            border: Border.all(color: scheme.primary.withValues(alpha: 0.14)),
           ),
           child: Icon(icon, size: 18, color: scheme.primary),
         ),
@@ -522,19 +526,19 @@ class _TechField extends StatelessWidget {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.black.withOpacity(isDark ? 0.3 : 0.08)),
+          borderSide: BorderSide(color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.08)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: scheme.primary.withOpacity(0.55), width: 1.4),
+          borderSide: BorderSide(color: scheme.primary.withValues(alpha: 0.55), width: 1.4),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.red.withOpacity(0.6)),
+          borderSide: BorderSide(color: Colors.red.withValues(alpha: 0.6)),
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.red.withOpacity(0.75), width: 1.4),
+          borderSide: BorderSide(color: Colors.red.withValues(alpha: 0.75), width: 1.4),
         ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       ),
@@ -542,7 +546,7 @@ class _TechField extends StatelessWidget {
   }
 }
 
-/// 背景发光圆
+// NOTE: legacy comment cleaned.
 class _GlowOrb extends StatelessWidget {
   final double size;
   final Color color;
@@ -559,10 +563,14 @@ class _GlowOrb extends StatelessWidget {
         gradient: RadialGradient(
           colors: [
             color,
-            color.withOpacity(0.0),
+            color.withValues(alpha: 0.0),
           ],
         ),
       ),
     );
   }
 }
+
+
+
+

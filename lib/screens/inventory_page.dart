@@ -1,26 +1,149 @@
 // lib/screens/inventory_page.dart
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'dart:ui';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
-import 'package:animations/animations.dart';
+import '../utils/app_haptics.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:showcaseview/showcaseview.dart';
+import '../l10n/app_localizations.dart';
 
 import '../models/food_item.dart';
 import '../repositories/inventory_repository.dart';
+import '../utils/app_typography.dart';
+import '../utils/food_icon_mapping.dart';
+import '../utils/showcase_utils.dart';
 import 'add_food_page.dart';
+import 'inventory_item_detail_page.dart';
 import '../widgets/animations.dart';
 import '../widgets/inventory_components.dart';
+import '../widgets/pull_to_refresh_cue.dart';
+import 'family_page.dart';
 
 typedef AppSnackBarFn = void Function(String message, {VoidCallback? onUndo});
 
 enum _Urgency { expired, today, soon, ok, none }
+enum _MoveEffect { freeze, thaw }
 
 class _Leading {
   final IconData icon;
   final Color color;
   const _Leading(this.icon, this.color);
+}
+
+class _MoveEffectOverlay extends StatelessWidget {
+  final double progress;
+  final _MoveEffect type;
+  final BorderRadius borderRadius;
+
+  const _MoveEffectOverlay({
+    required this.progress,
+    required this.type,
+    required this.borderRadius,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isFreeze = type == _MoveEffect.freeze;
+    final glowColor = isFreeze ? const Color(0xFF4FC3F7) : const Color(0xFFFFB74D);
+    final glowOpacity = (1.0 - progress).clamp(0.0, 1.0);
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: Stack(
+        children: [
+          Opacity(
+            opacity: glowOpacity,
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: borderRadius,
+                boxShadow: [
+                  BoxShadow(
+                    color: glowColor.withValues(alpha: 0.35),
+                    blurRadius: 22,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          CustomPaint(
+            painter: _MoveParticlePainter(
+              progress: progress,
+              color: glowColor,
+              type: type,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoveParticlePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final _MoveEffect type;
+
+  _MoveParticlePainter({
+    required this.progress,
+    required this.color,
+    required this.type,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final t = progress.clamp(0.0, 1.0);
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+
+    if (type == _MoveEffect.freeze) {
+      final count = 22;
+      final maxRadius = size.shortestSide * 0.45;
+      for (int i = 0; i < count; i++) {
+        final wobble = (math.sin(i * 1.7) * 0.08);
+        final angle = (2 * math.pi / count) * i + wobble;
+        final radius = maxRadius * (0.55 + t * 0.45);
+        final p = Offset(
+          center.dx + math.cos(angle) * radius,
+          center.dy + math.sin(angle) * radius,
+        );
+        final sizeFactor = (1.0 - t) * (0.6 + (i % 5) * 0.08);
+        paint.color = color.withValues(alpha: 0.45 * sizeFactor);
+        canvas.drawCircle(p, 3.5 * sizeFactor + 0.8, paint);
+        // extra sparkle dots
+        if (i.isEven) {
+          final dot = Offset(p.dx + math.cos(angle) * 6, p.dy + math.sin(angle) * 6);
+          paint.color = color.withValues(alpha: 0.25 * sizeFactor);
+          canvas.drawCircle(dot, 2.0 * sizeFactor, paint);
+        }
+      }
+    } else {
+      final count = 12;
+      for (int i = 0; i < count; i++) {
+        final drift = math.sin((i + 1) * 1.3) * 0.03;
+        final x = size.width * (0.18 + i * 0.06 + drift);
+        final y = size.height * (0.08 + t * 0.8 + i * 0.015);
+        final drop = Offset(x, y.clamp(0, size.height));
+        final alpha = (1.0 - t);
+        paint.color = color.withValues(alpha: 0.5 * alpha);
+        canvas.drawCircle(drop, 3.2 * alpha + 1.8, paint);
+        final tail = Rect.fromLTWH(drop.dx - 1, drop.dy - 10, 2, 12);
+        paint.color = color.withValues(alpha: 0.28 * alpha);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(tail, const Radius.circular(2)),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _MoveParticlePainter oldDelegate) {
+    return oldDelegate.progress != progress || oldDelegate.type != type || oldDelegate.color != color;
+  }
 }
 
 class _InventoryViewData {
@@ -63,12 +186,14 @@ class InventoryPageWrapper extends StatelessWidget {
   final InventoryRepository repo;
   final VoidCallback onRefresh;
   final AppSnackBarFn showSnackBar;
+  final bool isActive;
 
   const InventoryPageWrapper({
     super.key,
     required this.repo,
     required this.onRefresh,
     required this.showSnackBar,
+    required this.isActive,
   });
 
   @override
@@ -78,6 +203,7 @@ class InventoryPageWrapper extends StatelessWidget {
         repo: repo,
         onRefresh: onRefresh,
         showSnackBar: showSnackBar,
+        isActive: isActive,
       ),
     );
   }
@@ -87,22 +213,28 @@ class InventoryPage extends StatefulWidget {
   final InventoryRepository repo;
   final VoidCallback onRefresh;
   final AppSnackBarFn showSnackBar;
+  final bool isActive;
 
   const InventoryPage({
     super.key,
     required this.repo,
     required this.onRefresh,
     required this.showSnackBar,
+    required this.isActive,
   });
 
   @override
   State<InventoryPage> createState() => _InventoryPageState();
 }
 
-class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveClientMixin {
+class _InventoryPageState extends State<InventoryPage>
+    with AutomaticKeepAliveClientMixin, SingleTickerProviderStateMixin {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   final GlobalKey _searchKey = GlobalKey();
+  final GlobalKey _swipeDeleteKey = GlobalKey();
+  final GlobalKey _longPressMenuKey = GlobalKey();
+  bool _didShowTutorial = false;
   bool _didCheckGestureHint = false;
   static const String _autoCategoryKey = '__auto__';
   static const List<_CategoryOption> _categoryOptions = [
@@ -127,6 +259,13 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     StorageLocation.freezer: true,
     StorageLocation.pantry: true,
   };
+  bool _didFireRefreshThresholdHaptic = false;
+  double _refreshPullDistance = 0;
+  double _refreshVisualProgress = 0;
+  bool _refreshVisualArmed = false;
+  AnimationController? _fxController;
+  String? _fxItemId;
+  _MoveEffect? _fxType;
 
   @override
   bool get wantKeepAlive => true;
@@ -136,35 +275,58 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     super.initState();
     _viewData = _computeViewData();
     widget.repo.addListener(_onRepoChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndShowTutorial());
-  }
-
-  Future<void> _checkAndShowTutorial() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    final hasShown = prefs.getBool('hasShownIntro_v6') ?? false;
-    if (!hasShown) {
-      try {
-        ShowCaseWidget.of(context).startShowCase([_searchKey]);
-        await prefs.setBool('hasShownIntro_v6', true);
-        Future.delayed(const Duration(milliseconds: 800), () {
-          widget.repo.removeExampleInventoryItems();
+    _fxController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        if (!mounted) return;
+        setState(() {
+          _fxItemId = null;
+          _fxType = null;
         });
-      } catch (e) {
-        debugPrint("Showcase error: $e");
       }
+    });
+    if (widget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndShowTutorial());
     }
   }
 
+  @override
+  void didUpdateWidget(covariant InventoryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isActive && widget.isActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkAndShowTutorial());
+      _maybeShowGestureHint();
+    }
+  }
+
+  Future<void> _checkAndShowTutorial() async {
+    final keys = <GlobalKey>[_searchKey];
+    if (_viewData.hasAnyItems) {
+      keys.addAll([_swipeDeleteKey, _longPressMenuKey]);
+    }
+    await ShowcaseCoordinator.startPageShowcase(
+      context: context,
+      hasAttempted: _didShowTutorial,
+      markAttempted: () => _didShowTutorial = true,
+      isPageVisibleNow: () => mounted && widget.isActive,
+      isDataReadyNow: () => !widget.repo.isLoading || _viewData.hasAnyItems,
+      seenPrefKey: 'hasShownIntro_v7',
+      keys: keys,
+    );
+  }
+
   Future<void> _checkAndShowGestureHint(bool hasItems) async {
+    if (!widget.isActive) return;
     if (!hasItems) return;
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     final hasShownHint = prefs.getBool('hasShownGestureHint_v3') ?? false;
     if (!hasShownHint) {
       Future.delayed(const Duration(seconds: 1), () {
-        if (mounted) {
-          _showToast('💡 Tip: Tap the Snowflake/Fire icon to move items fast!');
+        if (mounted && widget.isActive) {
+          _showToast('Tip: Tap the Snowflake/Fire icon to move items fast!');
           prefs.setBool('hasShownGestureHint_v3', true);
         }
       });
@@ -174,6 +336,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   @override
   void dispose() {
     _searchController.dispose();
+    _fxController?.dispose();
     widget.repo.removeListener(_onRepoChanged);
     super.dispose();
   }
@@ -205,6 +368,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   }
 
   void _maybeShowGestureHint() {
+    if (!widget.isActive) return;
     if (_didCheckGestureHint) return;
     if (_viewData.hasAnyItems && _searchQuery.isEmpty) {
       _didCheckGestureHint = true;
@@ -212,12 +376,67 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     }
   }
 
+  Future<void> _onRefreshWithFeedback() async {
+    await widget.repo.refreshAll();
+    if (!mounted) return;
+    setState(() {
+      _refreshVisualProgress = 0;
+      _refreshVisualArmed = false;
+    });
+    AppHaptics.success();
+  }
+
+  bool _handleRefreshPullNotification(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+
+    if (notification is ScrollStartNotification) {
+      _refreshPullDistance = 0;
+      _didFireRefreshThresholdHaptic = false;
+      return false;
+    }
+
+    if (notification.metrics.extentBefore > 0) return false;
+
+    if (notification is OverscrollNotification) {
+      _refreshPullDistance += notification.overscroll.abs();
+    } else if (notification is ScrollUpdateNotification && notification.dragDetails != null) {
+      final delta = notification.scrollDelta ?? 0;
+      if (delta < 0) _refreshPullDistance += -delta;
+    }
+
+    final armed = _refreshPullDistance >= 88;
+    final visualProgress = (_refreshPullDistance / 88).clamp(0.0, 1.2);
+    if ((visualProgress - _refreshVisualProgress).abs() > 0.04 || armed != _refreshVisualArmed) {
+      setState(() {
+        _refreshVisualProgress = visualProgress.toDouble();
+        _refreshVisualArmed = armed;
+      });
+    }
+
+    if (!_didFireRefreshThresholdHaptic && armed) {
+      _didFireRefreshThresholdHaptic = true;
+      AppHaptics.selection();
+    }
+
+    if (notification is ScrollEndNotification) {
+      _refreshPullDistance = 0;
+      _didFireRefreshThresholdHaptic = false;
+      if (_refreshVisualProgress != 0 || _refreshVisualArmed) {
+        setState(() {
+          _refreshVisualProgress = 0;
+          _refreshVisualArmed = false;
+        });
+      }
+    }
+    return false;
+  }
+
   _InventoryViewData _computeViewData() {
     final allItems = widget.repo.getActiveItems();
     final isSharedMode = widget.repo.isSharedUsage;
     final currentUserName = widget.repo.currentUserName;
 
-    // 1. 计算用户列表 (依然需要遍历一次)
+    // NOTE: legacy comment cleaned.
     Set<String> allUsers = {};
     if (isSharedMode) {
       allUsers = {'All'};
@@ -240,11 +459,11 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         return a.compareTo(b);
       });
 
-    // 2. 准备过滤条件
+    // NOTE: legacy comment cleaned.
     final searchLower = _searchQuery.toLowerCase();
     var resolvedUser = _selectedUser;
 
-    // 纠正 selectedUser 指向
+    // NOTE: legacy comment cleaned.
     if (!isSharedMode && resolvedUser != 'All') {
       if (resolvedUser == 'Family' || resolvedUser == 'Shared') {
         resolvedUser = currentUserName;
@@ -254,16 +473,16 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       }
     }
 
-    // 优化：合并过滤逻辑，避免多次遍历
+    // NOTE: legacy comment cleaned.
     final filteredList = allItems.where((item) {
-      // 搜索过滤
+      // NOTE: legacy comment cleaned.
       if (searchLower.isNotEmpty && !item.name.toLowerCase().contains(searchLower)) {
         return false;
       }
 
-      // 用户过滤
+      // NOTE: legacy comment cleaned.
       if (!isSharedMode) {
-        // 如果是个人模式，Family 物品不显示 (假设逻辑如此)
+        // NOTE: legacy comment cleaned.
         if (item.ownerName == 'Family') return false;
 
         if (resolvedUser != 'All') {
@@ -274,18 +493,15 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       return true;
     }).toList();
 
-    // 更新 selectedUser 状态以匹配 UI
+    // NOTE: legacy comment cleaned.
     if (resolvedUser != _selectedUser && _selectedUser != 'All' && _selectedUser != 'Family' && _selectedUser != 'Me') {
-      // 仅在必要时更新，避免死循环或状态跳变
-      // 这里其实只需要保持内部 resolvedUser 用于过滤，外部状态更新可以忽略，或者在 setState 外更新
-      // 为了保持原逻辑:
-      // _selectedUser = resolvedUser; (但在 compute 中修改 state 变量是不好的实践，此处仅用于逻辑一致性)
+      // NOTE: legacy comment cleaned.
     }
 
-    // 3. 排序
+    // NOTE: legacy comment cleaned.
     filteredList.sort((a, b) => a.daysToExpiry.compareTo(b.daysToExpiry));
 
-    // 4. 分桶
+    // NOTE: legacy comment cleaned.
     final fridgeItems = <FoodItem>[];
     final freezerItems = <FoodItem>[];
     final pantryItems = <FoodItem>[];
@@ -328,24 +544,37 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   }
 
   Future<void> _quickMoveItem(FoodItem item, StorageLocation target) async {
-    HapticFeedback.mediumImpact();
+    AppHaptics.success();
     final oldLocation = item.location;
+    final effect = target == StorageLocation.freezer ? _MoveEffect.freeze : _MoveEffect.thaw;
+    _triggerMoveEffect(item.id, effect);
+    // Give the overlay time to show before the item moves sections.
+    await Future.delayed(const Duration(milliseconds: 260));
 
     await widget.repo.updateItem(item.copyWith(location: target));
     if (!mounted) return;
 
     final action = target == StorageLocation.freezer ? "Frozen" : "Defrosted";
     _showToast(
-      '$action "${item.name}" ❄️➡️🔥',
+      '$action "${item.name}"',
       onUndo: () => widget.repo.updateItem(item.copyWith(location: oldLocation)),
     );
   }
 
+  void _triggerMoveEffect(String itemId, _MoveEffect effect) {
+    if (_fxController == null) return;
+    setState(() {
+      _fxItemId = itemId;
+      _fxType = effect;
+    });
+    _fxController!.forward(from: 0);
+  }
+
   Future<void> _assignOwner(FoodItem item, String newOwnerName) async {
-    HapticFeedback.mediumImpact();
+    AppHaptics.success();
     await widget.repo.assignItemToUser(item.id, newOwnerName);
     if (!mounted) return;
-    _showToast("Assigned to $newOwnerName ✅");
+    _showToast("Assigned to $newOwnerName");
   }
 
   @override
@@ -362,27 +591,79 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     final fridgeItems = data.fridgeItems;
     final freezerItems = data.freezerItems;
     final pantryItems = data.pantryItems;
+    final showcaseItemId = _searchQuery.isEmpty
+        ? (fridgeItems.isNotEmpty
+            ? fridgeItems.first.id
+            : freezerItems.isNotEmpty
+                ? freezerItems.first.id
+                : pantryItems.isNotEmpty
+                    ? pantryItems.first.id
+                    : null)
+        : null;
 
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final refreshAccent = colors.onSurfaceVariant;
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
         title: Text(
-          'Inventory',
-          style: TextStyle(fontWeight: FontWeight.w800, color: colors.onSurface, fontSize: 24),
+          l10n?.navInventory ?? 'Inventory',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            color: colors.onSurface,
+            fontSize: kMainPageTitleFontSize,
+          ),
         ),
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: false,
         systemOverlayStyle: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        actions: [
+          Semantics(
+            button: true,
+            label: widget.repo.hasPendingUploads
+                ? (l10n?.inventorySyncChangesLabel ?? 'Sync changes to cloud')
+                : (l10n?.inventoryCloudSyncStatusLabel ?? 'Cloud sync status'),
+            hint: widget.repo.hasPendingUploads
+                ? (l10n?.inventorySyncRetryHint ?? 'Tap to retry syncing pending changes')
+                : (l10n?.inventorySyncAllSavedHint ?? 'Tap to confirm all changes are saved'),
+            child: IconButton(
+              icon: widget.repo.hasPendingUploads
+                  ? const Icon(Icons.cloud_upload_outlined, size: 24, color: Colors.orange)
+                  : const Icon(Icons.cloud_done_rounded, size: 24, color: Colors.green),
+              tooltip: widget.repo.hasPendingUploads
+                  ? (l10n?.inventorySyncingChanges ?? 'Syncing changes...')
+                  : (l10n?.inventoryAllChangesSaved ?? 'All changes saved'),
+              onPressed: () {
+                if (widget.repo.hasPendingUploads) {
+                  widget.showSnackBar(l10n?.inventorySyncingChangesToCloud ?? 'Syncing changes to cloud...');
+                  widget.repo.refreshAll();
+                } else {
+                  widget.showSnackBar(l10n?.inventoryAllSavedToCloud ?? 'All changes saved to cloud.');
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
-      body: RefreshIndicator(
-        color: const Color(0xFF005F87),
-        onRefresh: widget.repo.refreshAll,
-        child: !hasAnyItems
+      body: Stack(
+        children: [
+          RefreshIndicator(
+            color: Colors.transparent,
+            backgroundColor: Colors.transparent,
+            strokeWidth: 0.1,
+            elevation: 0,
+            onRefresh: _onRefreshWithFeedback,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _handleRefreshPullNotification,
+              child: (widget.repo.isLoading && !hasAnyItems)
+            ? const Center(child: CircularProgressIndicator())
+            : !hasAnyItems
             ? CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -401,11 +682,11 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-                    child: Showcase(
+                    child: wrapWithShowcase(
+                      context: context,
                       key: _searchKey,
-                      title: 'Quick Search',
-                      description: 'Find items instantly.',
-                      targetBorderRadius: BorderRadius.circular(16),
+                      title: l10n?.inventoryQuickSearchTitle ?? 'Quick Search',
+                      description: l10n?.inventoryQuickSearchDescription ?? 'Find any item by name in seconds.',
                       child: _buildSearchBar(),
                     ),
                   ),
@@ -429,7 +710,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                             label: user,
                             isSelected: isSelected,
                             onTap: () {
-                              HapticFeedback.selectionClick();
+                              AppHaptics.selection();
                               _setSelectedUser(user);
                             },
                             currentUserName: currentUserName,
@@ -447,7 +728,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
             if (fridgeItems.isNotEmpty)
               _buildSliverSection(
-                title: 'Fridge',
+                title: l10n?.foodLocationFridge ?? 'Fridge',
                 icon: Icons.kitchen_rounded,
                 color: const Color(0xFF005F87),
                 items: fridgeItems,
@@ -455,11 +736,12 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                 sortedUsers: sortedUsers,
                 isSharedMode: isSharedMode,
                 currentUserName: currentUserName,
+                showcaseItemId: showcaseItemId,
               ),
 
             if (freezerItems.isNotEmpty)
               _buildSliverSection(
-                title: 'Freezer',
+                title: l10n?.foodLocationFreezer ?? 'Freezer',
                 icon: Icons.ac_unit_rounded,
                 color: const Color(0xFF3F51B5),
                 items: freezerItems,
@@ -467,11 +749,12 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                 sortedUsers: sortedUsers,
                 isSharedMode: isSharedMode,
                 currentUserName: currentUserName,
+                showcaseItemId: showcaseItemId,
               ),
 
             if (pantryItems.isNotEmpty)
               _buildSliverSection(
-                title: 'Pantry',
+                title: l10n?.foodLocationPantry ?? 'Pantry',
                 icon: Icons.shelves,
                 color: Colors.brown,
                 items: pantryItems,
@@ -479,12 +762,23 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                 sortedUsers: sortedUsers,
                 isSharedMode: isSharedMode,
                 currentUserName: currentUserName,
+                showcaseItemId: showcaseItemId,
               ),
 
             const SliverPadding(padding: EdgeInsets.only(bottom: 100)),
           ],
         ),
-      ),
+            ),
+          ),
+          PullToRefreshCue(
+            progress: _refreshVisualProgress,
+            armed: _refreshVisualArmed,
+            color: refreshAccent,
+            hintText: l10n?.pullToRefreshHint ?? 'Pull to refresh',
+            releaseText: l10n?.pullToRefreshRelease ?? 'Release to refresh',
+          ),
+        ],
+        ),
     );
   }
 
@@ -497,6 +791,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     required List<String> sortedUsers,
     required bool isSharedMode,
     required String currentUserName,
+    required String? showcaseItemId,
   }) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
@@ -512,23 +807,27 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         SliverToBoxAdapter(
           child: InkWell(
             onTap: () {
-              HapticFeedback.selectionClick();
+              AppHaptics.selection();
               setState(() => _sectionExpanded[location] = !isExpanded);
             },
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20),
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Icon(icon, size: 20, color: color),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     title,
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: colors.onSurface,
                     ),
@@ -537,15 +836,15 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white.withOpacity(0.08) : Colors.grey[200],
-                      borderRadius: BorderRadius.circular(12),
+                      color: isDark ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       '${items.length}',
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
-                        color: colors.onSurface.withOpacity(0.65),
+                        color: colors.onSurface.withValues(alpha: 0.6),
                       ),
                     ),
                   ),
@@ -555,7 +854,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                     duration: const Duration(milliseconds: 200),
                     child: Icon(
                       Icons.keyboard_arrow_down_rounded,
-                      color: colors.onSurface.withOpacity(0.45),
+                      color: colors.onSurface.withValues(alpha: 0.45),
                     ),
                   ),
                 ],
@@ -569,7 +868,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
             padding: const EdgeInsets.symmetric(horizontal: 20),
             sliver: SliverList(
               delegate: SliverChildBuilderDelegate(
-                (context, index) {
+                    (context, index) {
                   final item = items[index];
                   return RepaintBoundary(
                     key: ValueKey(item.id),
@@ -581,6 +880,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                         sortedUsers,
                         isSharedMode,
                         currentUserName,
+                        isShowcaseTarget: item.id == showcaseItemId,
                       ),
                     ),
                   );
@@ -603,15 +903,17 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   }
 
   Widget _buildSearchBar() {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           )
         ],
       ),
@@ -619,12 +921,12 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         controller: _searchController,
         onChanged: _updateSearchQuery,
         decoration: InputDecoration(
-          hintText: 'Search items...',
-          hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),
-          prefixIcon: Icon(Icons.search_rounded, color: Colors.grey[400]),
+          hintText: AppLocalizations.of(context)?.inventorySearchHint ?? 'Search items...',
+          hintStyle: TextStyle(color: colors.onSurface.withValues(alpha: 0.4), fontSize: 15),
+          prefixIcon: Icon(Icons.search_rounded, color: colors.onSurface.withValues(alpha: 0.4)),
           suffixIcon: _searchQuery.isNotEmpty
               ? IconButton(
-            icon: Icon(Icons.clear_rounded, color: Colors.grey[400], size: 20),
+            icon: Icon(Icons.clear_rounded, color: colors.onSurface.withValues(alpha: 0.4), size: 20),
             onPressed: () {
               _searchController.clear();
               _updateSearchQuery('');
@@ -633,7 +935,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
           )
               : null,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
         ),
       ),
     );
@@ -648,7 +950,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
             Icon(Icons.search_off_rounded, size: 64, color: Colors.grey[300]),
             const SizedBox(height: 16),
             Text(
-              'No items found',
+              AppLocalizations.of(context)?.inventoryNoItemsFound ?? 'No items found',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey[600]),
             )
           ],
@@ -675,7 +977,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                   border: Border.all(color: Colors.grey.shade200),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withValues(alpha: 0.05),
                       blurRadius: 20,
                       offset: const Offset(0, 10),
                     )
@@ -685,12 +987,12 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
               ),
               const SizedBox(height: 24),
               Text(
-                'Your inventory is empty',
+                AppLocalizations.of(context)?.inventoryEmptyTitle ?? 'Your inventory is empty',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Colors.grey.shade800),
               ),
               const SizedBox(height: 8),
               Text(
-                'Tap the + button to add items.',
+                AppLocalizations.of(context)?.inventoryEmptySubtitle ?? 'Tap the + button to add items.',
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 14, color: Colors.grey.shade500, height: 1.5),
               )
@@ -707,8 +1009,39 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       List<String> sortedUsers,
       bool isSharedMode,
       String currentUserName,
+      {required bool isShowcaseTarget}
       ) {
-    return Dismissible(
+    Widget card = _PressableScale(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => InventoryItemDetailPage(
+              item: item,
+              repo: widget.repo,
+            ),
+          ),
+        );
+      },
+      onLongPress: () {
+        AppHaptics.selection();
+        _showItemActionsSheet(context, item, sortedUsers, isSharedMode);
+      },
+      child: _buildItemCard(context, item, isSharedMode, currentUserName),
+    );
+
+    if (isShowcaseTarget) {
+      card = wrapWithShowcase(
+        context: context,
+        key: _longPressMenuKey,
+        title: AppLocalizations.of(context)?.inventoryLongPressTitle ?? 'Long Press Menu',
+        description: AppLocalizations.of(context)?.inventoryLongPressDescription ??
+            'Press and hold an item to edit, use quantity, move, or delete.',
+        child: card,
+      );
+    }
+
+    Widget dismissible = Dismissible(
       key: ValueKey(item.id),
       direction: DismissDirection.endToStart,
       background: Container(
@@ -718,34 +1051,31 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         child: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 24),
       ),
       onDismissed: (_) async {
-        HapticFeedback.mediumImpact();
+        AppHaptics.success();
         final deletedItem = item;
         await widget.repo.deleteItem(item.id);
         if (!context.mounted) return;
+        final l10n = AppLocalizations.of(context);
         _showToast(
-          'Deleted "${deletedItem.name}"',
+          l10n?.inventoryDeletedToast(deletedItem.name) ?? 'Deleted "${deletedItem.name}"',
           onUndo: () async => widget.repo.addItem(deletedItem),
         );
       },
-      child: _PressableScale(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => AddFoodPage(
-                repo: widget.repo,
-                itemToEdit: item,
-              ),
-            ),
-          );
-        },
-        onLongPress: () {
-          HapticFeedback.selectionClick();
-          _showItemActionsSheet(context, item, sortedUsers, isSharedMode);
-        },
-        child: _buildItemCard(context, item, isSharedMode, currentUserName),
-      ),
+      child: card,
     );
+
+    if (isShowcaseTarget) {
+      dismissible = wrapWithShowcase(
+        context: context,
+        key: _swipeDeleteKey,
+        title: AppLocalizations.of(context)?.inventorySwipeDeleteTitle ?? 'Swipe Left to Delete',
+        description: AppLocalizations.of(context)?.inventorySwipeDeleteDescription ??
+            'Swipe an item to the left to delete it. You can undo right after.',
+        child: dismissible,
+      );
+    }
+
+    return dismissible;
   }
 
   String? _resolveCategoryKey(FoodItem item) {
@@ -764,7 +1094,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: option.color.withOpacity(0.12),
+        color: option.color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Row(
@@ -852,7 +1182,6 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final days = item.daysToExpiry;
-    final ownerLabel = _resolveOwnerLabel(item.ownerName, currentUserName);
     final qtyText = '${item.quantity.toStringAsFixed(2)} ${item.unit}';
     final categoryKey = _resolveCategoryKey(item);
     final categoryOption = _categoryOptionForKey(categoryKey);
@@ -864,7 +1193,8 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         ? '${-days}d ago'
         : '${days}d left';
     final urgency = _urgency(days);
-    final urgencyIcon = _urgencyIcon(urgency);
+    final urgencyColor = _urgencyColor(urgency, colors);
+    final progressValue = _expiryProgressValue(days);
 
     Widget actionButton;
     if (item.location == StorageLocation.fridge) {
@@ -888,98 +1218,160 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
     final leading = _leadingIcon(item);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: item.isLowStock ? Colors.orange.shade300 : theme.dividerColor,
-          width: item.isLowStock ? 1.2 : 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(10),
-        child: Row(
-          children: [
-            if (!isSharedMode) ...[
-              UserAvatarTag(
-                name: ownerLabel,
-                size: 34,
-                showBorder: true,
-                currentUserName: currentUserName,
+    return Stack(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: theme.cardColor,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: item.isLowStock ? Colors.orange.shade300 : theme.dividerColor,
+              width: item.isLowStock ? 1.2 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
               ),
-              const SizedBox(width: 12),
             ],
-            if (isSharedMode) ...[
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: leading.color.withOpacity(0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(leading.icon, size: 16, color: leading.color),
-              ),
-              const SizedBox(width: 12),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                      color: colors.onSurface,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Row(
-                    children: [
-                      Text(
-                        qtyText,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: colors.onSurface.withOpacity(0.65),
-                          fontWeight: FontWeight.w500,
-                        ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: leading.color.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
                       ),
-                      if (categoryOption != null) ...[
-                        const SizedBox(width: 6),
-                        _categoryPill(categoryOption),
-                      ],
-                      if (urgencyIcon != null) ...[
-                        const SizedBox(width: 6),
-                        Icon(urgencyIcon.icon, size: 12, color: urgencyIcon.color),
-                      ],
-                      const SizedBox(width: 6),
-                      _expiryPill(context, urgency, daysLabel),
-                    ],
-                  ),
-                  if (item.note != null && item.note!.trim().isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      item.note!,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: colors.onSurface.withOpacity(0.55),
-                        fontWeight: FontWeight.w500,
+                      alignment: Alignment.center,
+                      child: _buildFoodIcon(
+                        item,
+                        size: 40,
+                        imageSize: 48,
+                        fallbackColor: leading.color,
                       ),
                     ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                              color: colors.onSurface,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                qtyText,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: colors.onSurface.withValues(alpha: 0.65),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (categoryOption != null) _categoryPill(categoryOption),
+                              Text(
+                                daysLabel,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: urgencyColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (item.note != null && item.note!.trim().isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              item.note!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: colors.onSurface.withValues(alpha: 0.55),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (item.location != StorageLocation.pantry) actionButton,
                   ],
-                ],
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: progressValue,
+                    minHeight: 4,
+                    backgroundColor: colors.onSurface.withValues(alpha: 0.08),
+                    valueColor: AlwaysStoppedAnimation<Color>(urgencyColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_fxItemId == item.id && _fxType != null && _fxController != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _fxController!,
+                builder: (context, child) {
+                  return _MoveEffectOverlay(
+                    progress: _fxController!.value,
+                    type: _fxType!,
+                    borderRadius: BorderRadius.circular(20),
+                  );
+                },
               ),
             ),
-            if (item.location != StorageLocation.pantry) actionButton,
-          ],
-        ),
-      ),
+          ),
+      ],
     );
+  }
+
+  Color _urgencyColor(_Urgency urgency, ColorScheme colors) {
+    switch (urgency) {
+      case _Urgency.expired:
+        return const Color(0xFFBA1A1A);
+      case _Urgency.today:
+        return const Color(0xFFBA1A1A);
+      case _Urgency.soon:
+        return const Color(0xFFFF9800);
+      case _Urgency.ok:
+        return const Color(0xFF2E7D32);
+      case _Urgency.none:
+        return colors.onSurface.withValues(alpha: 0.6);
+    }
+  }
+
+  double _expiryProgressValue(int days) {
+    if (days < 0) return 0.95;
+    if (days == 0) return 0.9;
+    if (days <= 2) return 0.8;
+    if (days <= 5) return 0.6;
+    if (days <= 10) return 0.4;
+    return 0.25;
   }
 
   _Urgency _urgency(int days) {
@@ -990,45 +1382,8 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     return _Urgency.ok;
   }
 
-  _Leading? _urgencyIcon(_Urgency urgency) {
-    switch (urgency) {
-      case _Urgency.expired:
-        return const _Leading(Icons.error_rounded, Color(0xFFD32F2F));
-      case _Urgency.today:
-        return const _Leading(Icons.timer_rounded, Color(0xFFFF9800));
-      case _Urgency.soon:
-        return const _Leading(Icons.schedule_rounded, Color(0xFFFFB300));
-      case _Urgency.ok:
-        return const _Leading(Icons.check_circle_rounded, Color(0xFF43A047));
-      case _Urgency.none:
-        return null;
-    }
-  }
-
-  Widget _expiryPill(BuildContext context, _Urgency u, String text) {
-    Color fg;
-    switch (u) {
-      case _Urgency.expired:
-        fg = const Color(0xFFD32F2F);
-        break;
-      case _Urgency.today:
-        fg = const Color(0xFFE65100);
-        break;
-      case _Urgency.soon:
-        fg = const Color(0xFFF57F17);
-        break;
-      case _Urgency.ok:
-        fg = const Color(0xFF2E7D32);
-        break;
-      case _Urgency.none:
-        fg = const Color(0xFF616161);
-        break;
-    }
-    return Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg));
-  }
-
   Widget _defrostIcon(Color color) {
-    final lineColor = Colors.white.withOpacity(0.9);
+    final lineColor = Colors.white.withValues(alpha: 0.9);
     return SizedBox(
       width: 20,
       height: 20,
@@ -1064,7 +1419,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                 width: 8,
                 height: 1.6,
                 decoration: BoxDecoration(
-                  color: lineColor.withOpacity(0.8),
+                  color: lineColor.withValues(alpha: 0.8),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1086,8 +1441,30 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     }
   }
 
+  Widget _buildFoodIcon(
+      FoodItem item, {
+        required double size,
+        double? imageSize,
+        double fallbackScale = 0.55,
+        Color? fallbackColor,
+      }) {
+    final assetPath = foodIconAssetForItem(item);
+    final leading = _leadingIcon(item);
+    final isDefaultIcon = assetPath.endsWith('/default.png');
+    final resolvedSize = isDefaultIcon ? size * 0.55 : (imageSize ?? size);
+    return Image.asset(
+      assetPath,
+      width: resolvedSize,
+      height: resolvedSize,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) {
+        return Icon(leading.icon, size: size * fallbackScale, color: fallbackColor ?? leading.color);
+      },
+    );
+  }
+
   Future<void> _openEditPage(BuildContext context, FoodItem item) async {
-    HapticFeedback.lightImpact();
+    AppHaptics.selection();
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => AddFoodPage(repo: widget.repo, itemToEdit: item)),
@@ -1103,24 +1480,27 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Item note', style: TextStyle(fontWeight: FontWeight.w700)),
+      title: Text(
+        AppLocalizations.of(context)?.inventoryItemNoteTitle ?? 'Item note',
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
         content: TextField(
           controller: controller,
           maxLines: 3,
           decoration: InputDecoration(
-            hintText: 'Add a short note...',
-            hintStyle: TextStyle(color: colors.onSurface.withOpacity(0.5)),
+            hintText: AppLocalizations.of(context)?.inventoryItemNoteHint ?? 'Add a short note...',
+            hintStyle: TextStyle(color: colors.onSurface.withValues(alpha: 0.5)),
             filled: true,
             fillColor: isDark ? const Color(0xFF1E2229) : const Color(0xFFF5F7FA),
             isDense: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: colors.outline.withOpacity(0.4)),
+              borderSide: BorderSide(color: colors.outline.withValues(alpha: 0.4)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
-              borderSide: BorderSide(color: colors.outline.withOpacity(0.3)),
+              borderSide: BorderSide(color: colors.outline.withValues(alpha: 0.3)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(14),
@@ -1131,12 +1511,12 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+            child: Text(AppLocalizations.of(context)?.cancel ?? 'Cancel'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, controller.text),
             style: TextButton.styleFrom(foregroundColor: colors.primary),
-            child: const Text('Save'),
+            child: Text(AppLocalizations.of(context)?.commonSave ?? 'Save'),
           ),
         ],
       ),
@@ -1148,6 +1528,84 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   }
 
   Future<void> _showItemActionsSheet(BuildContext context, FoodItem item, List<String> users, bool isSharedMode) async {
+    final currentUserName = widget.repo.currentUserName;
+    final ownerLabel = _resolveOwnerLabel(item.ownerName, currentUserName);
+    final assignableUsers = users.where((u) => u != 'All' && u != 'Family').toList();
+
+    final result = await showModalBottomSheet<_ConsumptionResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return _ConsumptionSheet(
+          item: item,
+          initialAction: null,
+          sortedUsers: assignableUsers,
+          currentUserName: currentUserName,
+          initialOwner: ownerLabel,
+          showAssign: !isSharedMode,
+          onEditFamily: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => FamilyPage(repo: widget.repo)),
+            );
+          },
+          onChangeCategory: () async {
+            final picked = await _pickCategory(context, item);
+            if (picked == null) return;
+            final newCategory = picked == _autoCategoryKey ? null : picked;
+            await widget.repo.updateItem(item.copyWith(category: newCategory));
+            if (newCategory != null) {
+              await widget.repo.rememberCategoryForName(item.name, newCategory);
+            }
+          },
+        );
+      },
+    );
+
+    if (result == null) return;
+
+    final oldItem = item;
+    final ownerChanged = result.assignedUser != null && result.assignedUser != ownerLabel && !isSharedMode;
+    if (ownerChanged) {
+      await _assignOwner(item, result.assignedUser!);
+      AppHaptics.success();
+    }
+
+    if (result.action == null) {
+      if (!context.mounted) return;
+      if (ownerChanged) {
+        _showToast('Updated assignment for ${item.name}');
+      }
+      return;
+    }
+
+    if (result.usedQty <= 0) return;
+    await widget.repo.useItemWithImpact(item, result.action!, result.usedQty);
+    AppHaptics.success();
+
+    if (result.action == 'pet' && !widget.repo.hasShownPetWarning) {
+      await widget.repo.markPetWarningShown();
+      if (context.mounted) {
+        _showToast(
+          AppLocalizations.of(context)?.todayPetSafetyWarning ??
+              'Please make sure the food is safe for your pet!',
+        );
+      }
+    }
+
+    if (!context.mounted) return;
+    final verb = result.action == 'eat'
+        ? 'Cooked'
+        : (result.action == 'pet' ? 'Fed' : 'Wasted');
+    _showToast(
+      '$verb ${result.usedQty.toStringAsFixed(1)} ${item.unit} of ${item.name}',
+      onUndo: () async => widget.repo.updateItem(oldItem),
+    );
+  }
+
+  // ignore: unused_element
+  Future<void> _showItemActionsSheetLegacy(BuildContext context, FoodItem item, List<String> users, bool isSharedMode) async {
     final currentUserName = widget.repo.currentUserName;
     final ownerLabel = _resolveOwnerLabel(item.ownerName, currentUserName);
     final assignableUsers = users.where((u) => u != 'All' && u != 'Family').toList();
@@ -1177,10 +1635,10 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: colors.onSurface.withOpacity(0.08),
+                            color: colors.onSurface.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: Icon(_leadingIcon(item).icon, size: 28, color: _leadingIcon(item).color),
+                          child: _buildFoodIcon(item, size: 40, fallbackColor: _leadingIcon(item).color),
                         ),
                         const SizedBox(width: 16),
                         Expanded(
@@ -1201,7 +1659,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                                   Text(
                                     '${item.quantity} ${item.unit}',
                                     style: TextStyle(
-                                      color: colors.onSurface.withOpacity(0.6),
+                                      color: colors.onSurface.withValues(alpha: 0.6),
                                       fontSize: 13,
                                       fontWeight: FontWeight.w600,
                                     ),
@@ -1211,7 +1669,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                                     width: 4,
                                     height: 4,
                                     decoration: BoxDecoration(
-                                      color: colors.onSurface.withOpacity(0.3),
+                                      color: colors.onSurface.withValues(alpha: 0.3),
                                       shape: BoxShape.circle,
                                     ),
                                   ),
@@ -1242,7 +1700,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                       child: Text(
                         "Quick Assign",
                         style: TextStyle(
-                          color: colors.onSurface.withOpacity(0.6),
+                          color: colors.onSurface.withValues(alpha: 0.6),
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.5,
@@ -1289,13 +1747,15 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
-                                  user == 'Family' ? 'Shared' : user,
+                                  user == 'Family'
+                                      ? (AppLocalizations.of(context)?.inventorySharedLabel ?? 'Shared')
+                                      : user,
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                                     color: isSelected
                                         ? colors.onSurface
-                                        : colors.onSurface.withOpacity(0.6),
+                                        : colors.onSurface.withValues(alpha: 0.6),
                                   ),
                                 )
                               ],
@@ -1312,8 +1772,10 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
                   SheetTile(
                     icon: Icons.sticky_note_2_outlined,
-                    title: (item.note != null && item.note!.trim().isNotEmpty) ? 'Edit note' : 'Add note',
-                    subtitle: 'Leave a quick reminder',
+                    title: (item.note != null && item.note!.trim().isNotEmpty)
+                        ? (AppLocalizations.of(context)?.inventoryEditNote ?? 'Edit note')
+                        : (AppLocalizations.of(context)?.inventoryAddNote ?? 'Add note'),
+                    subtitle: AppLocalizations.of(context)?.inventoryNoteReminderSubtitle ?? 'Leave a quick reminder',
                     onTap: () {
                       Navigator.pop(ctx);
                       _editItemNote(context, item);
@@ -1321,7 +1783,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                   ),
                   SheetTile(
                     icon: Icons.category_outlined,
-                    title: 'Change category',
+                    title: AppLocalizations.of(context)?.inventoryChangeCategory ?? 'Change category',
                     subtitle: _categorySubtitle(item),
                     onTap: () async {
                       Navigator.pop(ctx);
@@ -1337,29 +1799,32 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
                   SheetTile(
                     icon: Icons.restaurant_menu_rounded,
-                    title: 'Cook with this',
-                    subtitle: 'Record usage & update quantity',
+                    title: AppLocalizations.of(context)?.inventoryCookWithThis ?? 'Cook with this',
+                    subtitle: AppLocalizations.of(context)?.inventoryRecordUsageUpdateQty ?? 'Record usage & update quantity',
                     onTap: () async {
                       Navigator.pop(ctx);
                       final oldItem = item;
-                      final usedQty = await _askQuantityDialog(context, item, 'eat');
+                      // Pass users for the Quick Assign UI in the new dialog
+                      final usedQty = await _askQuantityDialog(context, item, 'eat', users);
                       if (usedQty == null || usedQty <= 0) return;
                       await widget.repo.useItemWithImpact(item, 'eat', usedQty);
                       if (!context.mounted) return;
+                      final l10n = AppLocalizations.of(context);
                       _showToast(
-                        'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
+                        l10n?.inventoryCookedToast(usedQty.toStringAsFixed(1), item.name) ??
+                            'Cooked ${usedQty.toStringAsFixed(1)} of ${item.name}',
                         onUndo: () async => widget.repo.updateItem(oldItem),
                       );
                     },
                   ),
                   SheetTile(
                     icon: Icons.pets_rounded,
-                    title: 'Feed to pet',
-                    subtitle: 'Great for leftovers',
+                    title: AppLocalizations.of(context)?.inventoryFeedToPet ?? 'Feed to pet',
+                    subtitle: AppLocalizations.of(context)?.inventoryGreatForLeftovers ?? 'Great for leftovers',
                     onTap: () async {
                       Navigator.pop(ctx);
                       final oldItem = item;
-                      final usedQty = await _askQuantityDialog(context, item, 'pet');
+                      final usedQty = await _askQuantityDialog(context, item, 'pet', users);
                       if (usedQty == null || usedQty <= 0) return;
 
                       await widget.repo.useItemWithImpact(item, 'pet', usedQty);
@@ -1367,12 +1832,16 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                       if (!widget.repo.hasShownPetWarning) {
                         await widget.repo.markPetWarningShown();
                         if (!context.mounted) return;
-                        _showToast('Please make sure the food is safe for your pet!');
+                        _showToast(
+                          AppLocalizations.of(context)?.todayPetSafetyWarning ??
+                              'Please make sure the food is safe for your pet!',
+                        );
                       }
 
                       if (!context.mounted) return;
+                      final l10n = AppLocalizations.of(context);
                       _showToast(
-                        'Fed ${item.name} to pet',
+                        l10n?.inventoryFedToPetToast(item.name) ?? 'Fed ${item.name} to pet',
                         onUndo: () async => widget.repo.updateItem(oldItem),
                       );
                     },
@@ -1380,20 +1849,21 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
 
                   SheetTile(
                     icon: Icons.delete_sweep_rounded,
-                    title: 'Wasted / Thrown away',
-                    subtitle: 'Track waste to improve habits',
-                    iconColor: Colors.deepOrange, // 红色图标
+                    title: AppLocalizations.of(context)?.inventoryWastedThrownAway ?? 'Wasted / Thrown away',
+                    subtitle: AppLocalizations.of(context)?.inventoryTrackWasteImproveHabits ?? 'Track waste to improve habits',
+                    iconColor: Colors.deepOrange, // NOTE: legacy comment cleaned.
                     onTap: () async {
                       Navigator.pop(ctx);
                       final oldItem = item;
-                      final usedQty = await _askQuantityDialog(context, item, 'trash');
+                      final usedQty = await _askQuantityDialog(context, item, 'trash', users);
                       if (usedQty == null || usedQty <= 0) return;
 
                       await widget.repo.useItemWithImpact(item, 'trash', usedQty);
 
                       if (!context.mounted) return;
+                      final l10n = AppLocalizations.of(context);
                       _showToast(
-                        'Recorded waste: ${item.name}',
+                        l10n?.inventoryRecordedWasteToast(item.name) ?? 'Recorded waste: ${item.name}',
                         onUndo: () async => widget.repo.updateItem(oldItem),
                       );
                     },
@@ -1405,7 +1875,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                   ),
                   SheetTile(
                     icon: Icons.edit_rounded,
-                    title: 'Edit details',
+                    title: AppLocalizations.of(context)?.inventoryEditDetails ?? 'Edit details',
                     onTap: () {
                       Navigator.pop(ctx);
                       _openEditPage(context, item);
@@ -1413,7 +1883,7 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                   ),
                   SheetTile(
                     icon: Icons.delete_outline_rounded,
-                    title: 'Delete item',
+                    title: AppLocalizations.of(context)?.inventoryDeleteItem ?? 'Delete item',
                     danger: true,
                     onTap: () async {
                       Navigator.pop(ctx);
@@ -1423,8 +1893,9 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
                       final deletedItem = item;
                       await widget.repo.deleteItem(item.id);
                       if (!context.mounted) return;
+                      final l10n = AppLocalizations.of(context);
                       _showToast(
-                        'Deleted "${deletedItem.name}"',
+                        l10n?.inventoryDeletedToast(deletedItem.name) ?? 'Deleted "${deletedItem.name}"',
                         onUndo: () async => widget.repo.addItem(deletedItem),
                       );
                     },
@@ -1438,132 +1909,34 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
     );
   }
 
-  Future<double?> _askQuantityDialog(BuildContext context, FoodItem item, String action) async {
-    final controller = TextEditingController(
-      text: item.quantity.toStringAsFixed(item.quantity == item.quantity.roundToDouble() ? 0 : 1),
-    );
-    // 🟢 动态标题
-    String title;
-    if (action == 'eat') {
-      title = 'How much did you cook?';
-    } else if (action == 'pet') {
-      title = 'How much did you feed?';
-    } else {
-      title = 'How much was wasted?';
-    }
-
-    String? selectedChip = 'All';
-    String? errorText;
-
-    return showDialog<double>(
+  // Refactored to match the "Unified Consumption Hub" design
+  Future<double?> _askQuantityDialog(
+      BuildContext context,
+      FoodItem item,
+      String action,
+      List<String> sortedUsers,
+      ) async {
+    final ownerLabel = _resolveOwnerLabel(item.ownerName, widget.repo.currentUserName);
+    final result = await showModalBottomSheet<_ConsumptionResult>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            void updateQty(double val, String chipLabel) {
-              controller.text = val.toStringAsFixed(val.truncateToDouble() == val ? 0 : 2);
-              setState(() {
-                selectedChip = chipLabel;
-                errorText = null;
-              });
-            }
-
-            Widget buildChip(String label, double val) {
-              final isSelected = selectedChip == label;
-              return ActionChip(
-                label: Text(label),
-                onPressed: () => updateQty(val, label),
-                backgroundColor: isSelected ? const Color(0xFF005F87).withOpacity(0.15) : Colors.grey[100],
-                side: BorderSide(color: isSelected ? const Color(0xFF005F87) : Colors.transparent, width: 1.5),
-                labelStyle: TextStyle(
-                  color: isSelected ? const Color(0xFF005F87) : Colors.grey[700],
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.normal,
-                  fontSize: 12,
-                ),
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              );
-            }
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-              title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.inventory_2_outlined, size: 16, color: Colors.grey),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Available: ${item.quantity.toStringAsFixed(1)} ${item.unit}',
-                          style: TextStyle(color: Colors.grey[800], fontWeight: FontWeight.w600, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(spacing: 8, runSpacing: 8, children: [
-                    buildChip('All', item.quantity),
-                    buildChip('½', item.quantity / 2),
-                    buildChip('¼', item.quantity / 4),
-                  ]),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: controller,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText: 'Quantity used',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
-                      filled: true,
-                      fillColor: Colors.white,
-                      errorText: errorText,
-                    ),
-                    onTap: () {
-                      if (selectedChip != null) setState(() => selectedChip = null);
-                    },
-                    onChanged: (_) {
-                      if (selectedChip != null) setState(() => selectedChip = null);
-                      if (errorText != null) setState(() => errorText = null);
-                    },
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, null),
-                  child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    final raw = double.tryParse(controller.text.replaceAll(',', '.')) ?? double.nan;
-                    if (raw.isNaN) {
-                      setState(() => errorText = 'Enter a valid number');
-                      return;
-                    }
-                    if (raw <= 0) {
-                      setState(() => errorText = 'Quantity must be > 0');
-                      return;
-                    }
-                    if (raw > item.quantity + 1e-9) {
-                      setState(() => errorText = 'Max available: ${item.quantity}');
-                      return;
-                    }
-                    Navigator.pop(ctx, raw);
-                  },
-                  child: const Text('Confirm', style: TextStyle(fontWeight: FontWeight.w700)),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _ConsumptionSheet(
+        item: item,
+        initialAction: action,
+        sortedUsers: sortedUsers,
+        currentUserName: widget.repo.currentUserName,
+        initialOwner: ownerLabel,
+        showAssign: true,
+        onEditFamily: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => FamilyPage(repo: widget.repo)),
+          );
+        },
+      ),
     );
+    return result?.usedQty;
   }
 
   Future<bool> _confirmDelete(BuildContext context, FoodItem item) async {
@@ -1572,17 +1945,29 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
       builder: (ctx) {
         return AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-          title: const Text('Delete item?', style: TextStyle(fontWeight: FontWeight.w700)),
-          content: Text('Remove "${item.name}" from your inventory permanently?'),
+          title: Text(
+            AppLocalizations.of(context)?.inventoryDeleteItemQuestion ?? 'Delete item?',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          content: Text(
+            AppLocalizations.of(context)?.inventoryDeletePermanentQuestion(item.name) ??
+                'Remove "${item.name}" from your inventory permanently?',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+              child: Text(
+                AppLocalizations.of(context)?.cancel ?? 'Cancel',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: TextButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w700)),
+              child: Text(
+                AppLocalizations.of(context)?.inventoryDeleteAction ?? 'Delete',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
             ),
           ],
         );
@@ -1592,7 +1977,795 @@ class _InventoryPageState extends State<InventoryPage> with AutomaticKeepAliveCl
   }
 }
 
-// 🟢 附带：升级版的 SheetTile 组件 (支持 iconColor)
+// -----------------------------------------------------------------------------
+// NEW: Consumption Sheet Component (Matches HTML Design)
+// -----------------------------------------------------------------------------
+
+class _ConsumptionResult {
+  final double usedQty;
+  final String? action; // eat | pet | trash
+  final String? assignedUser;
+
+  const _ConsumptionResult({
+    required this.usedQty,
+    required this.action,
+    required this.assignedUser,
+  });
+}
+
+class _ConsumptionSheet extends StatefulWidget {
+  final FoodItem item;
+  final String? initialAction;
+  final List<String> sortedUsers;
+  final String currentUserName;
+  final String? initialOwner;
+  final bool showAssign;
+  final VoidCallback? onEditFamily;
+  final VoidCallback? onChangeCategory;
+
+  const _ConsumptionSheet({
+    required this.item,
+    required this.initialAction,
+    required this.sortedUsers,
+    required this.currentUserName,
+    required this.initialOwner,
+    required this.showAssign,
+    this.onEditFamily,
+    this.onChangeCategory,
+  });
+
+  @override
+  State<_ConsumptionSheet> createState() => _ConsumptionSheetState();
+}
+
+class _ConsumptionSheetState extends State<_ConsumptionSheet>
+    with SingleTickerProviderStateMixin {
+  // Constants from design
+  static const Color _bgDark = Color(0xFF101622);
+  static const Color _primaryBlue = Color(0xFF1B78FF);
+  static const Color _emerald = Color(0xFF10B981); // Emerald 500
+  static const Color _purple = Color(0xFFA855F7); // Purple 500
+  static const Color _red = Color(0xFFEF4444); // Red 500
+
+  late double _quantityUsed;
+  String? _selectedAction;
+  String? _selectedOwner;
+  late final AnimationController _breathController;
+  bool _isSliding = false;
+  double? _lastSnapFraction;
+  static const List<double> _snapFractions = [0.0, 0.25, 0.5, 0.75, 1.0];
+
+  @override
+  void initState() {
+    super.initState();
+    // Default to 50% or full if small quantity
+    _quantityUsed = 0;
+    _selectedAction = widget.initialAction;
+    _selectedOwner = widget.initialOwner;
+    _breathController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+      lowerBound: 0.0,
+      upperBound: 1.0,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _breathController.dispose();
+    super.dispose();
+  }
+
+  String get _percentString {
+    if (widget.item.quantity == 0) return '0%';
+    final pct = (_quantityUsed / widget.item.quantity * 100).round();
+    return '$pct';
+  }
+
+  String get _remainingString {
+    final rem = widget.item.quantity - _quantityUsed;
+    return rem.toStringAsFixed(1);
+  }
+
+  double _snapQuantityIfNeeded(double value) {
+    final max = widget.item.quantity;
+    if (max <= 0) return 0;
+    final fraction = (value / max).clamp(0.0, 1.0);
+
+    double nearest = _snapFractions.first;
+    var nearestDelta = (fraction - nearest).abs();
+    for (final f in _snapFractions.skip(1)) {
+      final d = (fraction - f).abs();
+      if (d < nearestDelta) {
+        nearest = f;
+        nearestDelta = d;
+      }
+    }
+
+    if (nearestDelta <= 0.035) {
+      if (_lastSnapFraction != nearest) {
+        _lastSnapFraction = nearest;
+        AppHaptics.selection();
+      }
+      return (nearest * max).clamp(0.0, max);
+    }
+
+    _lastSnapFraction = null;
+    return value.clamp(0.0, max);
+  }
+
+  // Use the "Sticky Button Overlay" version of the build method and remove the duplicate
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final backgroundColor = isDark ? _bgDark : theme.scaffoldBackgroundColor;
+    final textColor = isDark ? Colors.white : theme.colorScheme.onSurface;
+    final mutedText = isDark ? Colors.white70 : theme.colorScheme.onSurface.withValues(alpha: 0.7);
+    final subtleText = isDark ? Colors.white54 : theme.colorScheme.onSurface.withValues(alpha: 0.55);
+    final handleColor = isDark ? Colors.white24 : theme.dividerColor.withValues(alpha: 0.6);
+    final buttonEnabled = (_selectedAction != null && _quantityUsed > 0) ||
+        (_selectedOwner != null && _selectedOwner != widget.initialOwner);
+
+    return BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.85,
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(40)),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 40)],
+        ),
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                // Handle
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 16, bottom: 8),
+                    width: 48,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: handleColor,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+                // Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(widget.item.name,
+                              style: TextStyle(color: textColor, fontSize: 24, fontWeight: FontWeight.bold)),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Text(
+                                  l10n?.inventorySheetUpdating(widget.item.name) ??
+                                      'Updating: ${widget.item.name}',
+                                  style: TextStyle(color: subtleText, fontSize: 13, fontWeight: FontWeight.w500)),
+                              const SizedBox(width: 8),
+                              _ChangeChip(onTap: widget.onChangeCategory),
+                            ],
+                          ),
+                        ],
+                      ),
+                      _CloseButton(onTap: () => Navigator.pop(context)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    physics: const BouncingScrollPhysics(),
+                    children: [
+                      _buildSliderSection(),
+                      const SizedBox(height: 24),
+                      Text(l10n?.inventoryActionType ?? 'ACTION TYPE',
+                          style: TextStyle(color: mutedText, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1.0)),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                              child: _ActionCard(
+                                  icon: Icons.soup_kitchen,
+                                  label: l10n?.inventoryActionCooked ?? 'Cooked',
+                                  color: _emerald,
+                                  isSelected: _selectedAction == 'eat',
+                                  onTap: () => setState(() => _selectedAction = _selectedAction == 'eat' ? null : 'eat'))),
+                          const SizedBox(width: 12),
+                          Expanded(
+                              child: _ActionCard(
+                                  icon: Icons.pets,
+                                  label: l10n?.inventoryActionPetFeed ?? 'Pet Feed',
+                                  color: _purple,
+                                  isSelected: _selectedAction == 'pet',
+                                  onTap: () => setState(() => _selectedAction = _selectedAction == 'pet' ? null : 'pet'))),
+                          const SizedBox(width: 12),
+                          Expanded(
+                              child: _ActionCard(
+                                  icon: Icons.delete_outline,
+                                  label: l10n?.inventoryActionWaste ?? 'Waste',
+                                  color: _red,
+                                  isSelected: _selectedAction == 'trash',
+                                  onTap: () => setState(() => _selectedAction = _selectedAction == 'trash' ? null : 'trash'))),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      if (widget.showAssign) ...[
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(l10n?.inventoryQuickAssign ?? 'QUICK ASSIGN',
+                                style: TextStyle(color: mutedText, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 1.0)),
+                            TextButton(
+                              onPressed: widget.onEditFamily,
+                              child: Text(
+                                l10n?.inventoryEditFamily ?? 'EDIT FAMILY',
+                                style: TextStyle(color: _primaryBlue.withValues(alpha: 0.8), fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.2),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          height: 90,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: widget.sortedUsers.length + 1,
+                            separatorBuilder: (_, __) => const SizedBox(width: 16),
+                            itemBuilder: (context, index) {
+                              if (index == widget.sortedUsers.length) {
+                                return _AddUserButton(onTap: widget.onEditFamily);
+                              }
+                              final user = widget.sortedUsers[index];
+                              final isSelected = _selectedOwner == user;
+                              return _FamilyAvatar(
+                                name: user == widget.currentUserName
+                                    ? (l10n?.inventoryYouLabel ?? 'You')
+                                    : user,
+                                isSelected: isSelected,
+                                onTap: () => setState(() => _selectedOwner = user),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 120), // Bottom padding for button
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Positioned(
+              left: 24,
+              right: 24,
+              bottom: 24,
+              child: Opacity(
+                opacity: buttonEnabled ? 1.0 : 0.5,
+                child: Container(
+                  height: 56,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(16),
+                    gradient: const LinearGradient(colors: [_primaryBlue, Color(0xFF2563EB)]),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _primaryBlue.withValues(alpha: 0.5),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      )
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: buttonEnabled
+                          ? () {
+                        AppHaptics.success();
+                        Navigator.pop(
+                          context,
+                          _ConsumptionResult(
+                            usedQty: _selectedAction == null ? 0 : _quantityUsed,
+                            action: _selectedAction,
+                            assignedUser: _selectedOwner,
+                          ),
+                        );
+                      }
+                          : null,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.check_circle, color: Colors.white, size: 22),
+                          const SizedBox(width: 8),
+                          Text(
+                            l10n?.inventoryConfirmUpdate ?? 'Confirm Update',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSliderSection() {
+    final l10n = AppLocalizations.of(context);
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final labelColor = isDark ? Colors.white70 : theme.colorScheme.onSurface.withValues(alpha: 0.7);
+    final subtle = isDark ? Colors.white.withValues(alpha: 0.3) : theme.colorScheme.onSurface.withValues(alpha: 0.35);
+    final trackBackground = isDark ? Colors.white.withValues(alpha: 0.05) : theme.colorScheme.surfaceContainerHighest;
+    final trackBorder = isDark ? Colors.white10 : theme.dividerColor.withValues(alpha: 0.6);
+    final thumbColor = isDark ? Colors.white : theme.colorScheme.surface;
+    final progress = widget.item.quantity == 0
+        ? 0.0
+        : (_quantityUsed / widget.item.quantity).clamp(0.0, 1.0);
+    final breathValue = _isSliding ? 0.0 : _breathController.value;
+
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              l10n?.inventoryQuantityUsed ?? 'Quantity Used',
+              style: TextStyle(color: labelColor, fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: _percentString,
+                    style: const TextStyle(
+                      color: _primaryBlue,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: -1,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '%',
+                    style: TextStyle(
+                      color: _primaryBlue.withValues(alpha: 0.7),
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 52,
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 36,
+              activeTrackColor: Colors.transparent, // Handled by container
+              inactiveTrackColor: Colors.transparent, // Handled by container
+              thumbShape: RoundSliderThumbShape(
+                enabledThumbRadius: _isSliding ? 17 : 15,
+                elevation: _isSliding ? 7 : 4,
+              ),
+              overlayShape: RoundSliderOverlayShape(
+                overlayRadius: _isSliding ? 28 : 22,
+              ),
+              thumbColor: thumbColor,
+              overlayColor: _primaryBlue.withValues(alpha: _isSliding ? 0.24 : 0.14),
+            ),
+            child: Stack(
+              children: [
+                // Track Background
+                AnimatedBuilder(
+                  animation: _breathController,
+                  builder: (context, child) {
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final fillWidth = constraints.maxWidth * progress;
+                        final pulseBoost = 0.18 * breathValue;
+                        return Container(
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: trackBackground,
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: trackBorder),
+                          ),
+                          child: Stack(
+                            children: [
+                              AnimatedContainer(
+                                duration: Duration(milliseconds: _isSliding ? 90 : 220),
+                                curve: _isSliding ? Curves.linear : Curves.easeOutCubic,
+                                width: fillWidth,
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      const Color(0xFF2563EB),
+                                      Color.lerp(_primaryBlue, Colors.white, pulseBoost)!,
+                                    ],
+                                  ),
+                                  borderRadius: BorderRadius.circular(18),
+                                  boxShadow: progress > 0
+                                      ? [
+                                          BoxShadow(
+                                            color: _primaryBlue.withValues(alpha: _isSliding ? 0.38 : (0.22 + pulseBoost)),
+                                            blurRadius: _isSliding ? 14 : (10 + 8 * breathValue),
+                                            spreadRadius: _isSliding ? 1 : (0.5 + breathValue),
+                                          ),
+                                        ]
+                                      : [],
+                                ),
+                              ),
+                              if (progress > 0)
+                                Positioned(
+                                  left: (fillWidth - 2).clamp(0.0, constraints.maxWidth - 2),
+                                  top: 6,
+                                  bottom: 6,
+                                  child: Container(width: 2, color: subtle),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                // The actual slider on top
+                Semantics(
+                  label: l10n?.inventorySemanticsQuantityUsed ?? 'Quantity used',
+                  value: '$_percentString percent',
+                  hint: l10n?.inventorySemanticsUsageHint ?? 'Drag left or right to adjust usage',
+                  child: Tooltip(
+                    message: l10n?.inventorySemanticsAdjustUsedAmount ?? 'Adjust used amount',
+                    child: Slider(
+                      value: _quantityUsed,
+                      min: 0,
+                      max: widget.item.quantity,
+                      onChangeStart: (_) => setState(() {
+                        _isSliding = true;
+                        _lastSnapFraction = null;
+                      }),
+                      onChanged: (val) => setState(() => _quantityUsed = _snapQuantityIfNeeded(val)),
+                      onChangeEnd: (_) {
+                        setState(() => _isSliding = false);
+                        AppHaptics.selection();
+                      },
+                      // Custom thumb handling visually
+                      thumbColor: thumbColor,
+                    ),
+                  ),
+                ),
+                // Center Icon on Thumb (Visual Hack - ideally use custom thumb shape)
+                IgnorePointer(
+                  child: Align(
+                    alignment: Alignment(
+                        -1.0 + (progress * 2.0).clamp(0.0, 2.0),
+                        0.0
+                    ),
+                    child: Container(
+                      width: 24,
+                      height: 24,
+                      margin: const EdgeInsets.symmetric(horizontal: 12), // Adjust for thumb radius
+                      child: const Icon(Icons.unfold_more, color: _primaryBlue, size: 16),
+                    ),
+                  ),
+                )
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('0%', style: TextStyle(color: subtle, fontSize: 10, fontWeight: FontWeight.bold)),
+            Text(
+                (l10n?.inventoryRemainingQty(_remainingString, widget.item.unit) ??
+                        'Remaining: $_remainingString${widget.item.unit}')
+                    .toUpperCase(),
+                style: TextStyle(color: subtle, fontSize: 10, fontWeight: FontWeight.bold)),
+            Text('100%', style: TextStyle(color: subtle, fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ActionCard({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final baseText = isDark ? Colors.white54 : theme.colorScheme.onSurface.withValues(alpha: 0.6);
+    final baseFill = isDark ? Colors.white.withValues(alpha: 0.05) : theme.colorScheme.surfaceContainerHighest;
+    final baseBorder = isDark ? Colors.white.withValues(alpha: 0.1) : theme.dividerColor.withValues(alpha: 0.6);
+
+    return GestureDetector(
+      onTap: () {
+        AppHaptics.selection();
+        onTap();
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 100,
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.15) : baseFill,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? color.withValues(alpha: 0.4) : baseBorder,
+            width: 1,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: isSelected ? color : baseText, size: 28),
+                  const SizedBox(height: 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: isSelected ? color.withValues(alpha: 0.9) : baseText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (isSelected)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: color.withValues(alpha: 0.6), blurRadius: 6)],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ChangeChip extends StatelessWidget {
+  final VoidCallback? onTap;
+  const _ChangeChip({this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final background = isDark ? Colors.white.withValues(alpha: 0.05) : theme.colorScheme.surfaceContainerHighest;
+    final border = isDark ? Colors.white10 : theme.dividerColor.withValues(alpha: 0.6);
+    final textColor = isDark ? Colors.white70 : theme.colorScheme.onSurface.withValues(alpha: 0.7);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.category, size: 12, color: Color(0xFF135bec)),
+            const SizedBox(width: 4),
+            Text(
+              'CHANGE',
+              style: TextStyle(
+                color: textColor,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CloseButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CloseButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final background = isDark ? Colors.white.withValues(alpha: 0.05) : theme.colorScheme.surfaceContainerHighest;
+    final iconColor = isDark ? Colors.white : theme.colorScheme.onSurface;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: BoxDecoration(
+          color: background,
+          shape: BoxShape.circle,
+        ),
+        child: Icon(Icons.close, color: iconColor, size: 20),
+      ),
+    );
+  }
+}
+
+class _FamilyAvatar extends StatelessWidget {
+  final String name;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _FamilyAvatar({
+    required this.name,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final primaryBlue = const Color(0xFF135bec);
+    final labelColor = isDark ? Colors.white54 : theme.colorScheme.onSurface.withValues(alpha: 0.6);
+    final avatarFill = isDark ? Colors.grey[800] : theme.colorScheme.surfaceContainerHighest;
+    final avatarText = isDark ? Colors.white70 : theme.colorScheme.onSurface.withValues(alpha: 0.7);
+    final checkBorder = isDark ? _ConsumptionSheetState._bgDark : theme.scaffoldBackgroundColor;
+
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Stack(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isSelected ? primaryBlue : Colors.transparent,
+                    width: 2,
+                  ),
+                  boxShadow: isSelected
+                      ? [BoxShadow(color: primaryBlue.withValues(alpha: 0.4), blurRadius: 10)]
+                      : [],
+                ),
+                child: Container(
+                  alignment: Alignment.center,
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: avatarFill,
+                  ),
+                  child: Text(
+                    name.isNotEmpty ? name.trim()[0].toUpperCase() : '?',
+                    style: TextStyle(color: avatarText, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+              if (isSelected)
+                Positioned(
+                  bottom: 0,
+                  right: 0,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: primaryBlue,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: checkBorder, width: 2),
+                    ),
+                    child: const Icon(Icons.check, size: 10, color: Colors.white),
+                  ),
+                )
+            ],
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          name.toUpperCase(),
+          style: TextStyle(
+            color: isSelected ? primaryBlue : labelColor,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        )
+      ],
+    );
+  }
+}
+
+class _AddUserButton extends StatelessWidget {
+  final VoidCallback? onTap;
+
+  const _AddUserButton({this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final borderColor = isDark ? Colors.white30 : theme.dividerColor.withValues(alpha: 0.7);
+    final iconColor = isDark ? Colors.white54 : theme.colorScheme.onSurface.withValues(alpha: 0.6);
+    final textColor = isDark ? Colors.white54 : theme.colorScheme.onSurface.withValues(alpha: 0.6);
+
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: borderColor, style: BorderStyle.solid),
+              color: Colors.transparent,
+            ),
+            child: Icon(Icons.add, color: iconColor),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'ADD',
+          style: TextStyle(
+            color: textColor,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// NOTE: legacy comment cleaned.
 class SheetTile extends StatelessWidget {
   final IconData icon;
   final String title;
@@ -1619,13 +2792,13 @@ class SheetTile extends StatelessWidget {
       leading: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: danger ? Colors.red.withOpacity(0.1) : colors.onSurface.withOpacity(0.08),
+          color: danger ? Colors.red.withValues(alpha: 0.1) : colors.onSurface.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(12),
         ),
-        // 优先使用 iconColor，其次根据 danger 判断
+        // NOTE: legacy comment cleaned.
         child: Icon(
             icon,
-            color: iconColor ?? (danger ? Colors.red : colors.onSurface.withOpacity(0.7)),
+            color: iconColor ?? (danger ? Colors.red : colors.onSurface.withValues(alpha: 0.7)),
             size: 24
         ),
       ),
@@ -1640,11 +2813,11 @@ class SheetTile extends StatelessWidget {
       subtitle: subtitle != null
           ? Text(
         subtitle!,
-        style: TextStyle(fontSize: 12, color: colors.onSurface.withOpacity(0.6)),
+        style: TextStyle(fontSize: 12, color: colors.onSurface.withValues(alpha: 0.6)),
       )
           : null,
       onTap: () {
-        HapticFeedback.lightImpact();
+        AppHaptics.selection();
         onTap();
       },
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 2),
@@ -1656,13 +2829,11 @@ class _PressableScale extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
-  final bool enabled;
 
   const _PressableScale({
     required this.child,
     this.onTap,
     this.onLongPress,
-    this.enabled = true,
   });
 
   @override
@@ -1673,7 +2844,7 @@ class _PressableScaleState extends State<_PressableScale> {
   bool _pressed = false;
 
   void _setPressed(bool value) {
-    if (!widget.enabled || _pressed == value) return;
+    if (_pressed == value) return;
     setState(() => _pressed = value);
   }
 
@@ -1682,14 +2853,14 @@ class _PressableScaleState extends State<_PressableScale> {
     return GestureDetector(
       onTapDown: (_) {
         _setPressed(true);
-        if (widget.enabled) HapticFeedback.lightImpact();
+        AppHaptics.selection();
       },
       onTapUp: (_) {
         _setPressed(false);
         widget.onTap?.call();
       },
       onTapCancel: () => _setPressed(false),
-      onLongPress: widget.enabled ? widget.onLongPress : null,
+      onLongPress: widget.onLongPress,
       child: AnimatedScale(
         scale: _pressed ? 0.98 : 1.0,
         duration: const Duration(milliseconds: 90),
@@ -1708,3 +2879,9 @@ class _CategoryOption {
 
   const _CategoryOption(this.key, this.label, this.icon, this.color);
 }
+
+
+
+
+
+

@@ -1,0 +1,1157 @@
+﻿{
+    "@@locale":  "de",
+    "appTitle":  "BSH Smart Food Buddy",
+    "navToday":  "Heute",
+    "todayGreetingMorning":  "Guten Morgen",
+    "todayGreetingNoon":  "Guten Tag",
+    "todayGreetingEvening":  "Guten Abend",
+    "navInventory":  "Vorrat",
+    "navShopping":  "Einkauf",
+    "navImpact":  "Wirkung",
+    "undo":  "Hoppla, rueckgaengig",
+    "prefLanguageTitle":  "Sprache",
+    "prefLanguageSubtitle":  "App-Sprache wechseln",
+    "languageSystem":  "Systemsprache",
+    "languageEnglish":  "Englisch",
+    "languageChinese":  "Chinesisch",
+    "languageGerman":  "Deutsch",
+    "themeTitle":  "Design",
+    "themeFollowSystem":  "System folgen",
+    "themeLight":  "Hell",
+    "themeDark":  "Dunkel",
+    "accountTitle":  "Konto",
+    "accountSectionHousehold":  "Haushalt",
+    "accountSectionMyHome":  "Mein Zuhause",
+    "accountSectionIntegrations":  "Integrationen",
+    "accountSectionPreferences":  "Einstellungen",
+    "accountSectionAbout":  "Info",
+    "accountNotificationsTitle":  "Benachrichtigungen",
+    "accountNotificationsSubtitle":  "Ablauf- und Mahlzeit-Erinnerungen",
+    "notificationPermissionBlocked":  "Die Benachrichtigungsberechtigung ist in den Systemeinstellungen blockiert.",
+    "notificationMealReminderMessage":  "Einige deiner Zutaten laufen bald ab. Schau in Smart Food Home vorbei.",
+    "notificationSavedFutureApply":  "Gespeichert. Die neue Erinnerungszeit gilt fuer kommende Benachrichtigungen.",
+    "notificationEnablePermissionFirst":  "Bitte aktiviere zuerst die Benachrichtigungsberechtigung.",
+    "notificationTestMessage":  "Dies ist eine Test-Ablauferinnerung von Smart Food Home.",
+    "notificationTestSent":  "Testbenachrichtigung gesendet.",
+    "notificationThreeDayExpiryTitle":  "3-Tage-Ablaufwarnung",
+    "notificationThreeDayExpiryDesc":  "Einmalige Erinnerung, wenn ein Artikel in 3 Tagen ablaeuft.",
+    "notificationMealTimeTitle":  "Mahlzeit-Erinnerungen",
+    "notificationMealTimeDesc":  "Zwei taegliche Erinnerungen zu deiner Mittags- und Abendzeit.",
+    "notificationPermissionAllowed":  "System-Benachrichtigung: erlaubt",
+    "notificationPermissionBlockedStatus":  "System-Benachrichtigung: blockiert",
+    "notificationStatusCombined":  "Mahlzeit-Erinnerungen: {mealStatus} | 3-Tage-Warnungen: {threeDayStatus}",
+    "@notificationStatusCombined":  {
+                                        "placeholders":  {
+                                                             "mealStatus":  {
+
+                                                                            },
+                                                             "threeDayStatus":  {
+
+                                                                                }
+                                                         }
+                                    },
+    "notificationStatusScheduled":  "aktiv",
+    "notificationStatusOff":  "aus",
+    "notificationMealTimesTitle":  "Mahlzeitenzeiten",
+    "notificationMealTimesHint":  "Zu diesen Zeiten erinnern wir dich an bald ablaufende Zutaten.",
+    "notificationLunchLabel":  "Uebliche Mittagszeit",
+    "notificationDefaultLunchTime":  "11:30 (Standard)",
+    "notificationDinnerLabel":  "Uebliche Abendzeit",
+    "notificationDefaultDinnerTime":  "17:30 (Standard)",
+    "notificationResetDefaults":  "Auf Standard zuruecksetzen",
+    "notificationSendTestNow":  "Test jetzt senden",
+    "familyLoadMembersFailed":  "Mitglieder konnten nicht geladen werden: {error}",
+    "@familyLoadMembersFailed":  {
+                                     "placeholders":  {
+                                                          "error":  {
+
+                                                                    }
+                                                      }
+                                 },
+    "familyErrorTitle":  "Fehler",
+    "familyGenerateCodeFailed":  "Code konnte nicht erzeugt werden:\n\n{error}",
+    "@familyGenerateCodeFailed":  {
+                                      "placeholders":  {
+                                                           "error":  {
+
+                                                                     }
+                                                       }
+                                  },
+    "familyOk":  "OK",
+    "familyJoinTitle":  "Familie beitreten",
+    "familyJoinDesc":  "Gib den 6-stelligen Einladungscode eines Familienmitglieds ein.",
+    "familyInviteCodeLabel":  "Einladungscode",
+    "familyJoinAction":  "Beitreten",
+    "familyJoinedSuccess":  "Familie erfolgreich beigetreten!",
+    "familyInvalidOrExpiredCode":  "Ungueltiger oder abgelaufener Code.",
+    "familyErrorMessage":  "Fehler: {error}",
+    "@familyErrorMessage":  {
+                                "placeholders":  {
+                                                     "error":  {
+
+                                                               }
+                                                 }
+                            },
+    "familyLeaveTitle":  "Familie verlassen?",
+    "familyLeaveDesc":  "Du siehst dann keine geteilten Vorrats- und Einkaufslisten mehr und wechselst in dein privates Zuhause.",
+    "familyLeaveAction":  "Verlassen",
+    "familyLeftSuccess":  "Familie verlassen. In den privaten Modus gewechselt.",
+    "familyLeaveFailed":  "Familie konnte nicht verlassen werden.",
+    "familyInviteMemberTitle":  "Mitglied einladen",
+    "familyInviteMemberDesc":  "Teile diesen Code mit deinem Familienmitglied.\nDamit kann es deinem Zuhause beitreten.",
+    "familyInviteExpiresIn2Days":  "Laeuft in 2 Tagen ab",
+    "familyDone":  "Fertig",
+    "familyUpdateNameTitle":  "Deinen Namen aktualisieren",
+    "familyDisplayNameHint":  "Deinen Anzeigenamen eingeben",
+    "familyNameUpdated":  "Name aktualisiert.",
+    "familyNameUpdateFailed":  "Name konnte nicht aktualisiert werden.",
+    "familyMyFamilyTitle":  "Meine Familie",
+    "familyMembersTitle":  "Mitglieder",
+    "familyNoMembersFound":  "Keine Mitglieder gefunden.",
+    "familyInviteNewMember":  "Neues Mitglied einladen",
+    "familyJoinAnotherFamily":  "Anderer Familie beitreten",
+    "familyLeaveThisFamily":  "Diese Familie verlassen",
+    "familyInventoryShoppingSynced":  "Vorrat und Einkaufsliste synchronisiert",
+    "familyYourDisplayName":  "Dein Anzeigename",
+    "familyEdit":  "Bearbeiten",
+    "familyMigrationFailed":  "Migration fehlgeschlagen",
+    "familyMigratingData":  "Deine Daten werden migriert",
+    "familyKeepAppOpen":  "Bitte halte die App geoeffnet.",
+    "familyMigrationAttempt":  "Versuch {attempt} / {total}",
+    "@familyMigrationAttempt":  {
+                                    "placeholders":  {
+                                                         "attempt":  {
+
+                                                                     },
+                                                         "total":  {
+
+                                                                   }
+                                                     }
+                                },
+    "familyInventoryMode":  "Vorratsmodus",
+    "familySharedFridgeTitle":  "Geteilter Kuehlschrank",
+    "familySharedFridgeDesc":  "Alle Mitglieder verwalten den Vorrat gemeinsam.",
+    "familySeparateFridgesTitle":  "Getrennte Kuehlschraenke",
+    "familySeparateFridgesDesc":  "Artikel sind strikt Eigentuemern zugeordnet.",
+    "familyUnknownMember":  "Unbekannt",
+    "familyUnknownInitial":  "U",
+    "accountNightModeTitle":  "Nachtmodus",
+    "accountStudentModeTitle":  "Studentenmodus",
+    "accountStudentModeSubtitle":  "Budgetfreundliche Rezepte \u0026 Tipps",
+    "accountLoyaltyCardsTitle":  "Treuekarten",
+    "accountLoyaltyCardsSubtitle":  "PAYBACK verbinden (bald verfuegbar)",
+    "accountPrivacyPolicyTitle":  "Datenschutz",
+    "accountVersionTitle":  "Version",
+    "accountSignOut":  "Abmelden",
+    "accountHelloUser":  "Hallo, {name}",
+    "@accountHelloUser":  {
+                              "placeholders":  {
+                                                   "name":  {
+
+                                                            }
+                                               }
+                          },
+    "accountGuestTitle":  "Gastkonto",
+    "accountSignInHint":  "Zum Synchronisieren bitte anmelden",
+    "accountLogIn":  "Anmelden",
+    "accountHomeConnectLinked":  "Home Connect verbunden!",
+    "accountConnectionFailed":  "Verbindung fehlgeschlagen",
+    "accountDisconnected":  "Getrennt",
+    "accountSimulatorAppliances":  "Simulator-Geraete",
+    "accountNoAppliancesFound":  "Keine Geraete gefunden",
+    "accountUnknown":  "Unbekannt",
+    "accountIdCopied":  "ID kopiert",
+    "accountApplianceId":  "ID: {id}",
+    "@accountApplianceId":  {
+                                "placeholders":  {
+                                                     "id":  {
+
+                                                            }
+                                                 }
+                            },
+    "accountHomeConnectTitle":  "Home Connect",
+    "accountRefreshStatus":  "Status aktualisieren",
+    "accountViewAppliances":  "Geraete anzeigen",
+    "accountDisconnect":  "Trennen",
+    "accountConnecting":  "Verbinden...",
+    "accountActiveSynced":  "Aktiv \u0026 synchronisiert",
+    "accountTapToConnect":  "Tippen zum Verbinden",
+    "leaderboardTitle":  "Rangliste",
+    "leaderboardScopeWorld":  "Welt",
+    "leaderboardGlobalTitle":  "Global",
+    "leaderboardGlobalSubtitle":  "Top-Leistungen weltweit",
+    "leaderboardYourRank":  "Dein Rang",
+    "leaderboardNoDataYet":  "Noch keine Daten",
+    "leaderboardRankInScope":  "#{rank} in {scope}",
+    "@leaderboardRankInScope":  {
+                                    "placeholders":  {
+                                                         "rank":  {
+
+                                                                  },
+                                                         "scope":  {
+
+                                                                   }
+                                                     }
+                                },
+    "leaderboardLoadFailedTitle":  "Rangliste konnte nicht geladen werden",
+    "retry":  "Erneut versuchen",
+    "leaderboardPointsKgCo2":  "{value} kg CO2",
+    "@leaderboardPointsKgCo2":  {
+                                    "placeholders":  {
+                                                         "value":  {
+
+                                                                   }
+                                                     }
+                                },
+    "leaderboardAddFriendTitle":  "Freund hinzufuegen",
+    "leaderboardFriendEmailLabel":  "E-Mail des Freundes",
+    "leaderboardFriendEmailHint":  "name@email.com",
+    "cancel":  "Abbrechen",
+    "add":  "Hinzufuegen",
+    "leaderboardNoUserForEmail":  "Kein Nutzer mit dieser E-Mail gefunden.",
+    "leaderboardInvalidUserId":  "Ungueltige Nutzer-ID fuer diese E-Mail.",
+    "leaderboardCannotAddYourself":  "Du kannst dich nicht selbst hinzufuegen.",
+    "leaderboardFriendAdded":  "Freund hinzugefuegt.",
+    "leaderboardAddFriendFailed":  "Freund hinzufuegen fehlgeschlagen: {error}",
+    "@leaderboardAddFriendFailed":  {
+                                        "placeholders":  {
+                                                             "error":  {
+
+                                                                       }
+                                                         }
+                                    },
+    "pullToRefreshHint":  "Zum Aktualisieren ziehen",
+    "pullToRefreshRelease":  "Loslassen zum Aktualisieren",
+    "foodLocationFridge":  "Kuehlschrank",
+    "foodLocationFreezer":  "Gefrierschrank",
+    "foodLocationPantry":  "Vorratsschrank",
+    "foodExpiredDaysAgo":  "Seit {days} T. abgelaufen",
+    "@foodExpiredDaysAgo":  {
+                                "placeholders":  {
+                                                     "days":  {
+
+                                                              }
+                                                 }
+                            },
+    "foodDaysLeft":  "{days} Tage uebrig",
+    "@foodDaysLeft":  {
+                          "placeholders":  {
+                                               "days":  {
+
+                                                        }
+                                           }
+                      },
+    "foodActionCookEat":  "Kochen / Essen",
+    "foodActionFeedPets":  "Haustiere fuettern",
+    "foodActionDiscard":  "Wegwerfen",
+    "foodPetsHappy":  "Little Shi \u0026 Little Yuan sind happy!",
+    "todayRecipeArchiveTooltip":  "Rezept-Archiv",
+    "todayAiChefTitle":  "KI-Koch",
+    "todayAiChefDescription":  "Nutze aktuelle Zutaten, um Rezepte zu erstellen.",
+    "todayExpiringSoonTitle":  "Bald ablaufend",
+    "todayExpiringSoonDescription":  "Schnell kochen, Haustiere fuettern oder entsorgen.",
+    "todayPetSafetyWarning":  "Bitte stelle sicher, dass das Futter fuer dein Haustier sicher ist!",
+    "todayWhatCanICook":  "Was kann ich kochen?",
+    "todayBasedOnItems":  "Basierend auf {count} Zutaten in deinem Kuehlschrank.",
+    "@todayBasedOnItems":  {
+                               "placeholders":  {
+                                                    "count":  {
+                                                                  "type":  "int"
+                                                              }
+                                                }
+                           },
+    "todayGenerate":  "Erstellen",
+    "todayPlanWeekTitle":  "Plane deine Woche!",
+    "todayPlanWeekSubtitle":  "Tippe, um Mahlzeiten zu planen.",
+    "todayViewAll":  "Alle anzeigen",
+    "todayExpired":  "Abgelaufen",
+    "todayExpiryToday":  "Heute",
+    "todayOneDayLeft":  "1 Tag uebrig",
+    "todayAllClearTitle":  "Alles in Ordnung!",
+    "todayAllClearSubtitle":  "Dein Kuehlschrank ist frisch und gut organisiert.",
+    "todayUndoCooked":  "\"{name}\" gekocht",
+    "@todayUndoCooked":  {
+                             "placeholders":  {
+                                                  "name":  {
+
+                                                           }
+                                              }
+                         },
+    "todayUndoFedPet":  "\"{name}\" an Haustier verfuettert",
+    "@todayUndoFedPet":  {
+                             "placeholders":  {
+                                                  "name":  {
+
+                                                           }
+                                              }
+                         },
+    "todayUndoDiscarded":  "\"{name}\" entsorgt",
+    "@todayUndoDiscarded":  {
+                                "placeholders":  {
+                                                     "name":  {
+
+                                                              }
+                                                 }
+                            },
+    "todayUndoUpdated":  "\"{name}\" aktualisiert",
+    "@todayUndoUpdated":  {
+                              "placeholders":  {
+                                                   "name":  {
+
+                                                            }
+                                               }
+                          },
+    "commonSave":  "Speichern",
+    "inventorySyncChangesLabel":  "Aenderungen in die Cloud synchronisieren",
+    "inventoryCloudSyncStatusLabel":  "Cloud-Sync-Status",
+    "inventorySyncRetryHint":  "Tippen, um ausstehende Synchronisierung zu wiederholen",
+    "inventorySyncAllSavedHint":  "Tippen, um zu bestaetigen, dass alles gespeichert ist",
+    "inventorySyncingChanges":  "Synchronisierung laeuft...",
+    "inventoryAllChangesSaved":  "Alle Aenderungen gespeichert",
+    "inventorySyncingChangesToCloud":  "Synchronisiere Aenderungen in die Cloud...",
+    "inventoryAllSavedToCloud":  "Alle Aenderungen in der Cloud gespeichert.",
+    "inventoryQuickSearchTitle":  "Schnellsuche",
+    "inventoryQuickSearchDescription":  "Finde Artikel in Sekunden nach Name.",
+    "inventorySearchHint":  "Artikel suchen...",
+    "inventoryNoItemsFound":  "Keine Artikel gefunden",
+    "inventoryEmptyTitle":  "Dein Vorrat ist leer",
+    "inventoryEmptySubtitle":  "Tippe auf +, um Artikel hinzuzufuegen.",
+    "inventoryLongPressTitle":  "Langdruck-Menue",
+    "inventoryLongPressDescription":  "Gedrueckt halten zum Bearbeiten, Verbrauch, Verschieben oder Loeschen.",
+    "inventorySwipeDeleteTitle":  "Nach links wischen zum Loeschen",
+    "inventorySwipeDeleteDescription":  "Wische einen Artikel nach links, um ihn zu loeschen. Direkt danach kannst du rueckgaengig machen.",
+    "inventoryItemNoteTitle":  "Artikelnotiz",
+    "inventoryItemNoteHint":  "Kurze Notiz hinzufuegen...",
+    "inventoryEditNote":  "Notiz bearbeiten",
+    "inventoryAddNote":  "Notiz hinzufuegen",
+    "inventorySharedLabel":  "Geteilt",
+    "inventoryNoteReminderSubtitle":  "Kurze Erinnerung hinterlassen",
+    "inventoryChangeCategory":  "Kategorie aendern",
+    "inventoryRecordUsageUpdateQty":  "Verbrauch erfassen und Menge aktualisieren",
+    "inventoryGreatForLeftovers":  "Ideal fuer Reste",
+    "inventoryTrackWasteImproveHabits":  "Verschwendung erfassen und Gewohnheiten verbessern",
+    "inventoryCookedToast":  "{qty} von {name} gekocht",
+    "@inventoryCookedToast":  {
+                                  "placeholders":  {
+                                                       "qty":  {
+
+                                                               },
+                                                       "name":  {
+
+                                                                }
+                                                   }
+                              },
+    "inventoryFedToPetToast":  "{name} an Haustier verfuettert",
+    "@inventoryFedToPetToast":  {
+                                    "placeholders":  {
+                                                         "name":  {
+
+                                                                  }
+                                                     }
+                                },
+    "inventoryRecordedWasteToast":  "Verschwendung erfasst: {name}",
+    "@inventoryRecordedWasteToast":  {
+                                         "placeholders":  {
+                                                              "name":  {
+
+                                                                       }
+                                                          }
+                                     },
+    "inventoryDeletedToast":  "\"{name}\" geloescht",
+    "@inventoryDeletedToast":  {
+                                   "placeholders":  {
+                                                        "name":  {
+
+                                                                 }
+                                                    }
+                               },
+    "inventoryCookWithThis":  "Damit kochen",
+    "inventoryFeedToPet":  "An Haustier verfuettern",
+    "inventoryWastedThrownAway":  "Verschwendet / Weggeworfen",
+    "inventoryEditDetails":  "Details bearbeiten",
+    "inventoryDeleteItem":  "Artikel loeschen",
+    "inventoryDeleteItemQuestion":  "Diesen Artikel loeschen?",
+    "inventoryDeletePermanentQuestion":  "\"{name}\" dauerhaft aus dem Vorrat entfernen?",
+    "@inventoryDeletePermanentQuestion":  {
+                                              "placeholders":  {
+                                                                   "name":  {
+
+                                                                            }
+                                                               }
+                                          },
+    "inventoryDeleteAction":  "Loeschen",
+    "inventoryDetailQuantity":  "Menge",
+    "inventoryDetailAdded":  "Hinzugefuegt",
+    "inventoryDetailStorageLocation":  "Aufbewahrungsort",
+    "inventoryDetailNotes":  "Notizen",
+    "inventoryDetailStatusExpired":  "Abgelaufen",
+    "inventoryDetailStatusExpiresToday":  "Laeuft heute ab",
+    "inventoryDetailStatusExpiring":  "Laeuft bald ab",
+    "inventoryDetailStatusFresh":  "Frisch",
+    "inventoryDetailAddedToday":  "Heute hinzugefuegt",
+    "inventoryDetailAddedOneDayAgo":  "Vor 1 Tag hinzugefuegt",
+    "inventoryDetailAddedDaysAgo":  "Vor {days} Tagen hinzugefuegt",
+    "@inventoryDetailAddedDaysAgo":  {
+                                         "placeholders":  {
+                                                              "days":  {
+
+                                                                       }
+                                                          }
+                                     },
+    "inventoryDetailDaysLeftLabel":  "TAGE\nUEBRIG",
+    "inventoryDetailEditDetailsSubtitle":  "Artikeldetails und Ablaufdatum aktualisieren",
+    "inventorySheetUpdating":  "Aktualisieren: {name}",
+    "@inventorySheetUpdating":  {
+                                    "placeholders":  {
+                                                         "name":  {
+
+                                                                  }
+                                                     }
+                                },
+    "inventoryActionType":  "Aktionstyp",
+    "inventoryActionCooked":  "Gekocht",
+    "inventoryActionPetFeed":  "Haustierfutter",
+    "inventoryActionWaste":  "Verschwendung",
+    "inventoryQuickAssign":  "Schnell zuweisen",
+    "inventoryEditFamily":  "Familie bearbeiten",
+    "inventoryYouLabel":  "Du",
+    "inventoryConfirmUpdate":  "Aktualisierung bestaetigen",
+    "inventoryQuantityUsed":  "Verbrauchte Menge",
+    "inventoryRemainingQty":  "Uebrig: {value}{unit}",
+    "@inventoryRemainingQty":  {
+                                   "placeholders":  {
+                                                        "value":  {
+
+                                                                  },
+                                                        "unit":  {
+
+                                                                 }
+                                                    }
+                               },
+    "inventorySemanticsQuantityUsed":  "Verbrauchte Menge",
+    "inventorySemanticsUsageHint":  "Nach links oder rechts ziehen, um den Verbrauch anzupassen",
+    "inventorySemanticsAdjustUsedAmount":  "Verbrauchte Menge anpassen",
+    "shoppingTemporaryListTooltip":  "Temporäre Liste",
+    "shoppingFridgeCameraTitle":  "Kuehlschrankkamera",
+    "shoppingFridgeCameraDescription":  "Scanne deinen Kuehlschrank fuer schnellere Planung.",
+    "shoppingPurchaseHistoryTitle":  "Kaufverlauf",
+    "shoppingPurchaseHistoryDescription":  "Gekaufte Artikel ansehen und wieder hinzufuegen.",
+    "shoppingCompletedLabel":  "ERLEDIGT",
+    "shoppingAiSmartAddTitle":  "KI Smart Add",
+    "shoppingAiSmartAddDescription":  "Zutaten aus einem Rezept hinzufuegen.",
+    "shoppingAiSmartAddHint":  "Zutaten aus Rezepttext importieren",
+    "shoppingQuickAddTitle":  "Schnell hinzufuegen",
+    "shoppingQuickAddDescription":  "Sofort einen Artikel hinzufuegen.",
+    "shoppingQuickAddSemanticsLabel":  "Schnell einen Artikel hinzufuegen",
+    "shoppingInputHint":  "Artikel hier hinzufuegen",
+    "shoppingRecipeImportTitle":  "Rezeptimport",
+    "shoppingRecipeSignInRequiredAction":  "Bitte melde dich an, um den KI-Rezeptscan zu nutzen.",
+    "shoppingRecipeSignInAction":  "ANMELDEN",
+    "shoppingRecipeProvideInput":  "Bitte gib einen Rezeptnamen, Text oder ein Bild an.",
+    "shoppingRecipeAnalysisFailed":  "Analyse fehlgeschlagen: {error}",
+    "@shoppingRecipeAnalysisFailed":  {
+                                          "placeholders":  {
+                                                               "error":  {
+
+                                                                         }
+                                                           }
+                                      },
+    "shoppingRecipeAddedItems":  "{count} Artikel zur Einkaufsliste hinzugefuegt",
+    "@shoppingRecipeAddedItems":  {
+                                      "placeholders":  {
+                                                           "count":  {
+
+                                                                     }
+                                                       }
+                                  },
+    "shoppingRecipeInputHint":  "Gericht eingeben oder Rezept einfuegen...",
+    "shoppingRecipeIngredientsSection": "Zutaten",
+    "shoppingRecipeSeasoningsSection": "Gewuerze",
+    "shoppingRecipeCamera":  "Kamera",
+    "shoppingRecipeAlbum":  "Album",
+    "shoppingRecipeAnalyzing":  "Analysiere...",
+    "shoppingRecipeGetListButton":  "Einkaufsliste erstellen",
+    "shoppingRecipeAiThinking":  "KI denkt nach...",
+    "shoppingRecipeResultsPlaceholder":  "Deine Ergebnisse erscheinen hier",
+    "shoppingRecipeInStockReason":  "Auf Lager: {reason}",
+    "@shoppingRecipeInStockReason":  {
+                                         "placeholders":  {
+                                                              "reason":  {
+
+                                                                         }
+                                                          }
+                                     },
+    "shoppingRecipeCategoryLabel":  "Kategorie: {category}",
+    "@shoppingRecipeCategoryLabel":  {
+                                         "placeholders":  {
+                                                              "category":  {
+
+                                                                           }
+                                                          }
+                                     },
+    "shoppingRecipeAddSelectedToList":  "{count} Artikel zur Liste hinzufuegen",
+    "@shoppingRecipeAddSelectedToList":  {
+                                             "placeholders":  {
+                                                                  "count":  {
+
+                                                                            }
+                                                              }
+                                         },
+    "shoppingRecipeSignInRequiredTitle":  "Anmeldung erforderlich",
+    "shoppingRecipeSignInRequiredSubtitle":  "Bitte melde dich an, um mit deinem Vorrat zu synchronisieren und die KI-Rezeptanalyse zu nutzen.",
+    "shoppingRecipeSignInNow":  "Jetzt anmelden",
+    "shoppingEmptyTitle":  "Deine Liste ist leer",
+    "shoppingEmptySubtitle":  "Fuege Artikel manuell hinzu oder importiere ein Rezept.",
+    "shoppingDeletedToast":  "\"{name}\" geloescht",
+    "@shoppingDeletedToast":  {
+                                  "placeholders":  {
+                                                       "name":  {
+
+                                                                }
+                                                   }
+                              },
+    "shoppingUndoAction":  "Rueckgaengig",
+    "impactTitle":  "Dein Impact",
+    "impactTimeRangeTitle":  "Zeitraum",
+    "impactTimeRangeDescription":  "Zwischen Woche, Monat und Jahr wechseln.",
+    "impactSummaryTitle":  "Impact Uebersicht",
+    "impactSummaryDescription":  "Hier siehst du gespartes Geld und gerettete Lebensmittel.",
+    "impactKgAvoided":  "{value}kg vermieden",
+    "@impactKgAvoided":  {
+                             "placeholders":  {
+                                                  "value":  {
+
+                                                            }
+                                              }
+                         },
+    "impactLevelTitle":  "Level",
+    "impactStreakTitle":  "Serie",
+    "impactDaysActive":  "Aktive Tage",
+    "impactActiveBadge":  "Aktiv",
+    "impactWeeklyReportTitle":  "Wochenbericht",
+    "impactWeeklyReportDescription":  "Oeffne deine KI-Wochenzusammenfassung mit Insights.",
+    "impactWeeklyReviewSubtitle":  "Sieh dir deinen Fortschritt der letzten Woche an",
+    "weeklyAddedToShoppingList":  "Zur Einkaufsliste hinzugefuegt.",
+    "weeklyHeiExplainedTitle":  "HEI-2015 erklaert",
+    "weeklyHeiExplainedIntro":  "Der Healthy Eating Index (HEI-2015) ist ein 0-100-Wert, der misst, wie gut eine Ernaehrung zu den Dietary Guidelines for Americans passt.",
+    "weeklyHeiHowComputeTitle":  "So berechnen wir ihn",
+    "weeklyHeiHowComputeBody":  "Wir schaetzen die HEI-Komponenten mit USDA FoodData Central Naehrwerten und deinen erfassten Lebensmitteln. Enthalten sind:",
+    "weeklyHeiComponentsList":  "- Obst (gesamt und ganz)\n- Gemuese (gesamt und gruenes Gemuese/Bohnen)\n- Vollkorn\n- Milchprodukte\n- Gesamtprotein sowie Meeresfruechte-/Pflanzenprotein\n- Fettsaeure-Verhaeltnis\n- Moderation: raffiniertes Getreide, Natrium, zugesetzter Zucker, gesaettigte Fette",
+    "weeklyHeiMorePoints":  "Mehr Punkte bedeuten bessere Balance. Wo sinnvoll normalisieren wir pro 1.000 kcal und nutzen die HEI-2015 Bewertungsstandards.",
+    "weeklyGotIt":  "Verstanden",
+    "weeklyHeiLabelExcellent":  "Ausgezeichnet",
+    "weeklyHeiLabelGood":  "Gut",
+    "weeklyHeiLabelFair":  "Okay",
+    "weeklyHeiLabelNeedsWork":  "Ausbaufähig",
+    "weeklyMacrosNotEnoughData":  "Nicht genug Daten zur Berechnung der Makros.",
+    "weeklyMacroProtein":  "Protein",
+    "weeklyMacroCarbs":  "Kohlenhydrate",
+    "weeklyMacroFat":  "Fett",
+    "weeklyDataSource":  "Datenquelle: {source}",
+    "@weeklyDataSource":  {
+                              "placeholders":  {
+                                                   "source":  {
+
+                                                              }
+                                               }
+                          },
+    "weeklyPrev":  "Zurueck",
+    "weeklyNext":  "Weiter",
+    "impactChooseMascot":  "Waehle dein Maskottchen",
+    "impactMascotNameTitle":  "Maskottchen-Name",
+    "impactMascotNameHint":  "Gib ihm einen Namen",
+    "impactMascotCat":  "Katze",
+    "impactMascotDog":  "Hund",
+    "impactMascotHamster":  "Hamster",
+    "impactMascotGuineaPig":  "Meerschweinchen",
+    "impactFedToMascot":  "An {name} verfuettert",
+    "@impactFedToMascot":  {
+                               "placeholders":  {
+                                                    "name":  {
+
+                                                             }
+                                                }
+                           },
+    "impactItemFallback":  "Artikel",
+    "impactFridgeMasterTitle":  "Kuehlschrank-Profi!",
+    "impactSavedItemsStreak":  "{savedCount} Artikel gerettet - {streak} Tage Serie",
+    "@impactSavedItemsStreak":  {
+                                    "placeholders":  {
+                                                         "savedCount":  {
+
+                                                                        },
+                                                         "streak":  {
+
+                                                                    }
+                                                     }
+                                },
+    "impactTotalSavingsLabel":  "GESAMT ERSPART",
+    "impactNextRankLabel":  "Naechster Rang: Zero-Waste-Held",
+    "impactBasedOnSavedItems":  "Basierend auf {count} geretteten Artikeln",
+    "@impactBasedOnSavedItems":  {
+                                     "placeholders":  {
+                                                          "count":  {
+
+                                                                    }
+                                                      }
+                                 },
+    "impactOnTrackYearly":  "Auf Kurs fuer {amount} Ersparnis pro Jahr",
+    "@impactOnTrackYearly":  {
+                                 "placeholders":  {
+                                                      "amount":  {
+
+                                                                 }
+                                                  }
+                             },
+    "impactCommunityQuestTitle":  "Community Quest",
+    "impactNewBadge":  "Neu!",
+    "impactYouSavedCo2ThisWeek":  "Du hast diese Woche {value}kg CO2 eingespart!",
+    "@impactYouSavedCo2ThisWeek":  {
+                                       "placeholders":  {
+                                                            "value":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "impactViewLeaderboard":  "Rangliste ansehen",
+    "impactTopSaversTitle":  "Top-Sparer",
+    "impactSeeAll":  "Alle ansehen",
+    "impactMostSavedLabel":  "Meist gespart",
+    "impactRecentActionsTitle":  "Letzte Aktionen",
+    "impactFamilyLabel":  "Familie",
+    "impactActionCooked":  "Gekocht",
+    "impactActionFedToPet":  "An Haustier verfuettert",
+    "impactActionWasted":  "Verschwendet",
+    "impactTapForDietInsights":  "Tippe fuer deine Ernaehrungs-Insights",
+    "impactEnjoyedLeftovers":  "{weight}kg Reste verwertet",
+    "@impactEnjoyedLeftovers":  {
+                                    "placeholders":  {
+                                                         "weight":  {
+
+                                                                    }
+                                                     }
+                                },
+    "impactNoDataTitle":  "Noch keine Daten",
+    "impactNoDataSubtitle":  "Rette Lebensmittel und dein Impact erscheint hier.",
+    "impactRangeWeek":  "Woche",
+    "impactRangeMonth":  "Monat",
+    "impactRangeYear":  "Jahr",
+    "addFoodVoiceTapToStart":  "Zum Start auf das Mikro tippen",
+    "addFoodDateNotSet":  "Nicht gesetzt",
+    "addFoodTextTooShort":  "Text ist zu kurz, bitte mehr Details angeben.",
+    "addFoodRecognizedItems":  "{count} Eintrag(e) erkannt.",
+    "@addFoodRecognizedItems":  {
+                                    "placeholders":  {
+                                                         "count":  {
+                                                                       "type":  "int"
+                                                                   }
+                                                     }
+                                },
+    "addFoodAiParserUnavailable":  "KI-Parser nicht verfuegbar, lokaler Parser verwendet.",
+    "addFoodAiUnexpectedResponse":  "Unerwartete KI-Antwort, lokaler Parser verwendet.",
+    "addFoodFormFilledFromVoice":  "Formular per Sprache ausgefuellt.",
+    "addFoodAiReturnedEmpty":  "KI-Parser lieferte leer, lokaler Parser verwendet.",
+    "addFoodNetworkParseFailed":  "Netzwerk-Parsing fehlgeschlagen, lokaler Parser verwendet.",
+    "addFoodAiParseFailed":  "KI-Parsing fehlgeschlagen: {error}",
+    "@addFoodAiParseFailed":  {
+                                  "placeholders":  {
+                                                       "error":  {
+
+                                                                 }
+                                                   }
+                              },
+    "addFoodEnterNameFirst":  "Bitte zuerst den Lebensmittelnamen eingeben",
+    "addFoodExpirySetTo":  "Ablaufdatum gesetzt auf {date}",
+    "@addFoodExpirySetTo":  {
+                                "placeholders":  {
+                                                     "date":  {
+
+                                                              }
+                                                 }
+                            },
+    "addFoodMaxFourImages":  "Maximal 4 Bilder erlaubt. Die ersten 4 wurden gewaehlt.",
+    "addFoodNoItemsDetected":  "Keine Artikel in den Bildern erkannt.",
+    "addFoodScanFailed":  "Scan fehlgeschlagen: {error}",
+    "@addFoodScanFailed":  {
+                               "placeholders":  {
+                                                    "error":  {
+
+                                                              }
+                                                }
+                           },
+    "addFoodVoiceError":  "Sprachfehler: {error}",
+    "@addFoodVoiceError":  {
+                               "placeholders":  {
+                                                    "error":  {
+
+                                                              }
+                                                }
+                           },
+    "addFoodSpeechNotAvailable":  "Spracherkennung auf diesem Geraet nicht verfuegbar",
+    "addFoodSpeechNotSupported":  "Spracherkennung wird auf diesem Geraet nicht unterstuetzt.",
+    "addFoodSpeechInitFailed":  "Sprachinitialisierung fehlgeschlagen: {code}",
+    "@addFoodSpeechInitFailed":  {
+                                     "placeholders":  {
+                                                          "code":  {
+
+                                                                   }
+                                                      }
+                                 },
+    "addFoodSpeechInitUnable":  "Spracherkennung konnte nicht initialisiert werden.",
+    "addFoodOpeningXiaomiSpeech":  "Xiaomi-Spracherkennung wird geoeffnet...",
+    "addFoodVoiceGotIt":  "Verstanden! Auf \"Analysieren \u0026 Fuellen\" tippen.",
+    "addFoodVoiceCanceled":  "Spracheingabe abgebrochen. Mikro antippen zum Wiederholen.",
+    "addFoodMicBlocked":  "Mikrofon blockiert. Bitte in den Einstellungen aktivieren.",
+    "addFoodMicDenied":  "Mikrofonberechtigung verweigert.",
+    "addFoodListeningNow":  "Ich hoere zu...",
+    "addFoodAddItemTitle":  "Artikel hinzufuegen",
+    "addFoodEditItemTitle":  "Artikel bearbeiten",
+    "addFoodHelpButton":  "Hilfe",
+    "addFoodTabManual":  "Manuell",
+    "addFoodTabScan":  "Scan",
+    "addFoodTabVoice":  "Sprache",
+    "addFoodBasicInfoTitle":  "Basisdaten",
+    "addFoodNameLabel":  "Name",
+    "addFoodRequired":  "Pflichtfeld",
+    "addFoodQuantityLabel":  "Menge",
+    "addFoodUnitLabel":  "Einheit",
+    "addFoodMinStockWarningLabel":  "Mindestbestand-Warnung (optional)",
+    "addFoodMinStockHint":  "z. B. 2 (Warnung bei Unterschreitung)",
+    "addFoodMinStockHelper":  "Leer lassen fuer keine Warnung",
+    "addFoodStorageLocationTitle":  "Lagerort",
+    "addFoodCategoriesTitle":  "Kategorien",
+    "addFoodDatesTitle":  "Daten",
+    "addFoodPurchaseDate":  "Kaufdatum",
+    "addFoodOpenDate":  "Oeffnungsdatum",
+    "addFoodBestBefore":  "Mindestens haltbar bis",
+    "addFoodSaveToInventory":  "Im Vorrat speichern",
+    "addFoodScanReceipt":  "Beleg scannen",
+    "addFoodSnapFridge":  "Kuehlschrank fotografieren",
+    "addFoodTakePhoto":  "Foto aufnehmen",
+    "addFoodUseCameraToScan":  "Kamera zum Scannen verwenden",
+    "addFoodUploadMax4":  "Hochladen (max. 4)",
+    "addFoodChooseMultipleFromGallery":  "Mehrere aus der Galerie waehlen",
+    "addFoodAiExtractReceiptItems":  "Die KI extrahiert Artikel aus deinem Beleg.",
+    "addFoodAiIdentifyFridgeItems":  "Die KI erkennt Artikel im Kuehlschrank oder Vorrat.",
+    "addFoodAutoLabel":  "Auto",
+    "addFoodXiaomiSpeechMode":  "Xiaomi-Sprachmodus",
+    "addFoodEngineReady":  "Engine bereit - {locale}",
+    "@addFoodEngineReady":  {
+                                "placeholders":  {
+                                                     "locale":  {
+
+                                                                }
+                                                 }
+                            },
+    "addFoodPreparingEngine":  "Sprach-Engine wird vorbereitet...",
+    "addFoodVoiceTrySaying":  "Versuche: \"3 Aepfel, Milch und 1 kg Reis\"",
+    "addFoodTranscriptHint":  "Transkript erscheint hier...",
+    "addFoodClear":  "Leeren",
+    "addFoodAnalyzing":  "Analysiere...",
+    "addFoodAnalyzeAndFill":  "Analysieren \u0026 Fuellen",
+    "addFoodAiExpiryPrediction":  "KI-Ablaufprognose",
+    "addFoodAutoMagic":  "Auto-Magie",
+    "addFoodThinking":  "Denke nach...",
+    "addFoodPredictedExpiry":  "Prognostiziertes Ablaufdatum",
+    "addFoodManualDateOverride":  "Manuelles Datum ueberschreibt diese Angabe",
+    "addFoodAutoApplied":  "Automatisch uebernommen",
+    "addFoodAiSuggestHint":  "Die KI schlaegt basierend auf Lebensmitteltyp und Lagerung vor.",
+    "addFoodErrorPrefix":  "Fehler:",
+    "addFoodAutoMagicPrediction":  "Auto-Magic-Prognose",
+    "addFoodScanningReceipts":  "Belege werden gescannt...",
+    "addFoodProcessing":  "Verarbeitung",
+    "addFoodItemsTitle":  "Eintraege",
+    "addFoodAddCountItems":  "{count} Artikel hinzufuegen",
+    "@addFoodAddCountItems":  {
+                                  "placeholders":  {
+                                                       "count":  {
+                                                                     "type":  "int"
+                                                                 }
+                                                   }
+                              },
+    "addFoodAddedItems":  "{count} Artikel hinzugefuegt",
+    "@addFoodAddedItems":  {
+                               "placeholders":  {
+                                                    "count":  {
+                                                                  "type":  "int"
+                                                              }
+                                                }
+                           },
+    "addFoodHelpTitle":  "Hilfe: Artikel hinzufuegen",
+    "addFoodHelpManualTitle":  "Manuell",
+    "addFoodHelpManualPoint1":  "Name, Menge und Lagerort eingeben.",
+    "addFoodHelpManualPoint2":  "Setze MHD, wenn das Verpackungsdatum bekannt ist.",
+    "addFoodHelpManualPoint3":  "Nutze Notizen fuer Groesse/Marke.",
+    "addFoodHelpScanTitle":  "Scan",
+    "addFoodHelpScanPoint1":  "Klare Fotos mit guter Beleuchtung verwenden.",
+    "addFoodHelpScanPoint2":  "Bei Belegen den Text vollstaendig sichtbar halten.",
+    "addFoodHelpScanPoint3":  "Erkannte Artikel vor dem Speichern pruefen.",
+    "addFoodHelpVoiceTitle":  "Sprache",
+    "addFoodHelpVoicePoint1":  "Sage Artikel + Menge + Einheit, z. B. \"Milch zwei Liter\".",
+    "addFoodHelpVoicePoint2":  "Zwischen mehreren Artikeln kurz pausieren.",
+    "addFoodHelpVoicePoint3":  "Felder bei Bedarf vor dem Speichern bearbeiten.",
+    "addFoodHelpTip":  "Tipp: Wenn das Ablaufdatum unbekannt ist, nutze die KI-Prognose und passe sie manuell an.",
+    "selectIngredientsKitchenTitle":  "Deine Kueche",
+    "selectIngredientsSelectedCount":  "{count} Zutaten zum Kochen ausgewaehlt",
+    "@selectIngredientsSelectedCount":  {
+                                            "placeholders":  {
+                                                                 "count":  {
+                                                                               "type":  "int"
+                                                                           }
+                                                             }
+                                        },
+    "selectIngredientsNoItemsSubtitle":  "Versuche einen anderen Filter oder fuege neue Artikel hinzu.",
+    "selectIngredientsExtrasPrompts":  "Extras \u0026 Vorgaben",
+    "selectIngredientsAddExtraHint":  "Zusaetzliche Zutaten hinzufuegen...",
+    "selectIngredientsSpecialRequestHint":  "Besondere Vorlieben oder Ernaehrungseinschraenkungen?",
+    "selectIngredientsPageTitle":  "Zutaten auswaehlen",
+    "selectIngredientsReset":  "Zuruecksetzen",
+    "selectIngredientsFilterAll":  "Alle",
+    "selectIngredientsFilterExpiring":  "Bald ablaufend",
+    "selectIngredientsFilterVeggie":  "Gemuese",
+    "selectIngredientsFilterMeat":  "Fleisch",
+    "selectIngredientsFilterDairy":  "Milchprodukte",
+    "selectIngredientsExpiringLabel":  "Bald faellig",
+    "selectIngredientsSoonLabel":  "Bald",
+    "selectIngredientsFreshLabel":  "Frisch",
+    "selectIngredientsQuantityLeft":  "{value} {unit} uebrig",
+    "@selectIngredientsQuantityLeft":  {
+                                           "placeholders":  {
+                                                                "value":  {
+
+                                                                          },
+                                                                "unit":  {
+
+                                                                         }
+                                                            }
+                                       },
+    "selectIngredientsPeopleShort":  "Pers.",
+    "cookingPlanSlot":  "{slot} planen",
+    "@cookingPlanSlot":  {
+                             "placeholders":  {
+                                                  "slot":  {
+
+                                                           }
+                                              }
+                         },
+    "cookingMealNameLabel":  "Mahlzeitenname",
+    "cookingMealNameHint":  "z. B. Zitronen-Haehnchen-Bowl",
+    "cookingQuickPickRecipes":  "Schnellauswahl aus Rezepten",
+    "cookingBrowseAll":  "Alle durchsuchen",
+    "cookingUseFromInventory":  "Aus dem Vorrat verwenden",
+    "cookingMissingItemsLabel":  "Fehlende Artikel (zur Einkaufsliste hinzufuegen)",
+    "cookingMissingItemsHint":  "z. B. Knoblauch, Fruehlingszwiebeln",
+    "cookingSavePlan":  "Plan speichern",
+    "cookingUntitledMeal":  "Unbenannte Mahlzeit",
+    "cookingAddedItemsToShopping":  "{count} Artikel zur Einkaufsliste hinzugefuegt.",
+    "@cookingAddedItemsToShopping":  {
+                                         "placeholders":  {
+                                                              "count":  {
+                                                                            "type":  "int"
+                                                                        }
+                                                          }
+                                     },
+    "cookingMealPlannerTitle":  "Mahlzeitenplaner",
+    "cookingJumpToToday":  "Zu heute springen",
+    "cookingNoMatches":  "Keine Treffer",
+    "cookingMissingItemsCount":  "{count} Artikel fehlen",
+    "@cookingMissingItemsCount":  {
+                                      "placeholders":  {
+                                                           "count":  {
+                                                                         "type":  "int"
+                                                                     }
+                                                       }
+                                  },
+    "cookingAllItemsInFridge":  "Alle Artikel im Kuehlschrank",
+    "cookingSlotBreakfast":  "Fruehstueck",
+    "cookingSlotLunch":  "Mittagessen",
+    "cookingSlotDinner":  "Abendessen",
+    "shoppingGuestCreateTempTitle":  "Temporare Liste erstellen",
+    "shoppingGuestCreateTempSubtitle":  "Mit Gaesten teilen, ohne Login.",
+    "shoppingGuestMyListsTitle":  "Meine Gastlisten",
+    "shoppingGuestMyListsSubtitle":  "Vorhandene temporaere Listen verwalten.",
+    "shoppingGuestDialogTitle":  "Temporare Liste erstellen",
+    "shoppingGuestTitleHint":  "z. B. Dinnerparty",
+    "shoppingGuestExpiresIn":  "Laeuft ab in",
+    "shoppingGuestExpire24h":  "24 Stunden",
+    "shoppingGuestExpire3d":  "3 Tage",
+    "shoppingGuestExpire7d":  "7 Tage",
+    "shoppingGuestAttachMineTitle":  "Mit meinem Konto verknuepfen",
+    "shoppingGuestAttachMineSubtitle":  "Nur Kontoinhaber koennen Besitzer-Einstellungen aendern.",
+    "shoppingGuestCreateAction":  "Erstellen",
+    "shoppingShareLinkTitle":  "Diesen Link teilen",
+    "shoppingLinkCopied":  "Link kopiert.",
+    "shoppingCopyLink":  "Link kopieren",
+    "shoppingOpenList":  "Liste oeffnen",
+    "shoppingMoveCheckedSemLabel":  "Markierte Elemente verschieben",
+    "shoppingMoveCheckedSemHint":  "Verschiebe {count} markierte Elemente ins Inventar",
+    "shoppingMoveCheckedToFridge":  "{count} Element(e) in den Kuehlschrank verschoben",
+    "shoppingEditingItem":  "Element wird bearbeitet",
+    "shoppingRenameItemHint":  "Element umbenennen",
+    "recipeArchiveClearTitle":  "Archiv leeren?",
+    "recipeArchiveClearDesc":  "Dadurch werden alle gespeicherten Rezepte entfernt.",
+    "recipeArchiveClearAll":  "Alles loeschen",
+    "recipeArchiveSavedTitle":  "Gespeicherte Rezepte",
+    "recipeArchiveEmptyTitle":  "Noch keine gespeicherten Rezepte",
+    "recipeArchiveEmptyDesc":  "Gespeicherte Rezepte erscheinen hier.",
+    "recipeArchiveGoBack":  "Zurueck",
+    "recipeArchiveSavedOn":  "Gespeichert am {date}",
+    "recipeGeneratorFailed":  "Generierung fehlgeschlagen: {error}",
+    "recipeGeneratorReviewSelectionTitle":  "Auswahl pruefen",
+    "recipeGeneratorReviewSelectionDesc":  "Zutaten und Praeferenzen vor der Generierung waehlen.",
+    "recipeGeneratorNoItemsTitle":  "Keine Zutaten ausgewaehlt",
+    "recipeGeneratorNoItemsDesc":  "Waehle mindestens eine Zutat aus.",
+    "recipeGeneratorExtrasTitle":  "Extras \u0026 Hinweise",
+    "recipeGeneratorCookingFor":  "Kochen fuer {count}",
+    "recipeGeneratorStudentModeOn":  "Studentenmodus aktiv",
+    "recipeGeneratorNote":  "Hinweis: {note}",
+    "recipeGeneratorStartTitle":  "Rezepte generieren",
+    "recipeGeneratorStartSubtitle":  "Wir schlagen Rezepte passend zu deinen Zutaten vor.",
+    "recipeGeneratorNoRecipes":  "Noch keine Rezepte generiert.",
+    "recipeGeneratorSuggestionsTitle":  "Vorschlaege",
+    "recipeDetailRemovedFromArchive":  "Aus dem Archiv entfernt",
+    "recipeDetailSavedToArchive":  "Im Archiv gespeichert",
+    "recipeDetailOperationFailed":  "Vorgang fehlgeschlagen: {error}",
+    "recipeDetailNoOvenTemp":  "Keine Ofentemperatur im Rezept gefunden.",
+    "recipeDetailOvenBusy":  "Ofen ist beschaeftigt. Bitte zuerst stoppen.",
+    "recipeDetailOvenPreheating":  "Ofen heizt auf {temp}C vor",
+    "recipeDetailPreheatFailed":  "Vorheizen fehlgeschlagen: {error}",
+    "recipeDetailOvenAlreadyIdle":  "Ofen ist bereits inaktiv.",
+    "recipeDetailOvenStopped":  "Ofen gestoppt.",
+    "recipeDetailStopFailed":  "Stoppen fehlgeschlagen: {error}",
+    "recipeDetailSavedLeftoversToInventory":  "Reste wurden ins Inventar gespeichert.",
+    "recipeDetailInventoryUpdated":  "Inventar aktualisiert.",
+    "recipeDetailTitle":  "Rezeptdetails",
+    "recipeDetailYields":  "Portionen: {servings}",
+    "recipeDetailSmartKitchen":  "Smart Kitchen",
+    "recipeDetailOvenReady":  "Ofen ist bereit",
+    "recipeDetailPreheatOven":  "Ofen vorheizen",
+    "recipeDetailPreheatTo":  "Vorheizen auf {temp}",
+    "recipeDetailTemp":  "{temp}C",
+    "recipeDetailTapToStop":  "Tippen zum Stoppen",
+    "recipeDetailTapToStart":  "Tippen zum Starten",
+    "recipeDetailIngredientsTitle":  "Zutaten",
+    "recipeDetailInstructionsTitle":  "Anleitung",
+    "recipeDetailStep":  "Schritt {number}",
+    "recipeDetailCookedThis":  "Ich habe das gekocht",
+    "recipeDetailReviewUsageTitle":  "Zutatenverbrauch pruefen",
+    "recipeDetailUsageNone":  "Kein",
+    "recipeDetailUsageAll":  "Alles",
+    "recipeDetailConfirmUsage":  "Verbrauch bestaetigen",
+    "recipeDetailMealPrepTitle":  "Alles aufgegessen?",
+    "recipeDetailMealPrepDesc":  "Oder etwas fuer spaeter vorbereitet?",
+    "recipeDetailLeftoversToSave":  "Zu speichernde Reste:",
+    "recipeDetailWhereStoreLeftovers":  "Wo moechtest du es lagern?",
+    "recipeDetailSaveLeftovers":  "Reste speichern",
+    "recipeDetailAteEverything":  "Alles aufgegessen!",
+    "guestListAddYourNameTitle":  "Namen hinzufuegen",
+    "guestListEnterDisplayNameHint":  "Anzeigenamen eingeben",
+    "guestListAddNoteTitle":  "Notiz hinzufuegen",
+    "guestListAddNoteHint":  "z. B. fettarm, Marke, Groesse",
+    "guestListShareLinkCopied":  "Freigabelink kopiert.",
+    "guestListExpiredEditingDisabled":  "Diese Liste ist abgelaufen. Bearbeiten ist deaktiviert.",
+    "guestListTitle":  "Gast-Einkaufsliste",
+    "guestListCopyShareLinkTooltip":  "Freigabelink kopieren",
+    "guestListMineLabel":  "Meine",
+    "guestListJoining":  "Liste wird geoeffnet...",
+    "guestListAddNameToEdit":  "Zum Bearbeiten zuerst Namen hinzufuegen.",
+    "guestListAddNameAction":  "Namen hinzufuegen",
+    "shoppingAddItemHint":  "Element hinzufuegen...",
+    "guestListNoItemsYet":  "Noch keine Elemente",
+    "guestListLookingForList":  "Freigegebene Liste wird gesucht...",
+    "guestListFailedLoad":  "Liste konnte nicht geladen werden.",
+    "guestListRefreshPage":  "Seite neu laden",
+    "guestListGuestFallback":  "Gast",
+    "guestArchiveEmpty":  "Noch keine Gastlisten",
+    "guestArchiveExpires":  "Laeuft ab: {label}",
+    "guestArchiveExpired":  "Abgelaufen",
+    "guestArchiveActive":  "Aktiv",
+    "authUnexpectedError":  "Unerwarteter Fehler, bitte erneut versuchen.",
+    "authEnterEmailFirst":  "Bitte zuerst E-Mail eingeben.",
+    "authResetEmailSent":  "E-Mail zum Zuruecksetzen wurde gesendet.",
+    "authResetEmailFailed":  "Senden der Reset-E-Mail fehlgeschlagen.",
+    "loginWelcomeBack":  "Willkommen zurueck",
+    "loginWelcomeSubtitle":  "Melde dich an, um fortzufahren",
+    "authPleaseEnterEmail":  "Bitte E-Mail eingeben.",
+    "authEmailInvalid":  "Bitte gueltige E-Mail eingeben.",
+    "authPleaseEnterPassword":  "Bitte Passwort eingeben.",
+    "authAtLeast6Chars":  "Mindestens 6 Zeichen.",
+    "authShowPassword":  "Passwort anzeigen",
+    "authHidePassword":  "Passwort verbergen",
+    "authForgotPassword":  "Passwort vergessen?",
+    "authLogIn":  "Anmelden",
+    "authOr":  "oder",
+    "authNoAccount":  "Noch kein Konto?",
+    "authSignUp":  "Registrieren",
+    "authSkipForNow":  "Jetzt ueberspringen",
+    "authBack":  "Zurueck",
+    "registerPasswordsDoNotMatch":  "Passwoerter stimmen nicht ueberein.",
+    "registerSuccessCheckEmail":  "Registrierung erfolgreich! Bitte E-Mail bestaetigen.",
+    "registerBackToLogin":  "Zurueck zum Login",
+    "registerCreateAccountTitle":  "Konto erstellen",
+    "registerCreateAccountSubtitle":  "Starte deine Smart-Kitchen-Reise.",
+    "registerNameLabel":  "Name",
+    "registerNameHint":  "Dein Anzeigename",
+    "registerEnterName":  "Bitte Namen eingeben.",
+    "registerNameTooShort":  "Name ist zu kurz.",
+    "registerEmailLabel":  "E-Mail",
+    "registerPasswordLabel":  "Passwort",
+    "registerPasswordHint":  "Mindestens 6 Zeichen",
+    "registerRepeatPasswordLabel":  "Passwort wiederholen",
+    "registerRepeatPasswordHint":  "Passwort erneut eingeben",
+    "registerPasswordsDoNotMatchInline":  "Passwoerter stimmen nicht ueberein",
+    "registerProfileDetailsTitle":  "Profildetails",
+    "registerGenderLabel":  "Geschlecht",
+    "registerAgeGroupLabel":  "Altersgruppe",
+    "registerRequired":  "Pflichtfeld",
+    "registerCountryLabel":  "Land",
+    "registerCountryHint":  "z. B. Deutschland",
+    "registerPleaseEnterCountry":  "Bitte Land eingeben.",
+    "fridgeCameraSignInToConnect":  "Bitte anmelden, um Kuehlschrankkameras zu verbinden.",
+    "fridgeCameraNotConnected":  "Home Connect ist nicht verbunden.",
+    "fridgeCameraLoadFailed":  "Kuehlschrankbilder konnten nicht geladen werden: {error}",
+    "fridgeCameraTitle":  "Kuehlschrankkamera",
+    "fridgeCameraRefreshTooltip":  "Aktualisieren",
+    "fridgeCameraNoDevices":  "Keine verbundenen Kuehlschraenke gefunden.",
+    "fridgeCameraNoImages":  "Noch keine Bilder verfuegbar.",
+    "fridgeCameraImageCount":  "{count} Bild(er)",
+    "fridgeCameraImageLoadFailed":  "Bild konnte nicht geladen werden",
+    "shoppingArchiveTitle":  "Kaufverlauf",
+    "shoppingArchiveClearTooltip":  "Verlauf leeren",
+    "shoppingArchiveClearTitle":  "Kaufverlauf leeren?",
+    "shoppingArchiveClearDesc":  "Dadurch werden alle archivierten Einkaufselemente entfernt.",
+    "shoppingArchiveClearAction":  "Leeren",
+    "shoppingArchiveAddBackTooltip":  "Zur Einkaufsliste hinzufuegen",
+    "shoppingArchiveAddedBack":  "Wieder hinzugefuegt: {name}",
+    "shoppingArchiveToday":  "Heute",
+    "shoppingArchiveYesterday":  "Gestern",
+    "shoppingArchiveEmptyTitle":  "Noch kein Verlauf",
+    "shoppingArchiveEmptyDesc":  "Abgeschlossene Einkaeufe erscheinen hier.",
+    "@shoppingMoveCheckedSemHint":  {
+                                        "placeholders":  {
+                                                             "count":  {
+
+                                                                       }
+                                                         }
+                                    },
+    "@shoppingMoveCheckedToFridge":  {
+                                         "placeholders":  {
+                                                              "count":  {
+
+                                                                        }
+                                                          }
+                                     },
+    "@recipeArchiveSavedOn":  {
+                                  "placeholders":  {
+                                                       "date":  {
+
+                                                                }
+                                                   }
+                              },
+    "@recipeGeneratorFailed":  {
+                                   "placeholders":  {
+                                                        "error":  {
+
+                                                                  }
+                                                    }
+                               },
+    "@recipeGeneratorCookingFor":  {
+                                       "placeholders":  {
+                                                            "count":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "@recipeGeneratorNote":  {
+                                 "placeholders":  {
+                                                      "note":  {
+
+                                                               }
+                                                  }
+                             },
+    "@recipeDetailOperationFailed":  {
+                                         "placeholders":  {
+                                                              "error":  {
+
+                                                                        }
+                                                          }
+                                     },
+    "@recipeDetailOvenPreheating":  {
+                                        "placeholders":  {
+                                                             "temp":  {
+
+                                                                      }
+                                                         }
+                                    },
+    "@recipeDetailPreheatFailed":  {
+                                       "placeholders":  {
+                                                            "error":  {
+
+                                                                      }
+                                                        }
+                                   },
+    "@recipeDetailStopFailed":  {
+                                    "placeholders":  {
+                                                         "error":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@recipeDetailYields":  {
+                                "placeholders":  {
+                                                     "servings":  {
+
+                                                                  }
+                                                 }
+                            },
+    "@recipeDetailPreheatTo":  {
+                                   "placeholders":  {
+                                                        "temp":  {
+
+                                                                 }
+                                                    }
+                               },
+    "@recipeDetailTemp":  {
+                              "placeholders":  {
+                                                   "temp":  {
+
+                                                            }
+                                               }
+                          },
+    "@recipeDetailStep":  {
+                              "placeholders":  {
+                                                   "number":  {
+
+                                                              }
+                                               }
+                          },
+    "@guestArchiveExpires":  {
+                                 "placeholders":  {
+                                                      "label":  {
+
+                                                                }
+                                                  }
+                             },
+    "@fridgeCameraLoadFailed":  {
+                                    "placeholders":  {
+                                                         "error":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@fridgeCameraImageCount":  {
+                                    "placeholders":  {
+                                                         "count":  {
+
+                                                                   }
+                                                     }
+                                },
+    "@shoppingArchiveAddedBack":  {
+                                      "placeholders":  {
+                                                           "name":  {
+
+                                                                    }
+                                                       }
+                                  },
+    "recipeDetailAllLabel":  "Alles"
+}
