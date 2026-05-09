@@ -116,7 +116,6 @@ function buildCreatePayload({ type, body, userId, familyId }) {
     status: cleanString(body.status, "good") || "good",
     category: body.category == null ? null : String(body.category),
     source: body.source == null ? "bot-api" : String(body.source),
-    owner_name: body.owner_name ?? body.ownerName ?? null,
     note: body.note == null ? null : String(body.note),
     is_private: Boolean(body.is_private ?? body.isPrivate ?? false),
     updated_at: nowIso(),
@@ -139,7 +138,6 @@ function buildPatchPayload(type, patch) {
     "status",
     "category",
     "source",
-    "owner_name",
     "note",
     "is_private",
   ]);
@@ -156,7 +154,6 @@ function buildPatchPayload(type, patch) {
   if ("openDate" in (patch || {})) out.open_date = patch.openDate;
   if ("bestBeforeDate" in (patch || {})) out.best_before_date = patch.bestBeforeDate;
   if ("predictedExpiry" in (patch || {})) out.predicted_expiry = patch.predictedExpiry;
-  if ("ownerName" in (patch || {})) out.owner_name = patch.ownerName;
   if ("isPrivate" in (patch || {})) out.is_private = Boolean(patch.isPrivate);
 
   out.updated_at = nowIso();
