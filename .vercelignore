@@ -1,0 +1,23 @@
+# Keep Vercel backend deploy small: API routes only need api/, package files, and config.
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.git/
+.github/
+.vscode/
+.idea/
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+build/
+node_modules/
+assets/
+test/
+lib/
+coverage/
+*.iml
+*.log
+.env*
